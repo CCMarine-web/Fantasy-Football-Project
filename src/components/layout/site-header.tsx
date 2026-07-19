@@ -75,7 +75,7 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
 
         <div className="hidden items-center gap-2 lg:flex">
           {isAdmin ? (
-            <Button render={<Link href="/admin" />} variant="ghost" size="sm">
+            <Button render={<Link href="/admin" />} nativeButton={false} variant="ghost" size="sm">
               <ShieldCheck className="h-4 w-4" />
               Admin
             </Button>
@@ -97,7 +97,7 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
               </DropdownMenuContent>
             </DropdownMenu>
           ) : (
-            <Button render={<Link href="/login" />} size="sm">
+            <Button render={<Link href="/login" />} nativeButton={false} size="sm">
               Sign in
             </Button>
           )}

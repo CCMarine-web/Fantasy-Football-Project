@@ -11,7 +11,7 @@ export function LeagueScoringTrendChart({ data }: { data: SeasonScoringPoint[] }
   return (
     <div className="h-64 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 8, right: 16, left: -16, bottom: 0 }}>
+        <LineChart data={data} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
           <XAxis
             dataKey="season"
@@ -25,7 +25,8 @@ export function LeagueScoringTrendChart({ data }: { data: SeasonScoringPoint[] }
             fontSize={12}
             tickLine={false}
             axisLine={false}
-            width={40}
+            width={48}
+            domain={[0, "auto"]}
           />
           <Tooltip
             contentStyle={{

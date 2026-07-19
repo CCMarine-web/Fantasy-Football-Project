@@ -20,7 +20,9 @@ export default async function HomePage() {
           description="No active season is configured yet. Seed the database or configure a Sleeper league from the admin dashboard to bring this homepage to life."
         />
         <div className="mt-6 flex justify-center">
-          <Button render={<Link href="/admin" />}>Go to Admin</Button>
+          <Button render={<Link href="/admin" />} nativeButton={false}>
+            Go to Admin
+          </Button>
         </div>
       </div>
     );

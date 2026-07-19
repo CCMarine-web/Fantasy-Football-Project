@@ -14,6 +14,7 @@ export {
   syncCurrentLeague,
   syncSeason,
   syncAllSeasons,
+  syncAllConnectedSeasons,
   syncWeek,
   syncTransactions,
   syncDrafts,

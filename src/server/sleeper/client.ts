@@ -186,7 +186,10 @@ export class SleeperApiClient {
     let currentId: string | null = leagueId;
     const seen = new Set<string>();
 
-    while (currentId && !seen.has(currentId)) {
+    // Sleeper uses the sentinel string "0" (not null) to mean "no earlier
+    // season" for `previous_league_id` — treat it the same as null/empty,
+    // otherwise the walk 404s trying to fetch league "0".
+    while (currentId && currentId !== "0" && !seen.has(currentId)) {
       seen.add(currentId);
       chain.push(currentId);
       const league: SleeperLeague = await this.getLeague(currentId);
