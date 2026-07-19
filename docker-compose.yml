@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gridiron-gazette-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gridiron
+      POSTGRES_PASSWORD: gridiron
+      POSTGRES_DB: gridiron_gazette
+    ports:
+      - "5432:5432"
+    volumes:
+      - gridiron-gazette-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gridiron -d gridiron_gazette"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  gridiron-gazette-db-data:

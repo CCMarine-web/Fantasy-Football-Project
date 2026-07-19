@@ -27,28 +27,72 @@ instructions once scaffolding exists.
 - **Styling:** Tailwind v4 + shadcn/ui primitives, dark-mode-first (`class`
   strategy, `dark` set on `<html>` by default).
 
-## Phase 0 — Scaffolding (this session)
+## Phase 0 — Scaffolding — ✅ COMPLETE
 
-- [x] Next.js 15 (App Router, TS, Tailwind, ESLint) project init
+- [x] Next.js 16 (App Router, TS, Tailwind v4, ESLint, Turbopack) project init
+  — **note:** this repo was scaffolded on Next.js 16 and Prisma 7, both newer
+  than common tutorials assume. Next 16 makes `params`/`searchParams` fully
+  async (`Promise`, must `await`) and renames `middleware.ts` → `proxy.ts`
+  (`export const proxy = ...`). Prisma 7's `prisma-client` generator outputs
+  to `src/generated/prisma/client` (import from `@/generated/prisma/client`,
+  not `@/generated/prisma`) and requires an explicit driver adapter
+  (`@prisma/adapter-pg`) passed to `new PrismaClient({ adapter })` — see
+  `src/lib/db.ts`. Read `node_modules/next/dist/docs/` before assuming any
+  Next.js API from prior knowledge; it may have changed.
 - [x] Prettier, Vitest, Playwright, Prisma installed
 - [x] Folder structure (`src/app`, `src/components`, `src/server`, `src/lib`,
       `prisma`, `tests`)
-- [x] `.env.example`
-- [x] Prisma schema covering full data model from spec
-- [x] Seed script with 5 seasons, 12 managers, matchups, drafts,
-      transactions, playoffs, champions, rivalries, records, articles,
-      quotes, awards
-- [x] Sleeper typed client + mock provider + sync service skeleton
-- [x] Historical statistics engine + unit tests
-- [x] AI provider interface + mock provider + content services (stubs)
-- [x] Chat ingestion provider architecture + plain-text parser (stub data)
-- [x] Milestone pages: `/`, `/matchups`, `/matchups/[season]/[week]/[id]`,
-      `/standings`, `/managers`, `/managers/[id]`, `/history`,
-      `/history/[season]`, `/records`
-- [x] Stub pages for remaining routes: `/rivalries`, `/transactions`,
-      `/drafts`, `/news`, `/news/[season]/[week]`, `/chat-lore`, `/admin`
-- [x] Auth scaffold (NextAuth + roles), basic login
-- [ ] Lint, typecheck, unit tests, production build all green
+- [x] `.env.example`, `docker-compose.yml`, `prisma.config.ts`
+- [x] Prisma schema covering full data model from spec (31 models, all
+      Sleeper IDs nullable, `StandingSnapshot`/`LeagueRecord` designed as
+      insert-only/non-destructive history)
+- [x] Seed script (`prisma/seed.ts` + `prisma/seed/*`) — 12 managers, 5
+      seasons (2021-2024 complete + 2025 in-progress), full weekly
+      matchups/rosters/lineups, 5 drafts (960 picks), 100 transactions/trades,
+      3 distinct champions (Sofia Reyes ×2, Marcus Cole, Deshawn Griggs), 66
+      computed rivalries, all 14 `LeagueRecord` categories computed from real
+      simulated data (not hand-authored), sample articles/quotes/awards, a
+      sample chat-lore import. Deterministic (seeded PRNG) and idempotent —
+      re-running `npm run db:seed` clears and regenerates identical data.
+- [x] Sleeper typed client + mock provider + sync service (verified end-to-end
+      against a live DB: all 7 sync functions ran successfully with correct
+      `DataSyncLog` bookkeeping)
+- [x] Historical statistics engine + unit tests (59 tests: career record,
+      win%, streaks, all-play, expected wins, schedule luck, lineup
+      efficiency, head-to-head, Elo, finishes)
+- [x] AI provider interface + mock + OpenAI providers + 9 content services,
+      each accepting a `ContentSafeguards` (humor level, sensitive topics,
+      no-roast managers) object folded into every prompt (18 tests)
+- [x] Chat ingestion provider architecture — real parsers for plain text,
+      WhatsApp, GroupMe, Discord, CSV, JSON; iMessage stubbed
+      (`NotYetImplementedError`) pending a real export sample; approval-gated
+      `getApprovedContextForGeneration()` as the only sanctioned AI-context
+      read path
+- [x] Repository layer (`src/server/repositories/`) — every page reads
+      through here, never calls Prisma directly
+- [x] All milestone pages, backed by real seeded data: `/`, `/matchups`,
+      `/matchups/[season]/[week]/[matchupId]`, `/standings`, `/managers`,
+      `/managers/[managerId]`, `/history`, `/history/[season]`, `/records`
+- [x] Remaining routes: `/rivalries`, `/transactions` (filterable),
+      `/drafts` (season selector + full board), `/news`,
+      `/news/[season]/[week]`, `/chat-lore` (admin-only, explains the import
+      pipeline), `/admin` (admin-only dashboard, reads real `DataSyncLog`/
+      league/manager counts; most actions are disabled placeholders wired to
+      real backing services)
+- [x] Auth: NextAuth v5 Credentials + bcrypt + JWT sessions; `src/proxy.ts`
+      gates `/admin` and `/chat-lore` to `ADMIN` role, redirecting to `/login`
+- [x] Design system: dark-mode-first theme (gold + turf-green brand accent
+      over a navy-charcoal base), Oswald headline font + Geist Sans/Mono,
+      shared `MatchupCard`/`StandingsTable`/`EmptyState`/`ErrorState`
+      components, two Recharts charts (league scoring trend, season points-for)
+- [x] Lint, typecheck, unit tests (82 passing), production build (`next
+      build`) all green
+- [x] End-to-end verification: 15 Playwright tests against a real running
+      dev server + seeded database (every page renders, standings/manager
+      links work, admin routes redirect when logged out, login with the
+      seeded admin account succeeds) — all passing. Manually screenshotted
+      the homepage, standings, and managers pages to confirm the design
+      renders as intended.
 
 ## Phase 1 — Depth on milestone pages (next)
 
@@ -75,6 +119,19 @@ instructions once scaffolding exists.
 - Real parsers per platform (WhatsApp, iMessage, GroupMe, Discord, CSV/JSON)
 - Participant-to-manager mapping UI backed by `ChatParticipant`
 - Sensitivity/approval workflow before any message reaches an AI prompt
+
+## Notes from this session
+
+- This session's sandbox had neither Docker nor a native PostgreSQL install
+  available, so all development/verification (migrations, seed, the 15
+  Playwright e2e tests, manual screenshots) ran against `npx prisma dev` —
+  Prisma's own zero-install local Postgres-compatible server. It worked well
+  for short-lived scripts but became unreachable once after an extended idle
+  period and needed `npx prisma dev stop default && npx prisma dev -d` to
+  recover; data survived the restart. This is specific to that lightweight
+  dev tool, not to Postgres itself — Docker Compose or a hosted provider
+  (both documented in the README) won't have this quirk, and either is
+  recommended over `prisma dev` for anything beyond a quick local trial.
 
 ## Open questions for the user (non-blocking — using defaults until answered)
 

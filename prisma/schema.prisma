@@ -1,0 +1,833 @@
+// Gridiron Gazette — Prisma schema
+// Prisma 7: generator uses the new unified `prisma-client` output, and the
+// datasource connection string is supplied via `prisma.config.ts`, not a
+// `url = env(...)` line here. See prisma.config.ts + .env.example.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Auth / users
+// ---------------------------------------------------------------------------
+
+enum UserRole {
+  ADMIN
+  MEMBER
+}
+
+/// A login account. Optionally linked to a Manager so a logged-in league
+/// member sees "their" data highlighted. Sessions use NextAuth's JWT
+/// strategy, so no Account/Session/VerificationToken tables are needed for
+/// the Credentials provider used today.
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         UserRole  @default(MEMBER)
+  managerId    String?   @unique
+  manager      Manager?  @relation(fields: [managerId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  uploadedChatImports    ChatImport[]           @relation("ChatImportUploader")
+  reviewedGenerations     AIContentGeneration[]  @relation("GenerationReviewer")
+  triggeredSyncs          DataSyncLog[]          @relation("SyncTrigger")
+  authoredArticles        Article[]              @relation("ArticleAuthor")
+}
+
+// ---------------------------------------------------------------------------
+// League / season structure
+// ---------------------------------------------------------------------------
+
+model League {
+  id               String   @id @default(cuid())
+  name             String
+  shortName        String?
+  logoUrl          String?
+  description      String?
+  sleeperLeagueId  String?  @unique
+  foundedYear      Int
+  defaultHumorLevel Int     @default(3)
+  sensitiveTopics  String[] @default([])
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  seasons Season[]
+}
+
+enum SeasonStatus {
+  UPCOMING
+  IN_PROGRESS
+  COMPLETE
+}
+
+model Season {
+  id                     String       @id @default(cuid())
+  leagueId               String
+  league                 League       @relation(fields: [leagueId], references: [id])
+  year                   Int
+  sleeperLeagueId        String?      @unique
+  previousSleeperLeagueId String?
+  status                 SeasonStatus @default(UPCOMING)
+  regularSeasonWeeks     Int          @default(14)
+  playoffTeams           Int          @default(6)
+  playoffStartWeek       Int          @default(15)
+  isCurrent              Boolean      @default(false)
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  fantasyTeams      FantasyTeam[]
+  matchups          Matchup[]
+  drafts            Draft[]
+  transactions      Transaction[]
+  standingSnapshots StandingSnapshot[]
+  championship      Championship?
+  articles          Article[]
+  awards            Award[]
+  leagueRecords     LeagueRecord[]
+  historicalQuotes  HistoricalQuote[]
+  dataSyncLogs      DataSyncLog[]
+
+  @@unique([leagueId, year])
+}
+
+// ---------------------------------------------------------------------------
+// Managers and teams
+// ---------------------------------------------------------------------------
+
+/// A person, persistent across seasons even as their Sleeper team/roster
+/// IDs and team names change.
+model Manager {
+  id            String    @id @default(cuid())
+  displayName   String
+  sleeperUserId String?   @unique
+  avatarUrl     String?
+  bio           String?
+  joinedYear    Int
+  isActive      Boolean   @default(true)
+  /// Per-manager AI-safeguard opt-out (spec: "per-manager no-roast settings").
+  noRoast       Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  user               User?
+  fantasyTeams       FantasyTeam[]
+  teamNameHistory    TeamNameHistory[]
+  draftPicks         DraftPick[]
+  transactionAssets  TransactionAsset[]
+  championships      Championship[]
+  awards             Award[]
+  historicalQuotes   HistoricalQuote[]
+  chatParticipants   ChatParticipant[]
+  chatMessages       ChatMessage[]        @relation("ChatMessageLinkedManager")
+  articleSections    ArticleSection[]
+  rivalriesAsA       Rivalry[]            @relation("RivalryManagerA")
+  rivalriesAsB       Rivalry[]            @relation("RivalryManagerB")
+  leagueRecords      LeagueRecord[]
+}
+
+/// A manager's team for one specific season (Sleeper roster).
+model FantasyTeam {
+  id               String   @id @default(cuid())
+  seasonId         String
+  season           Season   @relation(fields: [seasonId], references: [id])
+  managerId        String
+  manager          Manager  @relation(fields: [managerId], references: [id])
+  sleeperRosterId  String?
+  teamName         String
+  logoUrl          String?
+  wins             Int      @default(0)
+  losses           Int      @default(0)
+  ties             Int      @default(0)
+  pointsFor        Float    @default(0)
+  pointsAgainst    Float    @default(0)
+  regularSeasonRank Int?
+  finalRank        Int?
+  madePlayoffs     Boolean  @default(false)
+  playoffSeed      Int?
+  isChampion       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  teamNameHistory     TeamNameHistory[]
+  rosters             Roster[]
+  matchupTeams        MatchupTeam[]
+  standingSnapshots   StandingSnapshot[]
+  draftPicksOwned     DraftPick[]        @relation("DraftPickCurrentOwner")
+  draftPicksOriginal  DraftPick[]        @relation("DraftPickOriginalOwner")
+  transactionAssets   TransactionAsset[]
+  championshipsWon    Championship[]     @relation("ChampionshipWinner")
+  championshipsRunnerUp Championship[]   @relation("ChampionshipRunnerUp")
+  championshipsThird  Championship[]     @relation("ChampionshipThird")
+  awards              Award[]
+
+  @@unique([seasonId, managerId])
+}
+
+model TeamNameHistory {
+  id            String       @id @default(cuid())
+  managerId     String
+  manager       Manager      @relation(fields: [managerId], references: [id])
+  fantasyTeamId String?
+  fantasyTeam   FantasyTeam? @relation(fields: [fantasyTeamId], references: [id])
+  name          String
+  seasonYear    Int
+  startDate     DateTime     @default(now())
+  endDate       DateTime?
+  createdAt     DateTime     @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Players and rosters
+// ---------------------------------------------------------------------------
+
+model FantasyPlayer {
+  id             String   @id @default(cuid())
+  sleeperPlayerId String? @unique
+  firstName      String
+  lastName       String
+  position       String
+  nflTeam        String?
+  status         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  weeklyScores    WeeklyPlayerScore[]
+  draftPicks      DraftPick[]
+  transactionAssets TransactionAsset[]
+  chatMessages    ChatMessage[]
+
+  @@index([lastName, firstName])
+}
+
+/// One row per fantasy team per week — the starting-lineup/bench header for
+/// that week. Re-syncing a week updates that week's row only; other weeks
+/// are untouched, which is how weekly history is preserved.
+model Roster {
+  id              String   @id @default(cuid())
+  fantasyTeamId   String
+  fantasyTeam     FantasyTeam @relation(fields: [fantasyTeamId], references: [id])
+  week            Int
+  sleeperRosterId String?
+  syncedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+
+  playerScores WeeklyPlayerScore[]
+
+  @@unique([fantasyTeamId, week])
+}
+
+model WeeklyPlayerScore {
+  id              String   @id @default(cuid())
+  rosterId        String
+  roster          Roster   @relation(fields: [rosterId], references: [id])
+  playerId        String
+  player          FantasyPlayer @relation(fields: [playerId], references: [id])
+  lineupSlot      String
+  isStarter       Boolean  @default(false)
+  points          Float    @default(0)
+  projectedPoints Float?
+  createdAt       DateTime @default(now())
+
+  @@unique([rosterId, playerId])
+  @@index([playerId])
+}
+
+// ---------------------------------------------------------------------------
+// Matchups and standings
+// ---------------------------------------------------------------------------
+
+enum MatchupStatus {
+  SCHEDULED
+  IN_PROGRESS
+  FINAL
+}
+
+enum BracketType {
+  WINNERS
+  CONSOLATION
+}
+
+model Matchup {
+  id             String        @id @default(cuid())
+  seasonId       String
+  season         Season        @relation(fields: [seasonId], references: [id])
+  week           Int
+  sleeperMatchupId String?
+  isPlayoff      Boolean       @default(false)
+  playoffRound   Int?
+  bracketType    BracketType?
+  roundName      String?
+  status         MatchupStatus @default(SCHEDULED)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  teams MatchupTeam[]
+
+  @@index([seasonId, week])
+}
+
+model MatchupTeam {
+  id              String   @id @default(cuid())
+  matchupId       String
+  matchup         Matchup  @relation(fields: [matchupId], references: [id])
+  fantasyTeamId   String
+  fantasyTeam     FantasyTeam @relation(fields: [fantasyTeamId], references: [id])
+  score           Float?
+  projectedScore  Float?
+  benchPoints     Float?
+  isWinner        Boolean?
+  createdAt       DateTime @default(now())
+
+  @@unique([matchupId, fantasyTeamId])
+  @@index([fantasyTeamId])
+}
+
+/// Insert-only, point-in-time standings row captured on every sync. Never
+/// updated after the fact, so `/history/[season]` can chart the week-by-week
+/// standings progression exactly as it looked at the time.
+model StandingSnapshot {
+  id             String   @id @default(cuid())
+  seasonId       String
+  season         Season   @relation(fields: [seasonId], references: [id])
+  fantasyTeamId  String
+  fantasyTeam    FantasyTeam @relation(fields: [fantasyTeamId], references: [id])
+  week           Int
+  wins           Int
+  losses         Int
+  ties           Int
+  pointsFor      Float
+  pointsAgainst  Float
+  rank           Int
+  streak         String?
+  capturedAt     DateTime @default(now())
+
+  @@index([seasonId, week])
+  @@index([fantasyTeamId])
+}
+
+// ---------------------------------------------------------------------------
+// Drafts
+// ---------------------------------------------------------------------------
+
+enum DraftType {
+  SNAKE
+  AUCTION
+  LINEAR
+}
+
+model Draft {
+  id             String    @id @default(cuid())
+  seasonId       String
+  season         Season    @relation(fields: [seasonId], references: [id])
+  sleeperDraftId String?
+  type           DraftType @default(SNAKE)
+  rounds         Int
+  startedAt      DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+
+  picks DraftPick[]
+
+  @@unique([seasonId])
+}
+
+model DraftPick {
+  id                    String       @id @default(cuid())
+  draftId               String
+  draft                 Draft        @relation(fields: [draftId], references: [id])
+  round                 Int
+  pickNumber            Int
+  draftSlot             Int
+  originalFantasyTeamId String
+  originalFantasyTeam   FantasyTeam  @relation("DraftPickOriginalOwner", fields: [originalFantasyTeamId], references: [id])
+  fantasyTeamId         String
+  fantasyTeam           FantasyTeam  @relation("DraftPickCurrentOwner", fields: [fantasyTeamId], references: [id])
+  managerId             String?
+  manager               Manager?     @relation(fields: [managerId], references: [id])
+  playerId              String?
+  player                FantasyPlayer? @relation(fields: [playerId], references: [id])
+  isKeeper              Boolean      @default(false)
+  auctionAmount         Float?
+  createdAt             DateTime     @default(now())
+
+  @@unique([draftId, pickNumber])
+  @@index([playerId])
+}
+
+// ---------------------------------------------------------------------------
+// Transactions and trades
+// ---------------------------------------------------------------------------
+
+enum TransactionType {
+  WAIVER
+  FREE_AGENT
+  TRADE
+  COMMISSIONER
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETE
+  FAILED
+  REVERSED
+}
+
+model Transaction {
+  id                   String            @id @default(cuid())
+  seasonId             String
+  season               Season            @relation(fields: [seasonId], references: [id])
+  week                 Int?
+  sleeperTransactionId String?
+  type                 TransactionType
+  status               TransactionStatus @default(COMPLETE)
+  faabSpent            Int?
+  processedAt          DateTime          @default(now())
+  createdAt            DateTime          @default(now())
+
+  assets TransactionAsset[]
+  trade  Trade?
+
+  @@index([seasonId, week])
+  @@index([type])
+}
+
+enum AssetDirection {
+  ADD
+  DROP
+}
+
+enum AssetType {
+  PLAYER
+  DRAFT_PICK
+  FAAB
+}
+
+model TransactionAsset {
+  id            String         @id @default(cuid())
+  transactionId String
+  transaction   Transaction    @relation(fields: [transactionId], references: [id])
+  fantasyTeamId String
+  fantasyTeam   FantasyTeam    @relation(fields: [fantasyTeamId], references: [id])
+  managerId     String?
+  manager       Manager?       @relation(fields: [managerId], references: [id])
+  direction     AssetDirection
+  assetType     AssetType
+  playerId      String?
+  player        FantasyPlayer? @relation(fields: [playerId], references: [id])
+  draftPickDescription String?
+  faabAmount    Int?
+  createdAt     DateTime       @default(now())
+
+  @@index([playerId])
+}
+
+/// Trade-specific extension of a Transaction (type = TRADE).
+model Trade {
+  id            String      @id @default(cuid())
+  transactionId String      @unique
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  isNotable     Boolean     @default(false)
+  notes         String?
+  createdAt     DateTime    @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Playoffs, championships, records, rivalries
+// ---------------------------------------------------------------------------
+
+model PlayoffBracket {
+  id          String      @id @default(cuid())
+  seasonId    String
+  round       Int
+  bracketType BracketType
+  roundName   String
+  matchupId   String?     @unique
+  createdAt   DateTime    @default(now())
+
+  @@index([seasonId, round])
+}
+
+model Championship {
+  id                   String      @id @default(cuid())
+  seasonId             String      @unique
+  season               Season      @relation(fields: [seasonId], references: [id])
+  championFantasyTeamId String
+  championFantasyTeam  FantasyTeam @relation("ChampionshipWinner", fields: [championFantasyTeamId], references: [id])
+  championManagerId    String
+  championManager      Manager     @relation(fields: [championManagerId], references: [id])
+  runnerUpFantasyTeamId String?
+  runnerUpFantasyTeam  FantasyTeam? @relation("ChampionshipRunnerUp", fields: [runnerUpFantasyTeamId], references: [id])
+  thirdPlaceFantasyTeamId String?
+  thirdPlaceFantasyTeam FantasyTeam? @relation("ChampionshipThird", fields: [thirdPlaceFantasyTeamId], references: [id])
+  createdAt            DateTime    @default(now())
+}
+
+enum RecordCategory {
+  HIGHEST_WEEKLY_SCORE
+  LOWEST_WEEKLY_SCORE
+  LARGEST_BLOWOUT
+  CLOSEST_GAME
+  HIGHEST_SCORE_IN_LOSS
+  LOWEST_SCORE_IN_WIN
+  MOST_BENCH_POINTS
+  MOST_CHAMPIONSHIPS
+  MOST_PLAYOFF_APPEARANCES
+  LONGEST_WIN_STREAK
+  LONGEST_LOSS_STREAK
+  MOST_POINTS_SEASON
+  BEST_LINEUP_EFFICIENCY
+  WORST_LINEUP_EFFICIENCY
+}
+
+/// A record holder for one category. Old holders are kept (supersededAt set)
+/// rather than deleted, so `/records` can show "record history" later.
+model LeagueRecord {
+  id            String         @id @default(cuid())
+  seasonId      String?
+  season        Season?        @relation(fields: [seasonId], references: [id])
+  category      RecordCategory
+  value         Float
+  managerId     String?
+  manager       Manager?       @relation(fields: [managerId], references: [id])
+  week          Int?
+  description   String
+  supersededAt  DateTime?
+  recordedAt    DateTime       @default(now())
+
+  @@index([category])
+}
+
+model Rivalry {
+  id                   String   @id @default(cuid())
+  managerAId           String
+  managerA             Manager  @relation("RivalryManagerA", fields: [managerAId], references: [id])
+  managerBId           String
+  managerB             Manager  @relation("RivalryManagerB", fields: [managerBId], references: [id])
+  gamesPlayed          Int      @default(0)
+  managerAWins         Int      @default(0)
+  managerBWins          Int      @default(0)
+  ties                 Int      @default(0)
+  playoffMeetings      Int      @default(0)
+  closestGameMargin    Float?
+  largestBlowoutMargin Float?
+  currentStreakManagerId String?
+  currentStreakCount   Int      @default(0)
+  rivalryScore         Float    @default(0)
+  lastMeetingAt        DateTime?
+  updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now())
+
+  @@unique([managerAId, managerBId])
+}
+
+// ---------------------------------------------------------------------------
+// AI-generated content: articles / newspaper
+// ---------------------------------------------------------------------------
+
+enum ArticleType {
+  WEEKLY_ISSUE
+  MATCHUP_PREVIEW
+  MATCHUP_RECAP
+  SEASON_SUMMARY
+  MANAGER_PROFILE
+  TRADE_RETROSPECTIVE
+}
+
+enum ArticleStatus {
+  DRAFT
+  PENDING_REVIEW
+  PUBLISHED
+  ARCHIVED
+}
+
+model Article {
+  id            String        @id @default(cuid())
+  seasonId      String
+  season        Season        @relation(fields: [seasonId], references: [id])
+  week          Int?
+  type          ArticleType
+  title         String
+  slug          String
+  status        ArticleStatus @default(DRAFT)
+  heroImageUrl  String?
+  authorUserId  String?
+  authorUser    User?         @relation("ArticleAuthor", fields: [authorUserId], references: [id])
+  publishedAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  deletedAt     DateTime?
+
+  sections    ArticleSection[]
+  generations AIContentGeneration[]
+
+  @@unique([seasonId, slug])
+  @@index([seasonId, week])
+}
+
+enum ArticleSectionType {
+  INTRO
+  MATCHUP_RECAP
+  POWER_RANKINGS
+  MANAGER_OF_WEEK
+  WORST_DECISION
+  BAD_BEAT
+  FRAUD_WIN
+  QUOTE_OF_WEEK
+  WAIVER_REPORT
+  PREVIEW
+  GENERIC
+}
+
+model ArticleSection {
+  id                  String             @id @default(cuid())
+  articleId           String
+  article             Article            @relation(fields: [articleId], references: [id])
+  order               Int
+  sectionType         ArticleSectionType @default(GENERIC)
+  heading             String?
+  body                String
+  relatedManagerId    String?
+  relatedManager      Manager?           @relation(fields: [relatedManagerId], references: [id])
+  createdAt           DateTime           @default(now())
+
+  @@index([articleId, order])
+}
+
+enum AwardType {
+  MANAGER_OF_WEEK
+  WORST_DECISION_OF_WEEK
+  BAD_BEAT
+  FRAUD_WIN
+  CHAMPION
+  RUNNER_UP
+  MOST_POINTS_SEASON
+  BEST_WAIVER_PICKUP
+  BIGGEST_TRADE
+}
+
+model Award {
+  id            String    @id @default(cuid())
+  seasonId      String
+  season        Season    @relation(fields: [seasonId], references: [id])
+  week          Int?
+  type          AwardType
+  managerId     String
+  manager       Manager   @relation(fields: [managerId], references: [id])
+  fantasyTeamId String?
+  fantasyTeam   FantasyTeam? @relation(fields: [fantasyTeamId], references: [id])
+  description   String
+  createdAt     DateTime  @default(now())
+
+  @@index([seasonId, week])
+}
+
+// ---------------------------------------------------------------------------
+// AI content generation log (provider-agnostic)
+// ---------------------------------------------------------------------------
+
+enum AIGenerationStatus {
+  GENERATED
+  APPROVED
+  REJECTED
+  EDITED
+}
+
+/// Every AI call is logged here — structured input summary (not raw DB
+/// dumps or chat archives), provider/model, prompt version, and full output
+/// — so generations can be reviewed, regenerated, or edited before
+/// publishing. See src/server/ai/ for the provider interface.
+model AIContentGeneration {
+  id            String              @id @default(cuid())
+  contentType   ArticleType
+  relatedArticleId String?
+  relatedArticle Article?           @relation(fields: [relatedArticleId], references: [id])
+  promptVersion String
+  humorLevel    Int
+  providerName  String
+  model         String
+  inputSummary  Json
+  outputText    String
+  status        AIGenerationStatus  @default(GENERATED)
+  generatedAt   DateTime            @default(now())
+  reviewedByUserId String?
+  reviewedByUser User?              @relation("GenerationReviewer", fields: [reviewedByUserId], references: [id])
+  reviewedAt    DateTime?
+
+  @@index([contentType])
+}
+
+// ---------------------------------------------------------------------------
+// Group-chat lore ingestion (provider-agnostic parser architecture)
+// ---------------------------------------------------------------------------
+
+enum ChatPlatform {
+  IMESSAGE
+  WHATSAPP
+  GROUPME
+  DISCORD
+  PLAIN_TEXT
+  CSV
+  JSON
+}
+
+enum ChatImportStatus {
+  UPLOADED
+  PARSING
+  PARSED
+  FAILED
+  APPROVED
+}
+
+model ChatImport {
+  id             String           @id @default(cuid())
+  uploadedByUserId String
+  uploadedByUser  User             @relation("ChatImportUploader", fields: [uploadedByUserId], references: [id])
+  sourcePlatform  ChatPlatform
+  originalFileName String
+  fileSizeBytes   Int
+  status          ChatImportStatus @default(UPLOADED)
+  messageCount    Int?
+  errorMessage    String?
+  createdAt       DateTime         @default(now())
+  completedAt     DateTime?
+
+  participants ChatParticipant[]
+  messages     ChatMessage[]
+}
+
+model ChatParticipant {
+  id             String      @id @default(cuid())
+  chatImportId   String
+  chatImport     ChatImport  @relation(fields: [chatImportId], references: [id])
+  rawIdentifier  String
+  linkedManagerId String?
+  linkedManager  Manager?    @relation(fields: [linkedManagerId], references: [id])
+  isExcluded     Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  messages ChatMessage[]
+
+  @@unique([chatImportId, rawIdentifier])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SensitivityStatus {
+  NONE
+  SENSITIVE
+  REDACTED
+}
+
+/// Canonical parsed-message shape shared by every platform parser
+/// (see src/server/chat-import/providers/). Only APPROVED, non-REDACTED
+/// messages are ever eligible to be retrieved as AI context.
+model ChatMessage {
+  id                String            @id @default(cuid())
+  chatImportId      String
+  chatImport        ChatImport        @relation(fields: [chatImportId], references: [id])
+  participantId     String
+  participant       ChatParticipant   @relation(fields: [participantId], references: [id])
+  timestamp         DateTime
+  text              String?
+  hasAttachment     Boolean           @default(false)
+  attachmentsMeta   Json?
+  replyToMessageId  String?
+  replyToMessage    ChatMessage?      @relation("ChatMessageReply", fields: [replyToMessageId], references: [id])
+  replies           ChatMessage[]     @relation("ChatMessageReply")
+  sourcePlatform    ChatPlatform
+  approvalStatus    ApprovalStatus    @default(PENDING)
+  sensitivityStatus SensitivityStatus @default(NONE)
+  linkedManagerId   String?
+  linkedManager     Manager?          @relation("ChatMessageLinkedManager", fields: [linkedManagerId], references: [id])
+  linkedSeasonYear  Int?
+  linkedWeek        Int?
+  linkedMatchupId   String?
+  linkedPlayerId    String?
+  linkedPlayer      FantasyPlayer?    @relation(fields: [linkedPlayerId], references: [id])
+  createdAt         DateTime          @default(now())
+  deletedAt         DateTime?
+
+  tags    ChatTag[]
+  quotes  HistoricalQuote[]
+
+  @@index([chatImportId])
+  @@index([participantId])
+  @@index([approvalStatus, sensitivityStatus])
+}
+
+model ChatTag {
+  id        String      @id @default(cuid())
+  messageId String
+  message   ChatMessage @relation(fields: [messageId], references: [id])
+  tag       String
+  createdAt DateTime    @default(now())
+
+  @@unique([messageId, tag])
+}
+
+model HistoricalQuote {
+  id              String         @id @default(cuid())
+  text            String
+  managerId       String?
+  manager         Manager?       @relation(fields: [managerId], references: [id])
+  sourceMessageId String?
+  sourceMessage   ChatMessage?   @relation(fields: [sourceMessageId], references: [id])
+  seasonId        String?
+  season          Season?        @relation(fields: [seasonId], references: [id])
+  week            Int?
+  context         String?
+  isFeatured      Boolean        @default(false)
+  approvalStatus  ApprovalStatus @default(PENDING)
+  createdAt       DateTime       @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Sync / audit log
+// ---------------------------------------------------------------------------
+
+enum SyncType {
+  FULL_LEAGUE
+  SEASON
+  WEEK
+  TRANSACTIONS
+  DRAFT
+  STATS_RECALC
+}
+
+enum SyncStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+model DataSyncLog {
+  id               String     @id @default(cuid())
+  syncType         SyncType
+  seasonId         String?
+  season           Season?    @relation(fields: [seasonId], references: [id])
+  week             Int?
+  status           SyncStatus @default(RUNNING)
+  recordsProcessed Int?
+  errorMessage     String?
+  triggeredByUserId String?
+  triggeredByUser  User?      @relation("SyncTrigger", fields: [triggeredByUserId], references: [id])
+  startedAt        DateTime   @default(now())
+  finishedAt       DateTime?
+
+  @@index([syncType, status])
+}
