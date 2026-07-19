@@ -5,10 +5,14 @@ import {
   championships,
   finalsAppearances,
   finishesBySeason,
+  headToHeadRecord,
   playoffAppearances,
 } from "@/server/stats";
 import type { GameResult, SeasonFinish } from "@/server/stats/types";
 import type { ManagerSummary } from "@/types/view-models";
+
+const CLOSE_GAME_MARGIN = 5; // games decided by < 5 points
+const BLOWOUT_MARGIN = 40; // games decided by >= 40 points
 
 // `opponentId` is the opponent MANAGER's id (not fantasy team id), so career-vs-career
 // head-to-head lookups can filter directly by manager without an extra team->manager join.
@@ -98,6 +102,203 @@ export async function listManagerSummaries(): Promise<ManagerSummary[]> {
     });
   }
   return summaries;
+}
+
+export interface ManagerSeasonLine {
+  year: number;
+  wins: number;
+  losses: number;
+  ties: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  regularSeasonRank: number | null;
+  finalRank: number | null;
+  madePlayoffs: boolean;
+  isChampion: boolean;
+  teamName: string;
+}
+
+export interface HeadToHeadLine {
+  opponentId: string;
+  opponentName: string;
+  wins: number;
+  losses: number;
+  ties: number;
+  pointsForAvg: number;
+}
+
+/**
+ * The full detailed profile for one manager. Fetches every league game once
+ * and derives career totals, per-season lines, all-play (luck) record,
+ * margins, close/blowout splits, head-to-head vs everyone, and the weekly
+ * finish distribution. All-play and finish distribution need the whole
+ * league's weekly scores, which is why we pull all matchup teams here.
+ */
+export async function getManagerProfileDetailed(managerId: string) {
+  const manager = await prisma.manager.findUnique({
+    where: { id: managerId },
+    include: {
+      fantasyTeams: { include: { season: true }, orderBy: { season: { year: "asc" } } },
+      teamNameHistory: { orderBy: { startDate: "asc" } },
+    },
+  });
+  if (!manager) return null;
+
+  // Every scored regular-season + playoff game in the league, with each side's
+  // manager id, so we can compute all-play and finish distribution league-wide.
+  const allMatchupTeams = await prisma.matchupTeam.findMany({
+    where: { score: { not: null } },
+    include: {
+      fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } },
+      matchup: { select: { week: true, isPlayoff: true, season: { select: { year: true } } } },
+    },
+  });
+
+  // Group scores by (season, week) for all-play + finish distribution.
+  const weekKey = (year: number, week: number) => `${year}-${week}`;
+  const scoresByWeek = new Map<string, { managerId: string; points: number }[]>();
+  for (const mt of allMatchupTeams) {
+    if (mt.score == null) continue;
+    const key = weekKey(mt.matchup.season.year, mt.matchup.week);
+    const list = scoresByWeek.get(key) ?? [];
+    list.push({ managerId: mt.fantasyTeam.managerId, points: mt.score });
+    scoresByWeek.set(key, list);
+  }
+
+  const games = await buildManagerGameLog(managerId);
+  const summary = careerSummary(games);
+  const finishes = await buildSeasonFinishes(managerId);
+
+  // Per-season lines.
+  const seasonLines: ManagerSeasonLine[] = manager.fantasyTeams
+    .filter((t) => t.season.status !== "UPCOMING" || t.wins + t.losses + t.ties > 0)
+    .map((t) => ({
+      year: t.season.year,
+      wins: t.wins,
+      losses: t.losses,
+      ties: t.ties,
+      pointsFor: t.pointsFor,
+      pointsAgainst: t.pointsAgainst,
+      regularSeasonRank: t.regularSeasonRank,
+      finalRank: t.finalRank,
+      madePlayoffs: t.madePlayoffs,
+      isChampion: t.isChampion,
+      teamName: t.teamName,
+    }));
+
+  const winPct = (l: ManagerSeasonLine) => {
+    const g = l.wins + l.losses + l.ties;
+    return g ? (l.wins + 0.5 * l.ties) / g : 0;
+  };
+  const playedSeasons = seasonLines.filter((l) => l.wins + l.losses + l.ties > 0);
+  const bestSeason = [...playedSeasons].sort((a, b) => winPct(b) - winPct(a) || b.pointsFor - a.pointsFor)[0] ?? null;
+  const worstSeason = [...playedSeasons].sort((a, b) => winPct(a) - winPct(b) || a.pointsFor - b.pointsFor)[0] ?? null;
+
+  // Margins, close games, blowouts (regular + playoff decided games).
+  const decided = games.filter((g) => g.result !== "T");
+  const wins = decided.filter((g) => g.result === "W");
+  const losses = decided.filter((g) => g.result === "L");
+  const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const avgMarginVictory = avg(wins.map((g) => g.pointsFor - g.pointsAgainst));
+  const avgMarginDefeat = avg(losses.map((g) => g.pointsAgainst - g.pointsFor));
+  const closeGames = decided.filter((g) => Math.abs(g.pointsFor - g.pointsAgainst) < CLOSE_GAME_MARGIN);
+  const blowouts = decided.filter((g) => Math.abs(g.pointsFor - g.pointsAgainst) >= BLOWOUT_MARGIN);
+  const closeRecord = {
+    wins: closeGames.filter((g) => g.result === "W").length,
+    losses: closeGames.filter((g) => g.result === "L").length,
+  };
+  const blowoutRecord = {
+    wins: blowouts.filter((g) => g.result === "W").length,
+    losses: blowouts.filter((g) => g.result === "L").length,
+  };
+
+  // All-play career record + weekly finish distribution (this manager only).
+  let apW = 0;
+  let apL = 0;
+  let apT = 0;
+  const numTeamsSeen = new Set<number>();
+  const finishCounts = new Map<number, number>(); // finish position -> count
+  for (const g of games) {
+    const key = weekKey(g.season, g.week);
+    const scores = scoresByWeek.get(key);
+    if (!scores) continue;
+    const teamCount = scores.length;
+    numTeamsSeen.add(teamCount);
+    const mine = g.pointsFor;
+    let better = 0; // teams that scored higher than me
+    for (const s of scores) {
+      if (s.managerId === managerId) continue;
+      if (mine > s.points) apW += 1;
+      else if (mine < s.points) apL += 1;
+      else apT += 1;
+      if (s.points > mine) better += 1;
+    }
+    const finish = better + 1; // 1 = highest score that week
+    finishCounts.set(finish, (finishCounts.get(finish) ?? 0) + 1);
+  }
+  const allPlayGames = apW + apL + apT;
+  const allPlayWinPct = allPlayGames ? (apW + 0.5 * apT) / allPlayGames : 0;
+  // Luck = actual win% vs all-play win%. If you win more than your all-play
+  // rate suggests, you've been lucky (favorable schedule); less, unlucky.
+  const luckDelta = summary.winningPercentage - allPlayWinPct;
+  const luckLabel = luckDelta > 0.03 ? "lucky" : luckDelta < -0.03 ? "unlucky" : "neutral";
+  const maxFinishSlots = Math.max(1, ...numTeamsSeen);
+  const finishDistribution = Array.from({ length: maxFinishSlots }, (_, i) => ({
+    finish: i + 1,
+    count: finishCounts.get(i + 1) ?? 0,
+  }));
+
+  // Head-to-head vs every other manager.
+  const byOpp = new Map<string, GameResult[]>();
+  const oppName = new Map<string, string>();
+  for (const mt of allMatchupTeams) {
+    if (mt.fantasyTeam.managerId !== managerId) {
+      oppName.set(mt.fantasyTeam.managerId, mt.fantasyTeam.manager.displayName);
+    }
+  }
+  for (const g of games) {
+    const list = byOpp.get(g.opponentId) ?? [];
+    list.push(g);
+    byOpp.set(g.opponentId, list);
+  }
+  const headToHead: HeadToHeadLine[] = [...byOpp.entries()]
+    .map(([opponentId, log]) => {
+      const rec = headToHeadRecord(log);
+      return {
+        opponentId,
+        opponentName: oppName.get(opponentId) ?? "Unknown",
+        wins: rec.wins,
+        losses: rec.losses,
+        ties: rec.ties,
+        pointsForAvg: Number(avg(log.map((g) => g.pointsFor)).toFixed(1)),
+      };
+    })
+    .sort((a, b) => b.wins + b.losses + b.ties - (a.wins + a.losses + a.ties) || a.opponentName.localeCompare(b.opponentName));
+
+  const champs = await prisma.championship.count({ where: { championManagerId: managerId } });
+
+  return {
+    manager,
+    seasonLines,
+    stats: {
+      ...summary,
+      championships: champs,
+      playoffAppearances: playoffAppearances(finishes),
+      finalsAppearances: finalsAppearances(finishes),
+      averageFinish: Number(averageFinish(finishes).toFixed(2)),
+      finishes: finishesBySeason(finishes),
+      avgMarginVictory: Number(avgMarginVictory.toFixed(1)),
+      avgMarginDefeat: Number(avgMarginDefeat.toFixed(1)),
+      closeRecord,
+      blowoutRecord,
+      allPlay: { wins: apW, losses: apL, ties: apT, winPct: Number(allPlayWinPct.toFixed(3)) },
+      luck: { delta: Number(luckDelta.toFixed(3)), label: luckLabel },
+    },
+    bestSeason,
+    worstSeason,
+    finishDistribution,
+    headToHead,
+  };
 }
 
 export async function getManagerProfile(managerId: string) {
