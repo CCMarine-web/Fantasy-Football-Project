@@ -69,13 +69,26 @@ enum SeasonStatus {
   COMPLETE
 }
 
+/// Where a season's data came from. Sleeper covers 2023+; pre-2023 history
+/// lived on ESPN and is not retrievable from Sleeper's API, so those seasons
+/// will be imported from ESPN's leagueHistory endpoint (or entered manually)
+/// and tagged accordingly. Stats/records/rivalries read across all sources.
+enum SeasonDataSource {
+  SLEEPER
+  ESPN
+  MANUAL
+}
+
 model Season {
   id                     String       @id @default(cuid())
   leagueId               String
   league                 League       @relation(fields: [leagueId], references: [id])
   year                   Int
+  dataSource             SeasonDataSource @default(SLEEPER)
   sleeperLeagueId        String?      @unique
   previousSleeperLeagueId String?
+  /// ESPN league id for ESPN-sourced seasons (null for Sleeper seasons).
+  espnLeagueId           String?
   status                 SeasonStatus @default(UPCOMING)
   regularSeasonWeeks     Int          @default(14)
   playoffTeams           Int          @default(6)
