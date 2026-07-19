@@ -38,7 +38,8 @@ test("login with the seeded admin account reaches the homepage", async ({ page }
   await page.goto("/login");
   await page.getByLabel("Email").fill("admin@gridirongazette.local");
   await page.getByLabel("Password").fill("GazetteAdmin123!");
-  await page.getByRole("button", { name: /sign in/i }).click();
+  // Scope to the form's submit button — the header also has a "Sign in" link.
+  await page.getByRole("main").getByRole("button", { name: /sign in/i }).click();
   await expect(page).toHaveURL("/");
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: /admin dashboard/i })).toBeVisible();
