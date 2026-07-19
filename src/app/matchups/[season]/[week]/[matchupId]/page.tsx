@@ -8,6 +8,7 @@ import {
   getHeadToHeadGameLog,
 } from "@/server/repositories/manager-repository";
 import { getMatchupById, getRosterForTeamWeek } from "@/server/repositories/matchup-repository";
+import { getMatchupAIContent } from "@/server/ai/weekly-pipeline";
 import {
   closestMeeting,
   currentStreak,
@@ -122,6 +123,7 @@ export default async function MatchupDetailPage({
   const blowout = largestBlowout(h2hGames);
 
   const isFinal = matchup.status === "FINAL";
+  const aiContent = await getMatchupAIContent(matchup.id);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -219,13 +221,24 @@ export default async function MatchupDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">
-              An AI-generated matchup preview will appear here once this week&apos;s content has been
-              generated and approved.
-            </p>
-            <Badge variant="outline" className="mt-3">
-              AI content status: not generated
-            </Badge>
+            {aiContent.preview ? (
+              <>
+                <p className="text-sm whitespace-pre-line text-foreground/90">{aiContent.preview}</p>
+                <Badge variant="outline" className="mt-3">
+                  {aiContent.isMock ? "Placeholder (mock AI)" : "AI-generated"}
+                </Badge>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  An AI-generated matchup preview will appear here once this week&apos;s content has
+                  been generated (weekly during the season).
+                </p>
+                <Badge variant="outline" className="mt-3">
+                  AI content status: not generated
+                </Badge>
+              </>
+            )}
           </CardContent>
         </Card>
         <Card>
@@ -235,14 +248,25 @@ export default async function MatchupDetailPage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">
-              {isFinal
-                ? "An AI-generated recap will appear here once generated and approved."
-                : "A recap will be available after this matchup is final."}
-            </p>
-            <Badge variant="outline" className="mt-3">
-              AI content status: not generated
-            </Badge>
+            {aiContent.recap ? (
+              <>
+                <p className="text-sm whitespace-pre-line text-foreground/90">{aiContent.recap}</p>
+                <Badge variant="outline" className="mt-3">
+                  {aiContent.isMock ? "Placeholder (mock AI)" : "AI-generated"}
+                </Badge>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">
+                  {isFinal
+                    ? "An AI-generated recap will appear here once generated (weekly during the season)."
+                    : "A recap will be available after this matchup is final."}
+                </p>
+                <Badge variant="outline" className="mt-3">
+                  AI content status: not generated
+                </Badge>
+              </>
+            )}
           </CardContent>
         </Card>
       </section>

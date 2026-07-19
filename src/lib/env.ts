@@ -18,6 +18,9 @@ const envSchema = z.object({
   OPENAI_API_KEY: z.string().optional().default(""),
   OPENAI_MODEL: z.string().default("gpt-5-mini"),
   DEFAULT_HUMOR_LEVEL: z.coerce.number().int().min(1).max(5).default(3),
+  // Shared secret for the weekly cron endpoint. When set, /api/cron/weekly
+  // requires `Authorization: Bearer <CRON_SECRET>` (Vercel Cron sends this).
+  CRON_SECRET: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof envSchema>;

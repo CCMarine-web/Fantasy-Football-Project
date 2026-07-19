@@ -9,6 +9,8 @@ import type { ContentSafeguards } from "../types";
 export const MATCHUP_RECAP_PROMPT_VERSION = "matchup-recap-v1";
 
 export interface MatchupRecapInput {
+  /** Optional link back to the Matchup so generated content can be retrieved. */
+  matchupId?: string;
   week: number;
   season: number;
   teamA: {

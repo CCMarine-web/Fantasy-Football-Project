@@ -13,6 +13,8 @@ import type { ContentSafeguards } from "../types";
 export const MATCHUP_PREVIEW_PROMPT_VERSION = "matchup-preview-v1";
 
 export interface MatchupPreviewInput {
+  /** Optional link back to the Matchup so generated content can be retrieved. */
+  matchupId?: string;
   week: number;
   season: number;
   teamA: {
