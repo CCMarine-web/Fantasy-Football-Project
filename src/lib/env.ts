@@ -22,7 +22,19 @@ let cached: Env | undefined;
 
 export function getEnv(): Env {
   if (!cached) {
-    cached = envSchema.parse(process.env);
+    const parsed = envSchema.safeParse(process.env);
+    if (!parsed.success) {
+      const missing = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
+      // Surface a clear, actionable message in server logs instead of a raw
+      // ZodError. On Vercel this almost always means the variable isn't set
+      // under Settings → Environment Variables for the deployed environment.
+      throw new Error(
+        `Missing or invalid environment variables: ${missing}. ` +
+          `Set these in your hosting provider's environment settings ` +
+          `(on Vercel: Settings → Environment Variables). See .env.example.`,
+      );
+    }
+    cached = parsed.data;
   }
   return cached;
 }

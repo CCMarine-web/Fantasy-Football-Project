@@ -1,9 +1,27 @@
-import { prisma } from "@/lib/db";
+import { prisma, isDatabaseUnavailableError } from "@/lib/db";
 import { getCurrentSeason } from "@/server/repositories/season-repository";
 import { getMatchupsForWeek } from "@/server/repositories/matchup-repository";
 import { getStandingsForSeason } from "@/server/repositories/standings-repository";
 
+/**
+ * Returns homepage data, or `null` when there's nothing to show yet — either
+ * no season has been configured, OR the database is unreachable/unconfigured
+ * (common on a fresh deploy before DATABASE_URL is set and migrations/sync
+ * have run). Both cases render the homepage's welcome/empty state as a clean
+ * 200 rather than a 500. Genuine query bugs still throw and hit error.tsx.
+ */
 export async function getHomepageData() {
+  try {
+    return await loadHomepageData();
+  } catch (err) {
+    if (isDatabaseUnavailableError(err)) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+async function loadHomepageData() {
   const season = await getCurrentSeason();
   if (!season) {
     return null;
