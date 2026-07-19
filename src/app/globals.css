@@ -98,35 +98,39 @@
   --card-foreground: oklch(0.96 0.005 250);
   --popover: oklch(0.19 0.014 250);
   --popover-foreground: oklch(0.96 0.005 250);
-  --primary: oklch(0.795 0.16 86);
-  --primary-foreground: oklch(0.18 0.02 86);
+  /* Primary accent: light blue (#41b0eb) — 7.99:1 on the dark background. */
+  --primary: oklch(0.72 0.13 236);
+  --primary-foreground: oklch(0.18 0.03 236);
   --secondary: oklch(0.27 0.016 250);
   --secondary-foreground: oklch(0.96 0.005 250);
   --muted: oklch(0.25 0.014 250);
   --muted-foreground: oklch(0.66 0.02 250);
-  --accent: oklch(0.3 0.03 152);
-  --accent-foreground: oklch(0.96 0.02 152);
+  --accent: oklch(0.3 0.03 236);
+  --accent-foreground: oklch(0.96 0.02 236);
   --destructive: oklch(0.65 0.22 25);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.795 0.16 86 / 60%);
-  --chart-1: oklch(0.795 0.16 86);
-  --chart-2: oklch(0.6 0.14 152);
-  --chart-3: oklch(0.62 0.19 25);
-  --chart-4: oklch(0.65 0.18 250);
-  --chart-5: oklch(0.75 0.05 250);
+  --ring: oklch(0.72 0.13 236 / 60%);
+  --chart-1: oklch(0.72 0.13 236);
+  --chart-2: oklch(0.62 0.14 196);
+  --chart-3: oklch(0.64 0.2 25);
+  --chart-4: oklch(0.68 0.15 300);
+  --chart-5: oklch(0.75 0.04 250);
   --sidebar: oklch(0.18 0.014 250);
   --sidebar-foreground: oklch(0.96 0.005 250);
-  --sidebar-primary: oklch(0.795 0.16 86);
-  --sidebar-primary-foreground: oklch(0.18 0.02 86);
+  --sidebar-primary: oklch(0.72 0.13 236);
+  --sidebar-primary-foreground: oklch(0.18 0.03 236);
   --sidebar-accent: oklch(0.27 0.016 250);
   --sidebar-accent-foreground: oklch(0.96 0.005 250);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.795 0.16 86 / 60%);
+  --sidebar-ring: oklch(0.72 0.13 236 / 60%);
+  /* Win/positive stays green (semantic), separate from the blue accent. */
   --field: oklch(0.5 0.1 152);
   --field-foreground: oklch(0.98 0 0);
-  --gold: oklch(0.795 0.16 86);
-  --gold-foreground: oklch(0.18 0.02 86);
+  /* `--gold` kept as a token name for compatibility, now the light-blue
+     accent so championship/trophy elements match the rest of the UI. */
+  --gold: oklch(0.72 0.13 236);
+  --gold-foreground: oklch(0.18 0.03 236);
 }
 
 @layer base {
