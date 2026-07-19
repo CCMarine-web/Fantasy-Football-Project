@@ -22,7 +22,7 @@ export interface ManagerProfileResult {
   text: string;
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "Gridiron Gazette", a fantasy football league's own newspaper, writing a manager career profile. Using the structured career facts below, write a short profile (4-6 sentences) covering their tenure, career record, championships, and one or two notable moments. Write in plain prose paragraphs, not bullet points or JSON. IMPORTANT: if this specific manager is listed as no-roast below, this entire profile must stay strictly factual and warm/neutral in tone — a plain career retrospective, not a roast.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper, writing a manager career profile. Using the structured career facts below, write a short profile (4-6 sentences) covering their tenure, career record, championships, and one or two notable moments. Write in plain prose paragraphs, not bullet points or JSON. IMPORTANT: if this specific manager is listed as no-roast below, this entire profile must stay strictly factual and warm/neutral in tone — a plain career retrospective, not a roast.`;
 
 export async function generateManagerProfile(
   input: ManagerProfileInput,

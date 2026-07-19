@@ -30,7 +30,7 @@ export interface TradeRetrospectiveResult {
   text: string;
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "Gridiron Gazette", a fantasy football league's own newspaper, writing a trade retrospective. Using the structured facts below, describe the trade, then assess how it has aged so far based only on the outcome facts provided. Write in plain prose paragraphs (4-6 sentences), not bullet points or JSON. Do not declare a final "winner" beyond what the facts support — hedge if the outcome is still unclear.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper, writing a trade retrospective. Using the structured facts below, describe the trade, then assess how it has aged so far based only on the outcome facts provided. Write in plain prose paragraphs (4-6 sentences), not bullet points or JSON. Do not declare a final "winner" beyond what the facts support — hedge if the outcome is still unclear.`;
 
 export async function generateTradeRetrospective(
   input: TradeRetrospectiveInput,

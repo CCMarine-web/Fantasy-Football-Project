@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { MatchupCard } from "@/components/shared/matchup-card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { getHomepageData } from "@/server/repositories/homepage-repository";
+import { BRAND } from "@/lib/branding";
 
 export default async function HomePage() {
   const data = await getHomepageData();
@@ -16,7 +17,7 @@ export default async function HomePage() {
       <div className="mx-auto max-w-3xl px-4 py-24 sm:px-6 lg:px-8">
         <EmptyState
           icon={Trophy}
-          title="Welcome to The Gridiron Gazette"
+          title={`Welcome to ${BRAND.name}`}
           description="No active season is configured yet. Seed the database or configure a Sleeper league from the admin dashboard to bring this homepage to life."
         />
         <div className="mt-6 flex justify-center">
@@ -50,11 +51,11 @@ export default async function HomePage() {
             {season.year} Season · Week {currentWeek}
           </p>
           <h1 className="mt-2 font-heading text-4xl font-semibold tracking-wide uppercase sm:text-5xl">
-            The Gridiron Gazette
+            {BRAND.name}
           </h1>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            The official record of the Gridiron Mayhem Fantasy Football League — scores, standings,
-            history, and the occasional roast.
+            The official record of {BRAND.longName} — scores, standings, history, and the occasional
+            roast.
           </p>
         </div>
         {defendingChampionship ? (

@@ -7,6 +7,10 @@ import { z } from "zod";
  */
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),
+  // Optional: a direct (non-pooled) connection string used only by the Prisma
+  // CLI for migrations (see prisma.config.ts). Not needed by the app runtime,
+  // so it is not required on Vercel.
+  DIRECT_URL: z.string().optional().default(""),
   AUTH_SECRET: z.string().min(1),
   AUTH_URL: z.string().url().default("http://localhost:3000"),
   SLEEPER_LEAGUE_ID: z.string().optional().default(""),

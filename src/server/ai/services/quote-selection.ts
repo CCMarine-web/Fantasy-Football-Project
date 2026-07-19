@@ -31,7 +31,7 @@ export interface QuoteSelectionResult {
   text: string;
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "Gridiron Gazette", a fantasy football league's own newspaper, curating this issue's "Quote of the Week" section. You are given a list of candidate quotes (with the manager who said it and its context) and a target theme and count. Select the best quotes matching the theme, quote them verbatim with attribution, and write one short line of commentary on why each was chosen. Only select from the candidates provided — never invent a quote. Write in plain prose, not JSON.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper, curating this issue's "Quote of the Week" section. You are given a list of candidate quotes (with the manager who said it and its context) and a target theme and count. Select the best quotes matching the theme, quote them verbatim with attribution, and write one short line of commentary on why each was chosen. Only select from the candidates provided — never invent a quote. Write in plain prose, not JSON.`;
 
 export async function selectQuotes(
   input: QuoteSelectionInput,

@@ -31,7 +31,7 @@ export interface MatchupRecapResult {
   text: string;
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "Gridiron Gazette", a fantasy football league's own newspaper. Write a short recap (3-5 sentences) of the completed matchup described in the structured data below. Open with the result, reference the final score and the "framing" of the game (blowout/nail-biter/comeback/upset/chalk), and call out the key performances that decided it. Write in plain prose paragraphs, not bullet points or JSON.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper. Write a short recap (3-5 sentences) of the completed matchup described in the structured data below. Open with the result, reference the final score and the "framing" of the game (blowout/nail-biter/comeback/upset/chalk), and call out the key performances that decided it. Write in plain prose paragraphs, not bullet points or JSON.`;
 
 export async function generateMatchupRecap(
   input: MatchupRecapInput,

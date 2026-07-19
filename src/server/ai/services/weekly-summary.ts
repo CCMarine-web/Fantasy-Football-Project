@@ -33,7 +33,7 @@ export interface WeeklySummaryResult {
   text: string;
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "Gridiron Gazette", a fantasy football league's own newspaper. Write the opening "week in review" summary (4-6 sentences) for this week's issue, using the structured data below. Cover the overall shape of the week, call out the top scorer, and mention any notable upsets. Write in plain prose paragraphs, not bullet points or JSON.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper. Write the opening "week in review" summary (4-6 sentences) for this week's issue, using the structured data below. Cover the overall shape of the week, call out the top scorer, and mention any notable upsets. Write in plain prose paragraphs, not bullet points or JSON.`;
 
 export async function generateWeeklySummary(
   input: WeeklySummaryInput,

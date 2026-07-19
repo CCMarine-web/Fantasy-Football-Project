@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BRAND } from "@/lib/branding";
 
 /**
  * Route-level error boundary. Catches any error thrown while rendering a page
@@ -32,9 +33,9 @@ export default function Error({
         We couldn&apos;t load this page
       </h1>
       <p className="text-sm text-muted-foreground">
-        The Gridiron Gazette had trouble reaching its data. This is usually a temporary connection
-        issue — try again in a moment. If it keeps happening, the league database may need to be
-        configured or synced.
+        {BRAND.name} had trouble reaching its data. This is usually a temporary connection issue —
+        try again in a moment. If it keeps happening, the league database may need to be configured
+        or synced.
       </p>
       <Button onClick={reset}>
         <RotateCw className="h-4 w-4" />

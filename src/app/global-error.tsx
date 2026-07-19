@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { BRAND } from "@/lib/branding";
 
 /**
  * Last-resort boundary for errors thrown in the root layout itself (which the
@@ -37,7 +38,7 @@ export default function GlobalError({
           fontFamily: "system-ui, sans-serif",
         }}
       >
-        <h1 style={{ fontSize: "1.5rem", fontWeight: 600 }}>The Gridiron Gazette is unavailable</h1>
+        <h1 style={{ fontSize: "1.5rem", fontWeight: 600 }}>{BRAND.name} is unavailable</h1>
         <p style={{ maxWidth: "32rem", color: "#a0a4ab", fontSize: "0.9rem" }}>
           The site couldn&apos;t start up. This usually means a required server setting (such as the
           database connection or auth secret) is missing or invalid.

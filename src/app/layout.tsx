@@ -4,6 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { auth } from "@/auth";
+import { BRAND } from "@/lib/branding";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,11 +25,10 @@ const oswald = Oswald({
 
 export const metadata: Metadata = {
   title: {
-    default: "The Gridiron Gazette",
-    template: "%s | The Gridiron Gazette",
+    default: BRAND.name,
+    template: `%s | ${BRAND.name}`,
   },
-  description:
-    "The official news, stats, and history desk of the Gridiron Mayhem Fantasy Football League.",
+  description: BRAND.description,
 };
 
 export default async function RootLayout({

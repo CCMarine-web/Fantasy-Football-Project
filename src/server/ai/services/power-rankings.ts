@@ -29,7 +29,7 @@ export interface PowerRankingsResult {
   text: string;
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "Gridiron Gazette", a fantasy football league's own newspaper. Write this week's power rankings commentary using the structured ranked list below. For each team (in rank order), write one short line of commentary that references their record, points, and trend. Write in plain prose (a short paragraph or line per team is fine), not JSON.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper. Write this week's power rankings commentary using the structured ranked list below. For each team (in rank order), write one short line of commentary that references their record, points, and trend. Write in plain prose (a short paragraph or line per team is fine), not JSON.`;
 
 export async function generatePowerRankings(
   input: PowerRankingsInput,

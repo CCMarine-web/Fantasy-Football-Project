@@ -1,5 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoginForm } from "@/app/login/login-form";
+import { BRAND } from "@/lib/branding";
 
 export default async function LoginPage({
   searchParams,
@@ -14,7 +15,7 @@ export default async function LoginPage({
         <CardHeader>
           <CardTitle className="font-heading text-2xl uppercase">Sign in</CardTitle>
           <CardDescription>
-            Private league site — sign in with your Gridiron Gazette account.
+            Private league site — sign in with your {BRAND.name} account.
           </CardDescription>
         </CardHeader>
         <CardContent>

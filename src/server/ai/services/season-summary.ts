@@ -25,7 +25,7 @@ export interface SeasonSummaryResult {
   text: string;
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "Gridiron Gazette", a fantasy football league's own newspaper, writing the season-ending retrospective. Using the structured facts below, write a season summary (5-8 sentences) that crowns the champion, recaps the standings, and touches on the season's storylines. Write in plain prose paragraphs, not bullet points or JSON.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper, writing the season-ending retrospective. Using the structured facts below, write a season summary (5-8 sentences) that crowns the champion, recaps the standings, and touches on the season's storylines. Write in plain prose paragraphs, not bullet points or JSON.`;
 
 export async function generateSeasonSummary(
   input: SeasonSummaryInput,

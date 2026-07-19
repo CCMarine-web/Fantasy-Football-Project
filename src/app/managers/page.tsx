@@ -6,6 +6,7 @@ import { TeamAvatar } from "@/components/shared/team-avatar";
 import { Badge } from "@/components/ui/badge";
 import { listManagerSummaries } from "@/server/repositories/manager-repository";
 import { Users } from "lucide-react";
+import { BRAND } from "@/lib/branding";
 
 export const metadata = { title: "Managers" };
 
@@ -17,7 +18,7 @@ export default async function ManagersPage() {
       <PageHeader
         eyebrow="The League"
         title="Managers"
-        description="Every manager who has ever fielded a team in the Gridiron Mayhem Fantasy Football League."
+        description={`Every manager who has ever fielded a team in ${BRAND.longName}.`}
       />
       <div className="mt-8">
         {managers.length === 0 ? (

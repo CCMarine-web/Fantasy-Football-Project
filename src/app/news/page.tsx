@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { listPublishedArticles } from "@/server/repositories/news-repository";
 import { Newspaper } from "lucide-react";
+import { BRAND } from "@/lib/branding";
 
 export const metadata = { title: "News" };
 
@@ -14,7 +15,7 @@ export default async function NewsPage() {
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader
-        eyebrow="The Gridiron Gazette"
+        eyebrow={BRAND.name}
         title="News Archive"
         description="The weekly league newspaper — recaps, power rankings, awards, and everything in between."
       />

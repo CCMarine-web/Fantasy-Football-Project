@@ -23,6 +23,7 @@ import {
 import { cn } from "@/lib/utils";
 import { allNav, primaryNav } from "@/components/layout/nav-links";
 import { logoutAction } from "@/app/login/actions";
+import { BRAND } from "@/lib/branding";
 
 export interface SiteHeaderUser {
   name?: string | null;
@@ -59,10 +60,10 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
           </span>
           <span className="flex flex-col leading-none">
             <span className="font-heading text-lg font-semibold tracking-wide uppercase">
-              Gridiron Gazette
+              {BRAND.name}
             </span>
             <span className="text-[11px] tracking-[0.2em] text-muted-foreground uppercase">
-              Gridiron Mayhem FFL
+              {BRAND.tagline}
             </span>
           </span>
         </Link>

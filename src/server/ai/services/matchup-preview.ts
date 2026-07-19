@@ -37,7 +37,7 @@ export interface MatchupPreviewResult {
   text: string;
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "Gridiron Gazette", a fantasy football league's own newspaper. Write a short, engaging matchup preview (3-5 sentences) for the upcoming game described in the structured data below. Build anticipation, reference the records/recent form/head-to-head history, and call out a key player or two to watch. Write in plain prose paragraphs, not bullet points or JSON.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper. Write a short, engaging matchup preview (3-5 sentences) for the upcoming game described in the structured data below. Build anticipation, reference the records/recent form/head-to-head history, and call out a key player or two to watch. Write in plain prose paragraphs, not bullet points or JSON.`;
 
 export async function generateMatchupPreview(
   input: MatchupPreviewInput,
