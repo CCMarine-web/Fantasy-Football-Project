@@ -7,10 +7,13 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { MatchupCard } from "@/components/shared/matchup-card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { getHomepageData } from "@/server/repositories/homepage-repository";
+import { getLastSeasonNarrative } from "@/server/repositories/season-narrative-repository";
 import { BRAND } from "@/lib/branding";
+import { LEAGUE_CONFIG } from "@/lib/league-config";
+import { DraftCountdown } from "@/components/home/draft-countdown";
 
 export default async function HomePage() {
-  const data = await getHomepageData();
+  const [data, seasonNarrative] = await Promise.all([getHomepageData(), getLastSeasonNarrative()]);
 
   if (!data) {
     return (
@@ -58,25 +61,59 @@ export default async function HomePage() {
             roast.
           </p>
         </div>
-        {defendingChampionship ? (
-          <Card className="w-full max-w-xs shrink-0 border-gold/40 bg-gold/5">
-            <CardContent className="flex items-center gap-3">
-              <Trophy className="h-8 w-8 text-gold" />
-              <div>
-                <p className="text-xs tracking-wide text-muted-foreground uppercase">
-                  Defending Champion
-                </p>
-                <p className="font-heading text-lg font-semibold">
-                  {defendingChampionship.championManager.displayName}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {defendingChampionship.championFantasyTeam.teamName}
+        <div className="flex w-full shrink-0 flex-col gap-3 lg:max-w-xs">
+          {LEAGUE_CONFIG.showDraftCountdown ? <DraftCountdown isoDate={LEAGUE_CONFIG.draftDate} /> : null}
+          {defendingChampionship ? (
+            <Card className="border-primary/40 bg-primary/5">
+              <CardContent className="flex items-center gap-3">
+                <Trophy className="h-8 w-8 text-primary" />
+                <div>
+                  <p className="text-xs tracking-wide text-muted-foreground uppercase">
+                    Defending Champion
+                  </p>
+                  <p className="font-heading text-lg font-semibold">
+                    {defendingChampionship.championManager.displayName}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {defendingChampionship.championFantasyTeam.teamName}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      </section>
+
+      {/* Last season in review (AI narrative) */}
+      {seasonNarrative ? (
+        <section className="mt-8">
+          <div className="mb-3 flex items-center gap-2">
+            <Newspaper className="h-4 w-4 text-primary" />
+            <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+              {seasonNarrative.seasonYear} Season in Review
+            </h2>
+          </div>
+          <Card>
+            <CardContent className="space-y-3">
+              <div className="flex items-center gap-3">
+                <Trophy className="h-5 w-5 shrink-0 text-primary" />
+                <p className="text-sm">
+                  <span className="font-semibold">{seasonNarrative.championName}</span> won the{" "}
+                  {seasonNarrative.seasonYear} title with {seasonNarrative.championTeam}.
                 </p>
               </div>
+              <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/90">
+                {seasonNarrative.text}
+              </p>
+              {seasonNarrative.isMock ? (
+                <p className="text-xs text-muted-foreground">
+                  Placeholder recap — add an <code>OPENAI_API_KEY</code> for a real AI-written summary.
+                </p>
+              ) : null}
             </CardContent>
           </Card>
-        ) : null}
-      </section>
+        </section>
+      ) : null}
 
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
         {/* Main column */}
