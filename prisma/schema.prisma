@@ -41,6 +41,7 @@ model User {
   reviewedGenerations     AIContentGeneration[]  @relation("GenerationReviewer")
   triggeredSyncs          DataSyncLog[]          @relation("SyncTrigger")
   authoredArticles        Article[]              @relation("ArticleAuthor")
+  predictions             Prediction[]           @relation("PredictionUser")
 }
 
 // ---------------------------------------------------------------------------
@@ -108,6 +109,11 @@ model Season {
   leagueRecords     LeagueRecord[]
   historicalQuotes  HistoricalQuote[]
   dataSyncLogs      DataSyncLog[]
+  punishments       Punishment[]
+  predictions       Prediction[]
+  draftGrades       DraftGrade[]
+  weeklyAwards      WeeklyAward[]
+  receipts          Receipt[]
 
   @@unique([leagueId, year])
 }
@@ -124,6 +130,12 @@ model Manager {
   sleeperUserId String?   @unique
   avatarUrl     String?
   bio           String?
+  /// Uploaded face photo (separate from the Sleeper avatar). URL or /public path.
+  photoUrl      String?
+  /// Personality layer (admin-editable).
+  nickname       String?
+  nicknameOrigin String?
+  signatureMove  String?
   joinedYear    Int
   isActive      Boolean   @default(true)
   /// Per-manager AI-safeguard opt-out (spec: "per-manager no-roast settings").
@@ -146,6 +158,11 @@ model Manager {
   rivalriesAsA       Rivalry[]            @relation("RivalryManagerA")
   rivalriesAsB       Rivalry[]            @relation("RivalryManagerB")
   leagueRecords      LeagueRecord[]
+  punishments        Punishment[]
+  predictionsMade    Prediction[]         @relation("PredictionAuthor")
+  draftGrades        DraftGrade[]
+  weeklyAwards       WeeklyAward[]
+  chatIdentityMaps   ChatIdentityMap[]    @relation("ChatIdentityManager")
 }
 
 /// A manager's team for one specific season (Sleeper roster).
@@ -482,7 +499,26 @@ model Championship {
   runnerUpFantasyTeam  FantasyTeam? @relation("ChampionshipRunnerUp", fields: [runnerUpFantasyTeamId], references: [id])
   thirdPlaceFantasyTeamId String?
   thirdPlaceFantasyTeam FantasyTeam? @relation("ChampionshipThird", fields: [thirdPlaceFantasyTeamId], references: [id])
+  /// Editable victory speech shown on the Championship Belt page.
+  victorySpeech        String?
   createdAt            DateTime    @default(now())
+}
+
+/// Manually-recorded last-place punishment for a season (Hall of Shame).
+/// Admin-editable; the photo slot is a URL (upload later, or /public path).
+model Punishment {
+  id          String   @id @default(cuid())
+  seasonId    String?
+  season      Season?  @relation(fields: [seasonId], references: [id])
+  year        Int
+  managerId   String?
+  manager     Manager? @relation(fields: [managerId], references: [id])
+  description String
+  photoUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([year])
 }
 
 enum RecordCategory {
@@ -774,8 +810,9 @@ model ChatMessage {
   createdAt         DateTime          @default(now())
   deletedAt         DateTime?
 
-  tags    ChatTag[]
-  quotes  HistoricalQuote[]
+  tags     ChatTag[]
+  quotes   HistoricalQuote[]
+  receipts Receipt[]
 
   @@index([chatImportId])
   @@index([participantId])
@@ -843,4 +880,122 @@ model DataSyncLog {
   finishedAt       DateTime?
 
   @@index([syncType, status])
+}
+
+// ---------------------------------------------------------------------------
+// Feature-expansion models
+// ---------------------------------------------------------------------------
+
+/// A signed-in manager's preseason predictions for a season. Locks at a
+/// deadline; accuracy is scored live and at season end (Prophet Rating).
+model Prediction {
+  id                       String   @id @default(cuid())
+  seasonId                 String
+  season                   Season   @relation(fields: [seasonId], references: [id])
+  userId                   String?
+  user                     User?    @relation("PredictionUser", fields: [userId], references: [id])
+  /// The manager this prediction is FOR/BY (predictions are per manager).
+  managerId                String
+  manager                  Manager  @relation("PredictionAuthor", fields: [managerId], references: [id])
+  /// Ordered array of predicted final-standings managerIds (1st..last).
+  predictedStandings       Json
+  predictedChampionManagerId String?
+  predictedLastManagerId   String?
+  predictedOwnWins         Int?
+  predictedOwnLosses       Int?
+  bustManagerId            String?
+  boldTake                 String?
+  /// True once the deadline has passed and this can no longer be edited.
+  locked                   Boolean  @default(false)
+  submittedAt              DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+
+  @@unique([seasonId, managerId])
+}
+
+enum GradeLetter {
+  A_PLUS
+  A
+  A_MINUS
+  B_PLUS
+  B
+  B_MINUS
+  C_PLUS
+  C
+  C_MINUS
+  D
+  F
+}
+
+/// AI draft grade for one manager in one season, plus an optional "revisited"
+/// grade computed after the season completes (original vs. actual outcome).
+model DraftGrade {
+  id                 String       @id @default(cuid())
+  seasonId           String
+  season             Season       @relation(fields: [seasonId], references: [id])
+  managerId          String
+  manager            Manager      @relation(fields: [managerId], references: [id])
+  grade              GradeLetter?
+  rationale          String?
+  revisitedGrade     GradeLetter?
+  revisitedRationale String?
+  providerName       String?
+  generatedAt        DateTime     @default(now())
+  revisitedAt        DateTime?
+
+  @@unique([seasonId, managerId])
+}
+
+enum WeeklyAwardType {
+  BOOM_OF_WEEK
+  BUST_OF_WEEK
+  BENCH_BLUNDER
+  LUCKIEST_WIN
+  UNLUCKIEST_LOSS
+}
+
+/// A computed weekly award for a manager (booms, busts, luck). Distinct from
+/// the AI-narrative Award model — these are deterministic, tallied per season.
+model WeeklyAward {
+  id          String          @id @default(cuid())
+  seasonId    String
+  season      Season          @relation(fields: [seasonId], references: [id])
+  week        Int
+  type        WeeklyAwardType
+  managerId   String
+  manager     Manager         @relation(fields: [managerId], references: [id])
+  value       Float?
+  description String
+  createdAt   DateTime        @default(now())
+
+  @@unique([seasonId, week, type])
+  @@index([managerId])
+}
+
+/// A curated "receipt": a chat message flagged as a bold take, paired with what
+/// actually happened, with an AI verdict. Goes through review/approve before
+/// publishing. Reuses ApprovalStatus.
+model Receipt {
+  id             String         @id @default(cuid())
+  chatMessageId  String?
+  chatMessage    ChatMessage?   @relation(fields: [chatMessageId], references: [id])
+  seasonId       String?
+  season         Season?        @relation(fields: [seasonId], references: [id])
+  takeText       String
+  outcomeText    String?
+  verdict        String?
+  isWorstTake    Boolean        @default(false)
+  approvalStatus ApprovalStatus @default(PENDING)
+  createdAt      DateTime       @default(now())
+}
+
+/// Remembered mapping from a raw chat handle / phone number to a Manager, so
+/// repeated bulk imports don't need re-mapping. Reused across ChatImports.
+model ChatIdentityMap {
+  id            String   @id @default(cuid())
+  rawIdentifier String   @unique
+  managerId     String?
+  manager       Manager? @relation("ChatIdentityManager", fields: [managerId], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
