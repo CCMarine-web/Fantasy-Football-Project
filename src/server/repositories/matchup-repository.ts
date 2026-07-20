@@ -13,7 +13,7 @@ function toCardTeam(mt: MatchupTeamWithTeam): MatchupCardTeam {
     fantasyTeamId: mt.fantasyTeamId,
     teamName: mt.fantasyTeam.teamName,
     managerName: mt.fantasyTeam.manager.displayName,
-    avatarUrl: mt.fantasyTeam.manager.avatarUrl,
+    avatarUrl: mt.fantasyTeam.manager.photoUrl ?? mt.fantasyTeam.manager.avatarUrl,
     record: `${mt.fantasyTeam.wins}-${mt.fantasyTeam.losses}${mt.fantasyTeam.ties ? `-${mt.fantasyTeam.ties}` : ""}`,
     score: mt.score,
     projectedScore: mt.projectedScore,

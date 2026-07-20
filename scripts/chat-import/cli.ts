@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { prisma } from "@/lib/db";
-import { parseIMessagePdfText, type ParsedMessage } from "./imessage-pdf-parser";
+import { parseIMessagePdfText, type ParsedMessage, type ParseStats } from "./imessage-pdf-parser";
 
 /**
  * Resumable local import pipeline for the group-chat PDF. NEVER run against
@@ -113,7 +113,7 @@ function resolve(msg: ParsedMessage, r: Resolver): string | null {
 
 // ---- reporting --------------------------------------------------------------
 
-function printReport(args: Args, all: ParsedMessage[], stats: ReturnType<typeof parseIMessagePdfText>["stats"], unresolved: Map<string, number>) {
+function printReport(args: Args, all: ParsedMessage[], stats: ParseStats, unresolved: Map<string, number>) {
   const line = "─".repeat(58);
   console.log(`\n${line}\nCHAT IMPORT — PARSE REPORT  (pages ${args.from}–${args.to})\n${line}`);
   console.log(`Pages processed .......... ${stats.pagesProcessed}`);
@@ -232,7 +232,7 @@ async function main() {
   const outFile = join(OUTPUT_DIR, `chat-parse-p${args.from}-${args.to}.json`);
   writeFileSync(outFile, JSON.stringify({ count: allMessages.length, messages: allMessages.slice(0, 500) }, null, 2));
 
-  printReport(args, allMessages, { ...aggregate, uniqueSenders: [...aggregate.uniqueSenders].sort() } as any, unresolved);
+  printReport(args, allMessages, { ...aggregate, uniqueSenders: [...aggregate.uniqueSenders].sort() }, unresolved);
   console.log(`Parsed JSON (first 500) -> ${outFile}${args.dryRun ? "  [DRY RUN — no DB writes]" : ""}`);
 }
 

@@ -416,7 +416,7 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
 
   const grades = await prisma.draftGrade.findMany({
     where: { seasonId: season.id },
-    include: { manager: { select: { displayName: true, avatarUrl: true } } },
+    include: { manager: { select: { displayName: true, photoUrl: true, avatarUrl: true } } },
     orderBy: { manager: { displayName: "asc" } },
   });
 
@@ -427,7 +427,7 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
     cards: grades.map((g) => ({
       managerId: g.managerId,
       managerName: g.manager.displayName,
-      avatarUrl: g.manager.avatarUrl,
+      avatarUrl: g.manager.photoUrl ?? g.manager.avatarUrl,
       grade: g.grade,
       rationale: g.rationale,
       revisitedGrade: g.revisitedGrade,

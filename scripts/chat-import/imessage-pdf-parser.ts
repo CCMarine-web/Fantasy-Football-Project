@@ -86,7 +86,7 @@ export function parseTimestamp(raw: string): string | null {
     .trim()
     .match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{1,2}):(\d{2}):(\d{2})\s*([AP]M)\s+([A-Z]{2,4})$/);
   if (!m) return null;
-  let [, mo, d, y, hh, mm, ss, ap, tz] = m;
+  const [, mo, d, y, hh, mm, ss, ap, tz] = m;
   let year = Number(y);
   if (year < 100) year += 2000;
   let hour = Number(hh) % 12;

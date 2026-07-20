@@ -55,7 +55,7 @@ export async function getStandingsForSeason(seasonId: string): Promise<Standings
       rank: team.regularSeasonRank ?? 0,
       teamName: team.teamName,
       managerName: team.manager.displayName,
-      avatarUrl: team.manager.avatarUrl,
+      avatarUrl: team.manager.photoUrl ?? team.manager.avatarUrl,
       wins: team.wins,
       losses: team.losses,
       ties: team.ties,

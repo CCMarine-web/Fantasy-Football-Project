@@ -5,13 +5,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { LeagueScoringTrendChart } from "@/components/charts/league-scoring-trend-chart";
-import { getLeagueScoringTrend, listSeasonsWithChampions } from "@/server/repositories/history-repository";
-import { History as HistoryIcon, Trophy } from "lucide-react";
+import {
+  getLeagueScoringTrend,
+  listSeasonsWithChampions,
+  listApprovedHistorySections,
+} from "@/server/repositories/history-repository";
+import { History as HistoryIcon, ScrollText, Trophy } from "lucide-react";
 
 export const metadata = { title: "League History" };
 
 export default async function HistoryPage() {
-  const [seasons, trend] = await Promise.all([listSeasonsWithChampions(), getLeagueScoringTrend()]);
+  const [seasons, trend, narrative] = await Promise.all([
+    listSeasonsWithChampions(),
+    getLeagueScoringTrend(),
+    listApprovedHistorySections(),
+  ]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -20,6 +28,37 @@ export default async function HistoryPage() {
         title="League History"
         description="Every season, every champion, every finals matchup since founding."
       />
+
+      {narrative.length > 0 ? (
+        <section className="mt-8">
+          <div className="mb-3 flex items-center gap-2">
+            <ScrollText className="h-4 w-4 text-primary" />
+            <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+              From the Commissioner
+            </h2>
+          </div>
+          <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
+            The league&apos;s story in the commissioner&apos;s own words, season by season. Narrative
+            history — where it mentions specific results, the verified season pages above are the
+            record of truth.
+          </p>
+          <div className="space-y-4">
+            {narrative.map((s) => (
+              <Card key={s.id}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 uppercase">
+                    {s.year ? <span className="font-mono text-primary">{s.year}</span> : null}
+                    <span>{s.title}</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/90">{s.body}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">

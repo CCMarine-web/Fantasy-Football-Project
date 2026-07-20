@@ -6,14 +6,20 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
 import { MatchupCard } from "@/components/shared/matchup-card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
+import { ChampionshipBeltFeature } from "@/components/championship/championship-belt-feature";
 import { getHomepageData } from "@/server/repositories/homepage-repository";
 import { getLastSeasonNarrative } from "@/server/repositories/season-narrative-repository";
+import { getCurrentChampion } from "@/server/repositories/championship-belt-repository";
 import { BRAND } from "@/lib/branding";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
 import { DraftCountdown } from "@/components/home/draft-countdown";
 
 export default async function HomePage() {
-  const [data, seasonNarrative] = await Promise.all([getHomepageData(), getLastSeasonNarrative()]);
+  const [data, seasonNarrative, champion] = await Promise.all([
+    getHomepageData(),
+    getLastSeasonNarrative(),
+    getCurrentChampion(),
+  ]);
 
   if (!data) {
     return (
@@ -38,16 +44,20 @@ export default async function HomePage() {
     currentWeekMatchups,
     upcomingMatchups,
     standings,
-    defendingChampionship,
     recentTransactions,
     latestArticle,
     featuredMatchup,
     historicalFact,
   } = data;
 
+  // Trim the AI season-review to a short preview so it never dominates the page.
+  const reviewPreview = seasonNarrative
+    ? seasonNarrative.text.replace(/\s+/g, " ").trim().slice(0, 280)
+    : null;
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      {/* Hero */}
+      {/* 1 — League title + current week + draft countdown */}
       <section className="flex flex-col gap-6 border-b border-border/60 pb-8 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold tracking-[0.3em] text-primary uppercase">
@@ -61,63 +71,30 @@ export default async function HomePage() {
             roast.
           </p>
         </div>
-        <div className="flex w-full shrink-0 flex-col gap-3 lg:max-w-xs">
-          {LEAGUE_CONFIG.showDraftCountdown ? <DraftCountdown isoDate={LEAGUE_CONFIG.draftDate} /> : null}
-          {defendingChampionship ? (
-            <Card className="border-primary/40 bg-primary/5">
-              <CardContent className="flex items-center gap-3">
-                <Trophy className="h-8 w-8 text-primary" />
-                <div>
-                  <p className="text-xs tracking-wide text-muted-foreground uppercase">
-                    Defending Champion
-                  </p>
-                  <p className="font-heading text-lg font-semibold">
-                    {defendingChampionship.championManager.displayName}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {defendingChampionship.championFantasyTeam.teamName}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          ) : null}
-        </div>
+        {LEAGUE_CONFIG.showDraftCountdown ? (
+          <div className="w-full shrink-0 lg:max-w-xs">
+            <DraftCountdown isoDate={LEAGUE_CONFIG.draftDate} />
+          </div>
+        ) : null}
       </section>
 
-      {/* Last season in review (AI narrative) */}
-      {seasonNarrative ? (
+      {/* 2 — Championship Belt (prominent) */}
+      {champion ? (
         <section className="mt-8">
           <div className="mb-3 flex items-center gap-2">
-            <Newspaper className="h-4 w-4 text-primary" />
+            <Trophy className="h-4 w-4 text-gold" />
             <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-              {seasonNarrative.seasonYear} Season in Review
+              The Championship Belt
             </h2>
           </div>
-          <Card>
-            <CardContent className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Trophy className="h-5 w-5 shrink-0 text-primary" />
-                <p className="text-sm">
-                  <span className="font-semibold">{seasonNarrative.championName}</span> won the{" "}
-                  {seasonNarrative.seasonYear} title with {seasonNarrative.championTeam}.
-                </p>
-              </div>
-              <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/90">
-                {seasonNarrative.text}
-              </p>
-              {seasonNarrative.isMock ? (
-                <p className="text-xs text-muted-foreground">
-                  Placeholder recap — add an <code>OPENAI_API_KEY</code> for a real AI-written summary.
-                </p>
-              ) : null}
-            </CardContent>
-          </Card>
+          <ChampionshipBeltFeature champion={champion} />
         </section>
       ) : null}
 
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
         {/* Main column */}
         <div className="space-y-8 lg:col-span-2">
+          {/* 3 — Current matchups */}
           {featuredMatchup ? (
             <section>
               <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
@@ -160,6 +137,7 @@ export default async function HomePage() {
             </section>
           ) : null}
 
+          {/* 6 — Recent AI content: weekly headline + short season-review preview */}
           <section>
             <div className="mb-3 flex items-center gap-2">
               <Newspaper className="h-4 w-4 text-primary" />
@@ -190,10 +168,40 @@ export default async function HomePage() {
               <EmptyState title="No articles published yet" />
             )}
           </section>
+
+          {reviewPreview ? (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <Newspaper className="h-4 w-4 text-primary" />
+                <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+                  {seasonNarrative!.seasonYear} Season in Review
+                </h2>
+              </div>
+              <Card>
+                <CardContent className="space-y-2">
+                  <p className="text-sm">
+                    <span className="font-semibold">{seasonNarrative!.championName}</span> won the{" "}
+                    {seasonNarrative!.seasonYear} title with {seasonNarrative!.championTeam}.
+                  </p>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {reviewPreview}
+                    {seasonNarrative!.text.length > 280 ? "…" : ""}
+                  </p>
+                  <Link
+                    href={`/history/${seasonNarrative!.seasonYear}`}
+                    className="inline-block text-sm text-primary hover:underline"
+                  >
+                    Read the full {seasonNarrative!.seasonYear} recap →
+                  </Link>
+                </CardContent>
+              </Card>
+            </section>
+          ) : null}
         </div>
 
         {/* Sidebar */}
         <div className="space-y-8">
+          {/* 4 — Standings */}
           <section>
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Standings</h2>
@@ -219,6 +227,7 @@ export default async function HomePage() {
             </Card>
           </section>
 
+          {/* 5 — Power rankings */}
           <section>
             <div className="mb-3 flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" />
@@ -238,9 +247,9 @@ export default async function HomePage() {
                     </Badge>
                   </div>
                 ))}
-                <p className="pt-2 text-xs text-muted-foreground">
-                  Full AI-generated power rankings commentary coming soon.
-                </p>
+                <Link href="/power-rankings" className="inline-block pt-2 text-xs text-primary hover:underline">
+                  Full power rankings →
+                </Link>
               </CardContent>
             </Card>
           </section>
@@ -274,6 +283,7 @@ export default async function HomePage() {
             </Card>
           </section>
 
+          {/* 7 — Historical content */}
           {historicalFact ? (
             <section>
               <div className="mb-3 flex items-center gap-2">

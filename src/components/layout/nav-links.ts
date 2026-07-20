@@ -22,23 +22,16 @@ export const primaryNav: NavItem[] = [
   { href: "/matchups", label: "Matchups" },
   { href: "/standings", label: "Standings" },
   { href: "/power-rankings", label: "Power Rankings" },
+  { href: "/managers", label: "Managers" },
+  { href: "/rivalries", label: "Rivalries" },
   { href: "/news", label: "News" },
-  {
-    label: "League",
-    links: [
-      { href: "/managers", label: "Managers" },
-      { href: "/rivalries", label: "Rivalries" },
-      { href: "/predictions", label: "Predictions" },
-      { href: "/receipts", label: "Receipts" },
-      { href: "/championship-belt", label: "Championship Belt" },
-    ],
-  },
   {
     label: "History",
     links: [
       { href: "/history", label: "Season History" },
       { href: "/records", label: "Records" },
       { href: "/hall-of-shame", label: "Hall of Shame" },
+      { href: "/championship-belt", label: "Championship History" },
       { href: "/trade-tribunal", label: "Trade Tribunal" },
       { href: "/draft-report-cards", label: "Draft Report Cards" },
       { href: "/drafts", label: "Drafts" },
@@ -47,8 +40,14 @@ export const primaryNav: NavItem[] = [
   },
 ];
 
+/** Extra destinations not in the top nav but linked in the footer. */
+const footerExtras: NavLink[] = [{ href: "/predictions", label: "Predictions" }];
+
 /** Flat list of every destination (used by the mobile menu + footer). */
-export const allNavLinks: NavLink[] = primaryNav.flatMap((item) => (isNavGroup(item) ? item.links : [item]));
+export const allNavLinks: NavLink[] = [
+  ...primaryNav.flatMap((item) => (isNavGroup(item) ? item.links : [item])),
+  ...footerExtras,
+];
 
 /** Grouped structure for the mobile menu (direct links collected under "Main"). */
 export const mobileNavGroups: NavGroup[] = [

@@ -153,9 +153,9 @@ export interface PredictionView {
 
 async function managerNameMap(): Promise<Map<string, { name: string; avatarUrl: string | null }>> {
   const managers = await prisma.manager.findMany({
-    select: { id: true, displayName: true, avatarUrl: true },
+    select: { id: true, displayName: true, photoUrl: true, avatarUrl: true },
   });
-  return new Map(managers.map((m) => [m.id, { name: m.displayName, avatarUrl: m.avatarUrl }]));
+  return new Map(managers.map((m) => [m.id, { name: m.displayName, avatarUrl: m.photoUrl ?? m.avatarUrl }]));
 }
 
 function toStringArray(value: unknown): string[] {
@@ -167,7 +167,7 @@ export async function listPredictions(seasonId: string): Promise<PredictionView[
   const [rows, names] = await Promise.all([
     prisma.prediction.findMany({
       where: { seasonId },
-      include: { manager: { select: { id: true, displayName: true, avatarUrl: true } } },
+      include: { manager: { select: { id: true, displayName: true, photoUrl: true, avatarUrl: true } } },
       orderBy: { submittedAt: "asc" },
     }),
     managerNameMap(),
@@ -179,7 +179,7 @@ export async function listPredictions(seasonId: string): Promise<PredictionView[
     id: p.id,
     managerId: p.managerId,
     managerName: p.manager.displayName,
-    managerAvatarUrl: p.manager.avatarUrl,
+    managerAvatarUrl: p.manager.photoUrl ?? p.manager.avatarUrl,
     predictedStandingsNames: toStringArray(p.predictedStandings).map(
       (id) => names.get(id)?.name ?? "—",
     ),
@@ -335,7 +335,7 @@ export async function scorePredictions(seasonId: string): Promise<PredictionScor
   const [predictions, actual] = await Promise.all([
     prisma.prediction.findMany({
       where: { seasonId },
-      include: { manager: { select: { displayName: true, avatarUrl: true } } },
+      include: { manager: { select: { displayName: true, photoUrl: true, avatarUrl: true } } },
     }),
     getActualResults(seasonId),
   ]);
@@ -347,7 +347,7 @@ export async function scorePredictions(seasonId: string): Promise<PredictionScor
     return {
       ...base,
       managerName: p.manager.displayName,
-      managerAvatarUrl: p.manager.avatarUrl,
+      managerAvatarUrl: p.manager.photoUrl ?? p.manager.avatarUrl,
     } satisfies PredictionScore;
   });
 
@@ -423,9 +423,14 @@ export interface PredictionManagerOption {
 
 /** Active managers to populate the standings / champion / last / bust selects. */
 export async function listManagersForPredictionForm(): Promise<PredictionManagerOption[]> {
-  return prisma.manager.findMany({
+  const managers = await prisma.manager.findMany({
     where: { deletedAt: null, isActive: true },
-    select: { id: true, displayName: true, avatarUrl: true },
+    select: { id: true, displayName: true, photoUrl: true, avatarUrl: true },
     orderBy: { displayName: "asc" },
   });
+  return managers.map((m) => ({
+    id: m.id,
+    displayName: m.displayName,
+    avatarUrl: m.photoUrl ?? m.avatarUrl,
+  }));
 }

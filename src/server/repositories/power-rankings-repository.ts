@@ -100,7 +100,7 @@ export async function getPowerRankings(): Promise<PowerRankingsView | null> {
         managerId: mt.fantasyTeam.managerId,
         managerName: mt.fantasyTeam.manager.displayName,
         teamName: mt.fantasyTeam.teamName,
-        avatarUrl: mt.fantasyTeam.manager.avatarUrl,
+        avatarUrl: mt.fantasyTeam.manager.photoUrl ?? mt.fantasyTeam.manager.avatarUrl,
         wins: 0,
         losses: 0,
         ties: 0,
