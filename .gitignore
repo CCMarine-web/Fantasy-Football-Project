@@ -56,3 +56,11 @@ next-env.d.ts
 !.vscode/extensions.json
 
 /src/generated/prisma
+
+# ── Private league source data (raw chat, history, photos, extracts) ──
+# Never commit the raw group-chat PDF, extracted messages, or private reports.
+/private/
+/scripts/chat-import/.checkpoints/
+/scripts/chat-import/output/
+*.pdf
+/src/generated/prisma
