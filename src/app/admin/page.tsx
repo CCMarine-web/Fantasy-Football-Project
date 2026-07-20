@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -6,14 +7,52 @@ import { Separator } from "@/components/ui/separator";
 import { getAdminOverview } from "@/server/repositories/admin-repository";
 import { isAIConfigured, isSleeperConfigured } from "@/lib/env";
 import {
+  BookOpen,
+  Brain,
   ClipboardEdit,
+  Image as ImageIcon,
+  MessageSquareText,
   MessageSquareWarning,
   RefreshCw,
   Settings2,
   Sparkles,
   Upload,
+  UserSquare2,
   Users,
 } from "lucide-react";
+
+const SOURCE_REVIEW_SECTIONS = [
+  {
+    href: "/admin/media",
+    icon: ImageIcon,
+    title: "Media",
+    description: "Approve, categorize, and publish imported images.",
+  },
+  {
+    href: "/admin/history",
+    icon: BookOpen,
+    title: "League History",
+    description: "Review and edit imported history sections.",
+  },
+  {
+    href: "/admin/chat-imports",
+    icon: MessageSquareText,
+    title: "Chat Imports",
+    description: "Inspect imports and resolve participants to managers.",
+  },
+  {
+    href: "/admin/knowledge",
+    icon: Brain,
+    title: "League Knowledge",
+    description: "Review distilled knowledge, privacy, and approval.",
+  },
+  {
+    href: "/admin/manager-mappings",
+    icon: UserSquare2,
+    title: "Manager Mappings",
+    description: "Identity overview: aliases, photos, and chat identifiers.",
+  },
+] as const;
 
 export const metadata = { title: "Admin" };
 
@@ -208,6 +247,34 @@ export default async function AdminPage() {
             </Button>
           </CardContent>
         </Card>
+      </div>
+
+      <Separator className="my-8" />
+
+      <h2 className="font-heading mb-4 text-lg font-semibold tracking-wide uppercase">
+        Source-Data Review
+      </h2>
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+        {SOURCE_REVIEW_SECTIONS.map((section) => (
+          <Card key={section.href}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 uppercase">
+                <section.icon className="h-4 w-4" /> {section.title}
+              </CardTitle>
+              <CardDescription>{section.description}</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                render={<Link href={section.href} />}
+                nativeButton={false}
+                size="sm"
+                variant="outline"
+              >
+                Open {section.title}
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       <Separator className="my-8" />
