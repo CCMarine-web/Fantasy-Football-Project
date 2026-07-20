@@ -12,6 +12,10 @@ import type { GameResult, SeasonFinish } from "@/server/stats/types";
 import type { ManagerSummary } from "@/types/view-models";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import { generateScoutingReport } from "@/server/ai/services/scouting-report";
+import {
+  generateManagerPerformanceSummary,
+  type ManagerPerfPacket,
+} from "@/server/ai/services/manager-performance-summary";
 
 const CLOSE_GAME_MARGIN = 5; // games decided by < 5 points
 const BLOWOUT_MARGIN = 40; // games decided by >= 40 points
@@ -93,7 +97,7 @@ export async function listManagerSummaries(): Promise<ManagerSummary[]> {
     summaries.push({
       managerId: manager.id,
       displayName: manager.displayName,
-      avatarUrl: manager.avatarUrl,
+      avatarUrl: manager.photoUrl ?? manager.avatarUrl,
       currentTeamName: manager.fantasyTeams[0]?.teamName ?? "—",
       championships: champs,
       finalsAppearances: finals,
@@ -401,4 +405,169 @@ export async function getManagerScoutingReport(managerId: string): Promise<Manag
     safeguards,
   );
   return { text: result.text, isMock: result.providerName === "mock" };
+}
+
+// ---------------------------------------------------------------------------
+// Redesigned Managers page rows + saved performance summary
+// ---------------------------------------------------------------------------
+
+export interface ManagerRow {
+  managerId: string;
+  displayName: string;
+  photoUrl: string | null;
+  currentTeamName: string;
+  yearsActive: string;
+  seasonsPlayed: number;
+  careerWins: number;
+  careerLosses: number;
+  careerTies: number;
+  winningPercentage: number;
+  championships: number;
+  finalsAppearances: number;
+  currentWins: number;
+  currentLosses: number;
+  currentTies: number;
+  bestFinish: number | null;
+  statsComplete: boolean;
+  performanceSummary: string | null;
+}
+
+/**
+ * Rows for the full-width Managers page: photo, name, team, years active,
+ * championships, verified career stats, current record, and (if generated) a
+ * saved performance summary. `statsComplete` is false whenever the league's
+ * founding year predates the earliest loaded season (pre-2023 ESPN history is
+ * not yet imported) so the UI can clearly flag incomplete history.
+ */
+export async function listManagerRows(): Promise<ManagerRow[]> {
+  const [managers, earliestSeason, league] = await Promise.all([
+    prisma.manager.findMany({
+      where: { deletedAt: null },
+      include: {
+        fantasyTeams: { include: { season: true }, orderBy: { season: { year: "asc" } } },
+        performanceSummary: true,
+      },
+      orderBy: { displayName: "asc" },
+    }),
+    prisma.season.findFirst({ orderBy: { year: "asc" }, select: { year: true } }),
+    prisma.league.findFirst({ select: { foundedYear: true } }),
+  ]);
+
+  const historyIncomplete = !!(league && earliestSeason && league.foundedYear < earliestSeason.year);
+
+  const rows: ManagerRow[] = [];
+  for (const m of managers) {
+    const games = await buildManagerGameLog(m.id);
+    const summary = careerSummary(games);
+    const champs = await prisma.championship.count({ where: { championManagerId: m.id } });
+    const finals = await prisma.championship.count({
+      where: { OR: [{ championManagerId: m.id }, { runnerUpFantasyTeam: { managerId: m.id } }] },
+    });
+
+    const played = m.fantasyTeams.filter((t) => t.wins + t.losses + t.ties > 0);
+    const years = played.map((t) => t.season.year);
+    const yearsActive = years.length ? (years[0] === years[years.length - 1] ? `${years[0]}` : `${years[0]}–${years[years.length - 1]}`) : "—";
+    const current = m.fantasyTeams[m.fantasyTeams.length - 1];
+    const finishes = played.map((t) => t.finalRank).filter((x): x is number => x != null);
+
+    rows.push({
+      managerId: m.id,
+      displayName: m.displayName,
+      photoUrl: m.photoUrl ?? m.avatarUrl,
+      currentTeamName: current?.teamName ?? "—",
+      yearsActive,
+      seasonsPlayed: played.length,
+      careerWins: summary.record.wins,
+      careerLosses: summary.record.losses,
+      careerTies: summary.record.ties,
+      winningPercentage: Number(summary.winningPercentage.toFixed(3)),
+      championships: champs,
+      finalsAppearances: finals,
+      currentWins: current?.wins ?? 0,
+      currentLosses: current?.losses ?? 0,
+      currentTies: current?.ties ?? 0,
+      bestFinish: finishes.length ? Math.min(...finishes) : null,
+      statsComplete: !historyIncomplete,
+      performanceSummary: m.performanceSummary?.summary ?? null,
+    });
+  }
+  return rows;
+}
+
+async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | null> {
+  const manager = await prisma.manager.findUnique({
+    where: { id: managerId },
+    include: { fantasyTeams: { include: { season: true }, orderBy: { season: { year: "asc" } } } },
+  });
+  if (!manager) return null;
+
+  const games = await buildManagerGameLog(managerId);
+  const summary = careerSummary(games);
+  const finishes = await buildSeasonFinishes(managerId);
+  const champs = await prisma.championship.count({ where: { championManagerId: managerId } });
+  const finals = await prisma.championship.count({
+    where: { OR: [{ championManagerId: managerId }, { runnerUpFantasyTeam: { managerId } }] },
+  });
+
+  const played = manager.fantasyTeams.filter((t) => t.wins + t.losses + t.ties > 0);
+  const years = played.map((t) => t.season.year);
+  const finishRanks = finishes.map((f) => f.finalRank).filter((x): x is number => x != null && x > 0);
+  const [league, earliest] = await Promise.all([
+    prisma.league.findFirst({ select: { foundedYear: true } }),
+    prisma.season.findFirst({ orderBy: { year: "asc" }, select: { year: true } }),
+  ]);
+
+  // APPROVED + PUBLIC_SAFE knowledge about this manager, and commissioner history mentions.
+  const knowledge = await prisma.leagueKnowledge.findMany({
+    where: { approvalStatus: "APPROVED", privacyStatus: "PUBLIC_SAFE", managers: { some: { managerId } } },
+    select: { title: true },
+    take: 6,
+  });
+  const historySections = await prisma.leagueHistorySection.findMany({
+    where: { approvalStatus: "APPROVED", body: { contains: manager.displayName } },
+    select: { year: true, title: true, body: true },
+    take: 4,
+  });
+
+  return {
+    managerName: manager.displayName,
+    yearsActive: years.length ? (years[0] === years.at(-1) ? `${years[0]}` : `${years[0]}–${years.at(-1)}`) : "—",
+    seasonsPlayed: played.length,
+    careerRecord: `${summary.record.wins}-${summary.record.losses}${summary.record.ties ? `-${summary.record.ties}` : ""}`,
+    winPct: Number(summary.winningPercentage.toFixed(3)),
+    championships: champs,
+    finalsAppearances: finals,
+    playoffAppearances: playoffAppearances(finishes),
+    bestFinish: finishRanks.length ? Math.min(...finishRanks) : null,
+    worstFinish: finishRanks.length ? Math.max(...finishRanks) : null,
+    currentTeamName: manager.fantasyTeams.at(-1)?.teamName ?? "—",
+    statsComplete: !(league && earliest && league.foundedYear < earliest.year),
+    approvedKnowledge: knowledge.map((k) => k.title),
+    historyNotes: historySections.map((h) => `${h.year ?? ""} ${h.title}`.trim()),
+  };
+}
+
+/** Return the saved summary, generating + saving it once if missing. */
+export async function getOrCreateManagerPerformanceSummary(managerId: string): Promise<{ text: string; isMock: boolean } | null> {
+  const existing = await prisma.managerPerformanceSummary.findUnique({ where: { managerId } });
+  if (existing) return { text: existing.summary, isMock: existing.isMock };
+  return regenerateManagerPerformanceSummary(managerId);
+}
+
+/** Force-regenerate + save the summary (admin action). */
+export async function regenerateManagerPerformanceSummary(managerId: string): Promise<{ text: string; isMock: boolean } | null> {
+  const packet = await buildPerfPacket(managerId);
+  if (!packet || packet.seasonsPlayed === 0) return null;
+  const safeguards = await getContentSafeguards();
+  const result = await generateManagerPerformanceSummary(packet, safeguards);
+  // Don't persist placeholder text — only real AI summaries are saved, so the
+  // public Managers page stays clean until a key is configured (on Vercel).
+  if (result.isMock) return { text: result.text, isMock: true };
+  const hash = JSON.stringify(packet).length.toString();
+  await prisma.managerPerformanceSummary.upsert({
+    where: { managerId },
+    create: { managerId, summary: result.text, providerName: result.providerName, isMock: false, inputHash: hash },
+    update: { summary: result.text, providerName: result.providerName, isMock: false, inputHash: hash },
+  });
+  return { text: result.text, isMock: false };
 }
