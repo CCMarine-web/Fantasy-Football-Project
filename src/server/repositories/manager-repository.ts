@@ -10,6 +10,8 @@ import {
 } from "@/server/stats";
 import type { GameResult, SeasonFinish } from "@/server/stats/types";
 import type { ManagerSummary } from "@/types/view-models";
+import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
+import { generateScoutingReport } from "@/server/ai/services/scouting-report";
 
 const CLOSE_GAME_MARGIN = 5; // games decided by < 5 points
 const BLOWOUT_MARGIN = 40; // games decided by >= 40 points
@@ -333,4 +335,70 @@ export async function getManagerProfile(managerId: string) {
       ...manager.rivalriesAsB.map((r) => ({ rivalry: r, opponent: r.managerA })),
     ],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Personality layer: AI scouting report (generate-once-reuse)
+// ---------------------------------------------------------------------------
+
+export interface ManagerScoutingReport {
+  text: string;
+  isMock: boolean;
+}
+
+/**
+ * Returns an AI scouting report for a manager, built from their real
+ * transaction history, round-1 draft tendencies, and results. Generate-once-
+ * reuse: an existing MANAGER_PROFILE generation for this manager is returned;
+ * otherwise it's generated, logged, and reused. Null if the manager has no
+ * meaningful history yet.
+ */
+export async function getManagerScoutingReport(managerId: string): Promise<ManagerScoutingReport | null> {
+  const manager = await prisma.manager.findUnique({ where: { id: managerId }, select: { displayName: true } });
+  if (!manager) return null;
+
+  const existing = await prisma.aIContentGeneration.findFirst({
+    where: { contentType: "MANAGER_PROFILE", inputSummary: { path: ["managerId"], equals: managerId } },
+    orderBy: { generatedAt: "desc" },
+  });
+  if (existing) return { text: existing.outputText, isMock: existing.providerName === "mock" };
+
+  const [assets, r1picks, teams] = await Promise.all([
+    prisma.transactionAsset.findMany({
+      where: { managerId, direction: "ADD" },
+      include: { transaction: { select: { type: true, faabSpent: true } } },
+    }),
+    prisma.draftPick.findMany({ where: { managerId, round: 1 }, include: { player: { select: { position: true } } } }),
+    prisma.fantasyTeam.findMany({ where: { managerId, season: { status: "COMPLETE" } }, select: { finalRank: true, isChampion: true, wins: true, losses: true, ties: true } }),
+  ]);
+
+  if (assets.length === 0 && r1picks.length === 0 && teams.length === 0) return null;
+
+  const tradeCount = assets.filter((a) => a.transaction.type === "TRADE").length;
+  const waiverClaims = assets.filter((a) => a.transaction.type === "WAIVER").length;
+  const freeAgentPickups = assets.filter((a) => a.transaction.type === "FREE_AGENT").length;
+  const faabSpent = assets.reduce((sum, a) => sum + (a.transaction.faabSpent ?? 0), 0) || null;
+  const wins = teams.reduce((s, t) => s + t.wins, 0);
+  const losses = teams.reduce((s, t) => s + t.losses, 0);
+  const ties = teams.reduce((s, t) => s + t.ties, 0);
+  const finishes = teams.map((t) => t.finalRank).filter((x): x is number => x != null);
+
+  const safeguards = await getContentSafeguards();
+  const result = await generateScoutingReport(
+    {
+      managerId,
+      managerName: manager.displayName,
+      careerRecord: `${wins}-${losses}${ties ? `-${ties}` : ""}`,
+      championships: teams.filter((t) => t.isChampion).length,
+      tradeCount,
+      waiverClaims,
+      freeAgentPickups,
+      faabSpent,
+      firstRoundPositions: r1picks.map((p) => p.player?.position ?? "?"),
+      bestFinish: finishes.length ? Math.min(...finishes) : null,
+      worstFinish: finishes.length ? Math.max(...finishes) : null,
+    },
+    safeguards,
+  );
+  return { text: result.text, isMock: result.providerName === "mock" };
 }

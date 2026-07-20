@@ -6,7 +6,8 @@ import { Separator } from "@/components/ui/separator";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ManagerTrajectoryChart } from "@/components/charts/manager-trajectory-chart";
-import { getManagerProfileDetailed } from "@/server/repositories/manager-repository";
+import { getManagerProfileDetailed, getManagerScoutingReport } from "@/server/repositories/manager-repository";
+import { getManagerAwardTally } from "@/server/repositories/weekly-awards-repository";
 import { Quote, Sparkles, TrendingUp } from "lucide-react";
 
 export const metadata = { title: "Manager Profile" };
@@ -33,11 +34,16 @@ export default async function ManagerProfilePage({
   params: Promise<{ managerId: string }>;
 }) {
   const { managerId } = await params;
-  const profile = await getManagerProfileDetailed(managerId);
+  const [profile, scouting, awardTally] = await Promise.all([
+    getManagerProfileDetailed(managerId),
+    getManagerScoutingReport(managerId),
+    getManagerAwardTally(managerId),
+  ]);
   if (!profile) notFound();
 
   const { manager, stats, seasonLines, bestSeason, worstSeason, finishDistribution, headToHead } = profile;
   const currentTeam = manager.fantasyTeams[manager.fantasyTeams.length - 1];
+  const photo = manager.photoUrl ?? manager.avatarUrl;
   const teamCount = finishDistribution.length || 10;
   const trajectory = [...seasonLines]
     .filter((l) => l.finalRank != null)
@@ -48,12 +54,28 @@ export default async function ManagerProfilePage({
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       {/* Header */}
       <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
-        <TeamAvatar name={manager.displayName} imageUrl={manager.avatarUrl} className="h-20 w-20" />
+        {manager.photoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={photo ?? undefined} alt={manager.displayName} className="h-24 w-24 shrink-0 rounded-xl border border-border/60 object-cover" />
+        ) : (
+          <TeamAvatar name={manager.displayName} imageUrl={manager.avatarUrl} className="h-20 w-20" />
+        )}
         <div>
           <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
             {currentTeam?.teamName ?? "Free Agent"}
           </p>
           <h1 className="font-heading text-3xl font-semibold uppercase sm:text-4xl">{manager.displayName}</h1>
+          {manager.nickname ? (
+            <p className="mt-1 text-sm text-primary">
+              &ldquo;{manager.nickname}&rdquo;
+              {manager.nicknameOrigin ? <span className="text-muted-foreground"> — {manager.nicknameOrigin}</span> : null}
+            </p>
+          ) : null}
+          {manager.signatureMove ? (
+            <p className="mt-1 text-xs text-muted-foreground">
+              <span className="font-semibold text-foreground">Signature move:</span> {manager.signatureMove}
+            </p>
+          ) : null}
           {manager.bio ? <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{manager.bio}</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {stats.championships > 0 ? (
@@ -259,21 +281,51 @@ export default async function ManagerProfilePage({
         </div>
       </section>
 
+      {/* Weekly award tally */}
+      {awardTally.length > 0 ? (
+        <>
+          <Separator className="my-8" />
+          <section>
+            <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
+              Weekly Award Tally
+            </h2>
+            <div className="flex flex-wrap gap-2">
+              {awardTally.map((a) => (
+                <Badge key={a.type} variant="secondary">
+                  {a.label}: {a.count}
+                </Badge>
+              ))}
+            </div>
+          </section>
+        </>
+      ) : null}
+
       <Separator className="my-8" />
 
-      {/* AI + quotes placeholders */}
+      {/* AI scouting report + quotes */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 uppercase">
-              <Sparkles className="h-4 w-4" /> AI Manager Profile
+              <Sparkles className="h-4 w-4" /> Scouting Report
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground">
-              A generated narrative profile — draft tendencies, trade behavior, and career arc — will
-              appear here once AI content generation is enabled for this league.
-            </p>
+            {scouting ? (
+              <>
+                <p className="text-sm whitespace-pre-line text-foreground/90">{scouting.text}</p>
+                {scouting.isMock ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Placeholder — add an <code>OPENAI_API_KEY</code> for a real scouting report.
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                A generated scouting report — draft tendencies, trade behavior, and archetype — will
+                appear here once this manager has enough history.
+              </p>
+            )}
           </CardContent>
         </Card>
         <Card>
