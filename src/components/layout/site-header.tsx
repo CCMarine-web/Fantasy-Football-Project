@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LogOut, Menu, ShieldCheck, Trophy } from "lucide-react";
+import { ChevronDown, LogOut, Menu, ShieldCheck, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -21,7 +21,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { allNav, primaryNav } from "@/components/layout/nav-links";
+import { isNavGroup, mobileNavGroups, primaryNav, type NavGroup } from "@/components/layout/nav-links";
 import { logoutAction } from "@/app/login/actions";
 import { BRAND } from "@/lib/branding";
 
@@ -47,6 +47,31 @@ function NavItem({ href, label }: { href: string; label: string }) {
   );
 }
 
+function NavDropdown({ group }: { group: NavGroup }) {
+  const pathname = usePathname();
+  const isActive = group.links.some((l) => pathname.startsWith(l.href));
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        className={cn(
+          "flex items-center gap-1 text-sm font-medium transition-colors outline-none hover:text-primary",
+          isActive ? "text-primary" : "text-muted-foreground",
+        )}
+      >
+        {group.label}
+        <ChevronDown className="h-3.5 w-3.5" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        {group.links.map((l) => (
+          <DropdownMenuItem key={l.href} render={<Link href={l.href} />}>
+            {l.label}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
   const [open, setOpen] = useState(false);
   const isAdmin = user?.role === "ADMIN";
@@ -68,10 +93,14 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
           </span>
         </Link>
 
-        <nav className="hidden items-center gap-6 lg:flex">
-          {primaryNav.map((link) => (
-            <NavItem key={link.href} {...link} />
-          ))}
+        <nav className="hidden items-center gap-5 lg:flex">
+          {primaryNav.map((item) =>
+            isNavGroup(item) ? (
+              <NavDropdown key={item.label} group={item} />
+            ) : (
+              <NavItem key={item.href} {...item} />
+            ),
+          )}
         </nav>
 
         <div className="hidden items-center gap-2 lg:flex">
@@ -116,16 +145,23 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
             <SheetHeader>
               <SheetTitle className="font-heading uppercase">Menu</SheetTitle>
             </SheetHeader>
-            <nav className="flex flex-col gap-4 px-4">
-              {allNav.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  className="text-base font-medium text-foreground/90 hover:text-primary"
-                >
-                  {link.label}
-                </Link>
+            <nav className="flex flex-col gap-5 overflow-y-auto px-4 pb-6">
+              {mobileNavGroups.map((group) => (
+                <div key={group.label} className="flex flex-col gap-2">
+                  <p className="text-[11px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">
+                    {group.label}
+                  </p>
+                  {group.links.map((link) => (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      onClick={() => setOpen(false)}
+                      className="text-base font-medium text-foreground/90 hover:text-primary"
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
               ))}
               <div className="mt-2 flex flex-col gap-2 border-t border-border/60 pt-4">
                 {isAdmin ? (

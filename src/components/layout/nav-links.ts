@@ -3,21 +3,55 @@ export interface NavLink {
   label: string;
 }
 
-export const primaryNav: NavLink[] = [
+export interface NavGroup {
+  label: string;
+  links: NavLink[];
+}
+
+export type NavItem = NavLink | NavGroup;
+
+export function isNavGroup(item: NavItem): item is NavGroup {
+  return "links" in item;
+}
+
+/**
+ * Top nav: a few direct links plus two dropdown groups so the ~16 destinations
+ * stay usable. "League" = people/competition views; "History" = the archive.
+ */
+export const primaryNav: NavItem[] = [
   { href: "/matchups", label: "Matchups" },
   { href: "/standings", label: "Standings" },
   { href: "/power-rankings", label: "Power Rankings" },
-  { href: "/managers", label: "Managers" },
-  { href: "/rivalries", label: "Rivalries" },
-  { href: "/history", label: "History" },
-  { href: "/records", label: "Records" },
-];
-
-export const secondaryNav: NavLink[] = [
   { href: "/news", label: "News" },
-  { href: "/transactions", label: "Transactions" },
-  { href: "/drafts", label: "Drafts" },
-  { href: "/chat-lore", label: "Chat Lore" },
+  {
+    label: "League",
+    links: [
+      { href: "/managers", label: "Managers" },
+      { href: "/rivalries", label: "Rivalries" },
+      { href: "/predictions", label: "Predictions" },
+      { href: "/receipts", label: "Receipts" },
+      { href: "/championship-belt", label: "Championship Belt" },
+    ],
+  },
+  {
+    label: "History",
+    links: [
+      { href: "/history", label: "Season History" },
+      { href: "/records", label: "Records" },
+      { href: "/hall-of-shame", label: "Hall of Shame" },
+      { href: "/trade-tribunal", label: "Trade Tribunal" },
+      { href: "/draft-report-cards", label: "Draft Report Cards" },
+      { href: "/drafts", label: "Drafts" },
+      { href: "/transactions", label: "Transactions" },
+    ],
+  },
 ];
 
-export const allNav: NavLink[] = [...primaryNav, ...secondaryNav];
+/** Flat list of every destination (used by the mobile menu + footer). */
+export const allNavLinks: NavLink[] = primaryNav.flatMap((item) => (isNavGroup(item) ? item.links : [item]));
+
+/** Grouped structure for the mobile menu (direct links collected under "Main"). */
+export const mobileNavGroups: NavGroup[] = [
+  { label: "Main", links: primaryNav.filter((i): i is NavLink => !isNavGroup(i)) },
+  ...primaryNav.filter(isNavGroup),
+];

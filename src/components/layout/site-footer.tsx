@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { allNav } from "@/components/layout/nav-links";
+import { allNavLinks } from "@/components/layout/nav-links";
 import { BRAND } from "@/lib/branding";
 
 export function SiteFooter() {
@@ -14,7 +14,7 @@ export function SiteFooter() {
           <p className="text-sm text-muted-foreground">{BRAND.description}</p>
         </div>
         <nav className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm sm:grid-cols-3">
-          {allNav.map((link) => (
+          {allNavLinks.map((link) => (
             <Link key={link.href} href={link.href} className="text-muted-foreground hover:text-primary">
               {link.label}
             </Link>
