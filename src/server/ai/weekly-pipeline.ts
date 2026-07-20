@@ -11,6 +11,7 @@ import { syncCurrentLeague } from "@/server/sleeper";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import { generateMatchupRecap } from "@/server/ai/services/matchup-recap";
 import { generateMatchupPreview } from "@/server/ai/services/matchup-preview";
+import { computeWeeklyAwards } from "@/server/repositories/weekly-awards-repository";
 
 export interface WeeklyPipelineResult {
   seasonId: string | null;
@@ -110,6 +111,8 @@ export async function generateWeeklyContent(opts: Opts = {}): Promise<WeeklyPipe
       );
       recapsGenerated += 1;
     }
+    // Deterministic weekly awards for the completed week (boom/bust/luck/bench).
+    await computeWeeklyAwards(season.id, recapWeek);
   }
 
   // --- Previews for the upcoming week ---
