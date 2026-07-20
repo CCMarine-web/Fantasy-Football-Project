@@ -13,4 +13,23 @@ export const LEAGUE_CONFIG = {
 
   /** Set false to hide the draft countdown once the draft has passed / season is live. */
   showDraftCountdown: true,
+
+  /**
+   * "Days since…" shame counter shown on the Championship Belt page. A bit of
+   * good-natured trash talk: a live-updating tally of how long it's been since
+   * some manager did (or failed to do) a notable thing.
+   *
+   * ▼▼▼ CHANGE THESE to your real target. ▼▼▼ These are PLACEHOLDERS.
+   * Example rendered line: "1,284 days since Anthony last won a playoff game".
+   *   - managerName: whose drought this is (display only — not a DB lookup).
+   *   - eventLabel:  the rest of the sentence after the manager's name.
+   *   - sinceDate:   ISO 8601 date the clock counts up from.
+   * Set `enabled: false` to hide the card entirely.
+   */
+  shameCounter: {
+    enabled: false,
+    managerName: "Someone",
+    eventLabel: "last won a playoff game",
+    sinceDate: "2021-12-27T00:00:00Z",
+  },
 } as const;
