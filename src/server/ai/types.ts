@@ -34,6 +34,24 @@ export interface AIGenerationRequest {
   /** 1-5. Carried alongside the prompts mainly so providers/logs can record it without re-deriving it. */
   humorLevel: number;
   maxOutputTokens?: number;
+  /** Optional per-call model override. When set, the OpenAI provider uses this
+   *  instead of env.OPENAI_MODEL — lets cheap bulk work (extraction) and
+   *  higher-quality synthesis (profiles/relationships) run on different models
+   *  in the same batch. Ignored by the mock provider. */
+  model?: string;
+  /** Optional reasoning effort for OpenAI reasoning models (gpt-5 family).
+   *  Without it these models default to heavy reasoning that consumes the
+   *  entire max_completion_tokens budget, leaving the message content EMPTY
+   *  (finish_reason "length"). "low" leaves ample room for the JSON answer while
+   *  keeping cost bounded. Ignored by the mock provider and any model that
+   *  doesn't support it. */
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
+}
+
+/** Token usage for one generation, when the provider reports it (OpenAI does; mock doesn't). */
+export interface AIUsage {
+  inputTokens: number;
+  outputTokens: number;
 }
 
 /** What every provider hands back, regardless of how it produced the text. */
@@ -42,6 +60,8 @@ export interface AIGenerationResult {
   /** e.g. "openai" | "mock" */
   providerName: string;
   model: string;
+  /** Real token usage from the provider, when available (for cost accounting). */
+  usage?: AIUsage;
 }
 
 /** Implemented by MockAIProvider and OpenAIProvider. Callers should obtain an

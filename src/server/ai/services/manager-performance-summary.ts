@@ -62,6 +62,8 @@ export async function generateManagerPerformanceSummary(
     systemPrompt,
     userPrompt,
     humorLevel: safeguards.humorLevel,
+    maxOutputTokens: 1200,
+    reasoningEffort: "low",
   });
 
   // VALIDATE stage

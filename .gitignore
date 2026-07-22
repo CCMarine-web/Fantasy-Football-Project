@@ -62,5 +62,9 @@ next-env.d.ts
 /private/
 /scripts/chat-import/.checkpoints/
 /scripts/chat-import/output/
+/scripts/lore/.checkpoints/
 *.pdf
 /src/generated/prisma
+
+.vercel
+.env*

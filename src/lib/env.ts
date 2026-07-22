@@ -16,7 +16,11 @@ const envSchema = z.object({
   SLEEPER_LEAGUE_ID: z.string().optional().default(""),
   SLEEPER_API_BASE_URL: z.string().url().default("https://api.sleeper.app/v1"),
   OPENAI_API_KEY: z.string().optional().default(""),
+  // Default model for bulk work (per-conversation knowledge extraction).
   OPENAI_MODEL: z.string().default("gpt-5-mini"),
+  // Stronger model for the handful of high-value synthesis passes
+  // (per-manager profiles, relationship summaries, league-wide profile).
+  OPENAI_SYNTHESIS_MODEL: z.string().default("gpt-5"),
   DEFAULT_HUMOR_LEVEL: z.coerce.number().int().min(1).max(5).default(3),
   // Shared secret for the weekly cron endpoint. When set, /api/cron/weekly
   // requires `Authorization: Bearer <CRON_SECRET>` (Vercel Cron sends this).

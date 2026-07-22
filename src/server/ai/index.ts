@@ -17,3 +17,8 @@ export * from "./services/season-summary";
 export * from "./services/trade-retrospective";
 export * from "./services/weekly-awards";
 export * from "./services/quote-selection";
+export * from "./services/manager-communication-profile";
+export * from "./services/relationship-summary";
+export * from "./services/league-communication-profile";
+export * from "./content-memory";
+export * from "./research-packet";

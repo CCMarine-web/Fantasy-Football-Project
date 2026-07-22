@@ -29,13 +29,18 @@ interface ChatCompletionsResponse {
       content?: string | null;
     };
   }>;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+  };
 }
 
 export class OpenAIProvider implements AIProvider {
   async generate(request: AIGenerationRequest): Promise<AIGenerationResult> {
     const env = getEnv();
     const apiKey = env.OPENAI_API_KEY;
-    const model = env.OPENAI_MODEL;
+    // Per-call override wins; otherwise fall back to the configured default.
+    const model = request.model?.trim() || env.OPENAI_MODEL;
 
     if (!apiKey.trim()) {
       // Should not happen in practice — getAIProvider() only hands out this
@@ -56,6 +61,7 @@ export class OpenAIProvider implements AIProvider {
           { role: "user", content: request.userPrompt },
         ],
         ...(request.maxOutputTokens ? { max_completion_tokens: request.maxOutputTokens } : {}),
+        ...(request.reasoningEffort ? { reasoning_effort: request.reasoningEffort } : {}),
       }),
     });
 
@@ -67,10 +73,16 @@ export class OpenAIProvider implements AIProvider {
     const data = (await response.json()) as ChatCompletionsResponse;
     const text = data.choices?.[0]?.message?.content ?? "";
 
+    const usage =
+      data.usage && (data.usage.prompt_tokens != null || data.usage.completion_tokens != null)
+        ? { inputTokens: data.usage.prompt_tokens ?? 0, outputTokens: data.usage.completion_tokens ?? 0 }
+        : undefined;
+
     return {
       text,
       providerName: "openai",
       model: data.model ?? model,
+      usage,
     };
   }
 }

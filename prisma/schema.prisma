@@ -62,6 +62,7 @@ model League {
   updatedAt         DateTime @updatedAt
 
   seasons Season[]
+  profile LeagueProfile?
 }
 
 enum SeasonStatus {
@@ -169,6 +170,9 @@ model Manager {
   knowledgeLinks     LeagueKnowledgeManager[]
   mediaAssets        MediaAsset[]
   performanceSummary ManagerPerformanceSummary?
+  commProfile        ManagerCommunicationProfile?
+  relationshipsAsA   ManagerRelationship[]      @relation("RelationshipManagerA")
+  relationshipsAsB   ManagerRelationship[]      @relation("RelationshipManagerB")
 }
 
 /// A manager's team for one specific season (Sleeper roster).
@@ -1230,4 +1234,94 @@ model ManagerPerformanceSummary {
   inputHash    String?
   generatedAt  DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Chat-archive consolidation: private personality/communication profiles,
+// league-wide voice profile, and manager-to-manager relationship summaries.
+// All admin-only/PRIVATE by default — synthesized from the group-chat archive
+// and used only as tone/voice research packets for AI generation. There is NO
+// public page, quote library, or searchable message archive over these.
+// ---------------------------------------------------------------------------
+
+/// A private, admin-only personality + communication profile for one manager,
+/// distilled from their messages across the whole archive (tone, humor style,
+/// verbal tics, recurring themes, how they trash-talk/argue). Never shown
+/// publicly; feeds AI research packets so generated copy sounds like the league.
+/// Generate-once-reuse; regenerable when new material is imported.
+model ManagerCommunicationProfile {
+  id                 String   @id @default(cuid())
+  managerId          String   @unique
+  manager            Manager  @relation(fields: [managerId], references: [id])
+  /// Full narrative profile (plain text).
+  profile            String
+  /// One-line communication-style tagline (e.g. "dry, meme-heavy, quick to needle").
+  styleSummary       String?
+  /// Structured facets the writer can pull (tone, humorStyle, catchphrases, topics).
+  facets             Json?
+  /// How many of the manager's messages informed this profile.
+  messagesConsidered Int      @default(0)
+  providerName       String?
+  model              String?
+  isMock             Boolean  @default(false)
+  inputHash          String?
+  generatedAt        DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+/// Singleton (one row per league), admin-only league-wide voice profile:
+/// overall humor + communication style, group dynamics, traditions, and useful
+/// historical context distilled from the whole archive + commissioner history.
+/// Feeds every AI generation as tone/voice guidance.
+model LeagueProfile {
+  id                 String   @id @default(cuid())
+  leagueId           String   @unique
+  league             League   @relation(fields: [leagueId], references: [id])
+  humorStyle         String?
+  communicationStyle String?
+  dynamics           String?
+  traditions         String?
+  historicalContext  String?
+  facets             Json?
+  providerName       String?
+  model              String?
+  isMock             Boolean  @default(false)
+  inputHash          String?
+  generatedAt        DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+enum RelationshipType {
+  RIVALRY
+  FRIENDSHIP
+  ALLIANCE
+  ANTAGONISM
+  MIXED
+  NEUTRAL
+}
+
+/// A private, admin-only narrative summary of the relationship between two
+/// managers (rivalry, friendship, running feuds/jokes), synthesized from chat
+/// evidence + head-to-head history. Pair is stored canonically with
+/// managerAId < managerBId (string compare) so each pair has exactly one row.
+model ManagerRelationship {
+  id               String           @id @default(cuid())
+  managerAId       String
+  managerA         Manager          @relation("RelationshipManagerA", fields: [managerAId], references: [id])
+  managerBId       String
+  managerB         Manager          @relation("RelationshipManagerB", fields: [managerBId], references: [id])
+  relationshipType RelationshipType @default(MIXED)
+  summary          String
+  /// 0-1 how strong/active the relationship is (drives how heavily content leans on it).
+  intensity        Float            @default(0.5)
+  privacyStatus    PrivacyStatus    @default(PRIVATE)
+  facets           Json?
+  providerName     String?
+  model            String?
+  isMock           Boolean          @default(false)
+  generatedAt      DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@unique([managerAId, managerBId])
+  @@index([managerBId])
 }

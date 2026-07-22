@@ -7,7 +7,7 @@
 
 import { getAIProvider } from "../get-ai-provider";
 import { buildSystemPrompt } from "../prompt-helpers";
-import type { ContentSafeguards } from "../types";
+import type { AIUsage, ContentSafeguards } from "../types";
 import type { Conversation } from "@/server/lore/conversation-grouping";
 import type { KnowledgeType, PrivacyStatus } from "@/generated/prisma/client";
 
@@ -73,7 +73,8 @@ function parseProposals(text: string, conv: Conversation): KnowledgeProposal[] {
 export async function extractKnowledgeFromConversation(
   conv: Conversation,
   safeguards: ContentSafeguards,
-): Promise<{ proposals: KnowledgeProposal[]; isMock: boolean }> {
+  opts: { model?: string } = {},
+): Promise<{ proposals: KnowledgeProposal[]; isMock: boolean; usage?: AIUsage }> {
   if (conv.transcript.length < 80) return { proposals: [], isMock: false };
   const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
   const userPrompt = `Conversation transcript (${conv.messageCount} messages):\n${conv.transcript}\n\nReturn ONLY a JSON array of proposals (may be empty).`;
@@ -83,8 +84,10 @@ export async function extractKnowledgeFromConversation(
     systemPrompt,
     userPrompt,
     humorLevel: safeguards.humorLevel,
-    maxOutputTokens: 1200,
+    maxOutputTokens: 2000,
+    reasoningEffort: "low",
+    model: opts.model,
   });
   if (result.providerName === "mock") return { proposals: [], isMock: true };
-  return { proposals: parseProposals(result.text, conv), isMock: false };
+  return { proposals: parseProposals(result.text, conv), isMock: false, usage: result.usage };
 }
