@@ -81,8 +81,12 @@ export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
   const seasonHasScores = new Map<string, boolean>();
   await Promise.all(
     seasonIds.map(async (seasonId) => {
+      // Rows with a null `points` record roster membership only (ESPN era), so
+      // they must not count as "this season has scoring data" — otherwise the
+      // hindsight verdict would be computed from an empty sum and read as 0.0
+      // production for every player involved.
       const count = await prisma.weeklyPlayerScore.count({
-        where: { roster: { fantasyTeam: { seasonId } } },
+        where: { roster: { fantasyTeam: { seasonId } }, points: { not: null } },
       });
       seasonHasScores.set(seasonId, count > 0);
     }),

@@ -23,7 +23,7 @@ export interface ManagerPerfPacket {
   bestFinish: number | null;
   worstFinish: number | null;
   currentTeamName: string;
-  /** Verified? Player-level / pre-2023 data may be incomplete — surfaced to the writer. */
+  /** False when the league has seasons older than the earliest loaded one — surfaced to the writer. */
   statsComplete: boolean;
   /** APPROVED + PUBLIC_SAFE knowledge titles about this manager (may be empty). */
   approvedKnowledge: string[];
@@ -37,7 +37,7 @@ export interface ManagerPerfResult {
   isMock: boolean;
 }
 
-const SYSTEM_PROMPT = `You are writing a short "performance summary" for a fantasy-football manager in "The Rat Trap" league newspaper. Use ONLY the verified facts and approved league knowledge in the packet — never invent stats, championships, quotes, or storylines. Write 2-4 punchy sentences that characterize their track record and reputation. If statsComplete is false, do not imply the record is comprehensive (older ESPN seasons aren't loaded yet). Respect the safeguards.`;
+const SYSTEM_PROMPT = `You are writing a short "performance summary" for a fantasy-football manager in "The Rat Trap" league newspaper. Use ONLY the verified facts and approved league knowledge in the packet — never invent stats, championships, quotes, or storylines. Write 2-4 punchy sentences that characterize their track record and reputation. If statsComplete is false, do not imply the record is comprehensive — some of the league's earlier seasons are missing from the packet. Respect the safeguards.`;
 
 /** VALIDATE stage: reject/repair output that leaks obvious fabrication signals. */
 function validate(text: string, packet: ManagerPerfPacket): string {

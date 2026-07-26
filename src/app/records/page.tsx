@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { ManagerLink } from "@/components/shared/manager-link";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -29,9 +29,7 @@ export default async function RecordsPage() {
                   <p className="mt-1 font-heading text-3xl font-semibold tabular-nums">{r.value}</p>
                   <p className="mt-1 text-sm font-medium">
                     {r.holderManagerId ? (
-                      <Link href={`/managers/${r.holderManagerId}`} className="hover:text-primary">
-                        {r.holderName}
-                      </Link>
+                      <ManagerLink managerId={r.holderManagerId}>{r.holderName}</ManagerLink>
                     ) : (
                       r.holderName
                     )}

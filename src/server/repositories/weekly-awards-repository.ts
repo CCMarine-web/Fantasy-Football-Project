@@ -59,10 +59,15 @@ export async function computeWeeklyAwards(seasonId: string, week: number): Promi
   let worstBench: { managerId: string; value: number } | null = null;
   for (const r of rosters) {
     if (r.playerScores.length === 0) continue;
-    const starters = r.playerScores.filter((p) => p.isStarter);
+    // Only fully-scored rosters can yield a bench figure. ESPN-era rosters
+    // carry membership with a null score, and treating that as zero would
+    // invent a record-breaking blunder out of missing data.
+    const scored = r.playerScores.filter((p): p is typeof p & { points: number } => p.points != null);
+    if (scored.length !== r.playerScores.length) continue;
+    const starters = scored.filter((p) => p.isStarter);
     const n = starters.length || 9;
     const actual = starters.reduce((a, p) => a + p.points, 0);
-    const optimal = [...r.playerScores].sort((a, b) => b.points - a.points).slice(0, n).reduce((a, p) => a + p.points, 0);
+    const optimal = [...scored].sort((a, b) => b.points - a.points).slice(0, n).reduce((a, p) => a + p.points, 0);
     const left = optimal - actual;
     if (!worstBench || left > worstBench.value) worstBench = { managerId: r.fantasyTeam.managerId, value: left };
   }

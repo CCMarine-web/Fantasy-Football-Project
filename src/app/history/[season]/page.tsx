@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { ManagerLink } from "@/components/shared/manager-link";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -87,9 +88,7 @@ export default async function SeasonHistoryPage({
                       {t.regularSeasonRank ?? i + 1}
                     </td>
                     <td className="px-3 py-2">
-                      <Link href={`/managers/${t.managerId}`} className="hover:text-primary">
-                        {t.teamName}
-                      </Link>
+                      <ManagerLink managerId={t.managerId}>{t.teamName}</ManagerLink>
                       <span className="ml-1 text-xs text-muted-foreground">{t.manager.displayName}</span>
                     </td>
                     <td className="px-3 py-2 text-right font-mono">
@@ -197,7 +196,7 @@ export default async function SeasonHistoryPage({
                 <strong>
                   {highestScore.player.firstName} {highestScore.player.lastName}
                 </strong>{" "}
-                dropped <strong className="font-mono">{highestScore.points.toFixed(1)}</strong> points
+                dropped <strong className="font-mono">{(highestScore.points ?? 0).toFixed(1)}</strong> points
                 for {highestScore.roster.fantasyTeam.manager.displayName} in Week {highestScore.roster.week}.
               </p>
             ) : (

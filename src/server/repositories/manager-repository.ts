@@ -3,12 +3,13 @@ import {
   averageFinish,
   careerSummary,
   championships,
+  filterByDataSource,
   finalsAppearances,
   finishesBySeason,
   headToHeadRecord,
   playoffAppearances,
 } from "@/server/stats";
-import type { GameResult, SeasonFinish } from "@/server/stats/types";
+import type { GameDataSource, GameResult, SeasonFinish } from "@/server/stats/types";
 import type { ManagerSummary } from "@/types/view-models";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import { generateScoutingReport } from "@/server/ai/services/scouting-report";
@@ -43,6 +44,7 @@ export async function buildManagerGameLog(managerId: string): Promise<GameResult
       pointsAgainst: opponent.score,
       opponentId: opponent.fantasyTeam.managerId,
       result,
+      dataSource: mt.matchup.season.dataSource,
     });
   }
   return games;
@@ -122,6 +124,8 @@ export interface ManagerSeasonLine {
   madePlayoffs: boolean;
   isChampion: boolean;
   teamName: string;
+  /** Which system this season's results came from, for the era label. */
+  dataSource: GameDataSource;
 }
 
 export interface HeadToHeadLine {
@@ -131,6 +135,111 @@ export interface HeadToHeadLine {
   losses: number;
   ties: number;
   pointsForAvg: number;
+}
+
+/**
+ * One era's worth of a manager's career. The league ran on ESPN through 2022
+ * and on Sleeper from 2023, and the two eras are worth reading separately: the
+ * rosters were different sizes, and only the Sleeper era has player-level data.
+ */
+export interface ManagerEraStats {
+  key: "CAREER" | "ESPN" | "SLEEPER";
+  label: string;
+  /** e.g. "2017–2022", or "—" when the manager never played in this era. */
+  years: string;
+  seasonsPlayed: number;
+  /**
+   * REGULAR-SEASON record, deliberately. It has to agree with the
+   * season-by-season rows on the same page (which come from FantasyTeam, and so
+   * are regular season) and with the scouting report's career record. Counting
+   * playoff and consolation games here made the per-season rows fail to sum to
+   * the career row — 55-71 of regular season reading as 64-82.
+   */
+  wins: number;
+  losses: number;
+  ties: number;
+  winningPercentage: number;
+  /** Postseason games, including consolation-bracket games, kept separate. */
+  playoffWins: number;
+  playoffLosses: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  /** Regular-season points per game — the only fair way to compare unequal eras. */
+  pointsForPerGame: number | null;
+  pointsAgainstPerGame: number | null;
+  championships: number;
+  finalsAppearances: number;
+  playoffAppearances: number;
+  bestFinish: number | null;
+  highestWeeklyScore: number | null;
+  lowestWeeklyScore: number | null;
+}
+
+interface EraSeasonFacts {
+  year: number;
+  dataSource: GameDataSource;
+  madePlayoffs: boolean;
+  finalRank: number | null;
+  isChampion: boolean;
+  isRunnerUp: boolean;
+  playedGames: boolean;
+}
+
+/**
+ * Builds the career / ESPN-era / Sleeper-era statistics table for one manager.
+ *
+ * Games carry their own `dataSource`, so an era's record is the record of the
+ * games actually played in it — no year cutoff is hard-coded, and a season
+ * imported from a third source would not silently land in either era.
+ */
+function buildEraStats(games: GameResult[], seasons: EraSeasonFacts[]): ManagerEraStats[] {
+  const build = (key: ManagerEraStats["key"], label: string, scopedGames: GameResult[], scopedSeasons: EraSeasonFacts[]): ManagerEraStats => {
+    const regular = careerSummary(scopedGames, "regularSeason");
+    const postseason = careerSummary(scopedGames, "playoffs");
+    // High/low single-game marks read across every game played, postseason
+    // included — a career-best score is a career-best score.
+    const allGames = careerSummary(scopedGames);
+    const played = scopedSeasons.filter((s) => s.playedGames);
+    const years = played.map((s) => s.year).sort((a, b) => a - b);
+    const gameCount = regular.record.wins + regular.record.losses + regular.record.ties;
+    const finishes = played.map((s) => s.finalRank).filter((r): r is number => r != null && r > 0);
+
+    return {
+      key,
+      label,
+      years: years.length === 0 ? "—" : years[0] === years[years.length - 1] ? `${years[0]}` : `${years[0]}–${years[years.length - 1]}`,
+      seasonsPlayed: played.length,
+      wins: regular.record.wins,
+      losses: regular.record.losses,
+      ties: regular.record.ties,
+      winningPercentage: Number(regular.winningPercentage.toFixed(3)),
+      playoffWins: postseason.record.wins,
+      playoffLosses: postseason.record.losses,
+      pointsFor: Number(regular.totalPointsFor.toFixed(1)),
+      pointsAgainst: Number(regular.totalPointsAgainst.toFixed(1)),
+      pointsForPerGame: gameCount ? Number((regular.totalPointsFor / gameCount).toFixed(1)) : null,
+      pointsAgainstPerGame: gameCount ? Number((regular.totalPointsAgainst / gameCount).toFixed(1)) : null,
+      championships: played.filter((s) => s.isChampion).length,
+      finalsAppearances: played.filter((s) => s.isChampion || s.isRunnerUp).length,
+      playoffAppearances: played.filter((s) => s.madePlayoffs).length,
+      bestFinish: finishes.length ? Math.min(...finishes) : null,
+      highestWeeklyScore: allGames.highestWeeklyScore == null ? null : Number(allGames.highestWeeklyScore.toFixed(1)),
+      lowestWeeklyScore: allGames.lowestWeeklyScore == null ? null : Number(allGames.lowestWeeklyScore.toFixed(1)),
+    };
+  };
+
+  const rows: ManagerEraStats[] = [build("CAREER", "Career", games, seasons)];
+  for (const [key, label] of [
+    ["ESPN", "ESPN era"],
+    ["SLEEPER", "Sleeper era"],
+  ] as const) {
+    const scopedGames = filterByDataSource(games, key);
+    const scopedSeasons = seasons.filter((s) => s.dataSource === key);
+    // Omit an era the manager never played in rather than showing a row of zeroes.
+    if (scopedGames.length === 0 && scopedSeasons.every((s) => !s.playedGames)) continue;
+    rows.push(build(key, label, scopedGames, scopedSeasons));
+  }
+  return rows;
 }
 
 /**
@@ -190,6 +299,7 @@ export async function getManagerProfileDetailed(managerId: string) {
       madePlayoffs: t.madePlayoffs,
       isChampion: t.isChampion,
       teamName: t.teamName,
+      dataSource: t.season.dataSource,
     }));
 
   const winPct = (l: ManagerSeasonLine) => {
@@ -283,9 +393,29 @@ export async function getManagerProfileDetailed(managerId: string) {
 
   const champs = await prisma.championship.count({ where: { championManagerId: managerId } });
 
+  // Era table. `finishes` already excludes UPCOMING seasons, and runner-up
+  // status comes from the Championship rows rather than being inferred.
+  const finishByYear = new Map(finishes.map((f) => [f.season, f]));
+  const eraStats = buildEraStats(
+    games,
+    seasonLines.map((line) => {
+      const finish = finishByYear.get(line.year);
+      return {
+        year: line.year,
+        dataSource: line.dataSource,
+        madePlayoffs: line.madePlayoffs,
+        finalRank: line.finalRank,
+        isChampion: line.isChampion,
+        isRunnerUp: finish?.isRunnerUp ?? false,
+        playedGames: line.wins + line.losses + line.ties > 0,
+      };
+    }),
+  );
+
   return {
     manager,
     seasonLines,
+    eraStats,
     stats: {
       ...summary,
       championships: champs,
@@ -438,8 +568,10 @@ export interface ManagerRow {
  * Rows for the full-width Managers page: photo, name, team, years active,
  * championships, verified career stats, current record, and (if generated) a
  * saved performance summary. `statsComplete` is false whenever the league's
- * founding year predates the earliest loaded season (pre-2023 ESPN history is
- * not yet imported) so the UI can clearly flag incomplete history.
+ * founding year predates the earliest loaded season, so callers can avoid
+ * presenting a partial record as a complete one. It reads true now that the
+ * ESPN era (2017-2022) sits alongside the Sleeper era; `getStatsCoverage()`
+ * is what the UI uses to state the covered range.
  */
 export async function listManagerRows(): Promise<ManagerRow[]> {
   const [managers, earliestSeason, league] = await Promise.all([
@@ -518,6 +650,57 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
     });
   }
   return rows;
+}
+
+export interface StatsCoverage {
+  /** One entry per era present in the database, oldest first. */
+  eras: { key: GameDataSource; label: string; years: string }[];
+  earliestYear: number | null;
+  latestYear: number | null;
+}
+
+/**
+ * Which seasons the site's statistics actually cover, per era.
+ *
+ * Used instead of a hard-coded caveat: the Managers page used to state that
+ * stats "cover the seasons loaded from Sleeper (2023-present)", which stopped
+ * being true the moment the ESPN history was imported. Deriving the sentence
+ * from the seasons in the database means it cannot go stale again.
+ */
+export async function getStatsCoverage(): Promise<StatsCoverage> {
+  const seasons = await prisma.season.findMany({
+    where: { fantasyTeams: { some: { OR: [{ wins: { gt: 0 } }, { losses: { gt: 0 } }, { ties: { gt: 0 } }] } } },
+    select: { year: true, dataSource: true },
+    orderBy: { year: "asc" },
+  });
+
+  const LABELS: Record<GameDataSource, string> = { ESPN: "ESPN", SLEEPER: "Sleeper", MANUAL: "Manually entered" };
+  const byEra = new Map<GameDataSource, number[]>();
+  for (const season of seasons) {
+    const list = byEra.get(season.dataSource) ?? [];
+    list.push(season.year);
+    byEra.set(season.dataSource, list);
+  }
+
+  const eras = [...byEra.entries()]
+    .map(([key, years]) => {
+      const sorted = [...years].sort((a, b) => a - b);
+      return {
+        key,
+        label: LABELS[key],
+        years: sorted[0] === sorted[sorted.length - 1] ? `${sorted[0]}` : `${sorted[0]}–${sorted[sorted.length - 1]}`,
+        first: sorted[0],
+      };
+    })
+    .sort((a, b) => a.first - b.first)
+    .map(({ key, label, years }) => ({ key, label, years }));
+
+  const allYears = seasons.map((s) => s.year);
+  return {
+    eras,
+    earliestYear: allYears.length ? Math.min(...allYears) : null,
+    latestYear: allYears.length ? Math.max(...allYears) : null,
+  };
 }
 
 /**

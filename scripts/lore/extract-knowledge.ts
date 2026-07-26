@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../lib/load-env";
 import { prisma } from "@/lib/db";
 import { groupConversations, type GroupableMessage } from "@/server/lore/conversation-grouping";
 import { extractKnowledgeFromConversation } from "@/server/ai/services/knowledge-extraction";

@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../lib/load-env";
 import { readFileSync, existsSync } from "node:fs";
 import { prisma } from "@/lib/db";
 import { readXlsx } from "./lib/xlsx";
@@ -338,6 +338,11 @@ async function main() {
   } else {
     console.log(`Workbook not found at ${workbookPath} — recomputing stats only, official flags untouched.`);
   }
+  // Whether the workbook was actually read. Without it there are no official
+  // pairings to assert, so `isOfficial` must be left exactly as it is: writing
+  // the empty set would silently un-declare every commissioner rivalry, which
+  // is the opposite of what the message above promises.
+  const haveWorkbook = existsSync(workbookPath);
   console.log(`Official rivalries in workbook: ${officialPairs.length}`);
 
   // 2. Candidate names for resolution.
@@ -417,8 +422,9 @@ async function main() {
       lastMeetingSeason: c.lastMeetingSeason,
       lastMeetingWeek: c.lastMeetingWeek,
       rivalryScore: c.rivalryScore,
-      isOfficial,
-      ...(isOfficial ? { source: "Rivalries.xlsx" } : {}),
+      // Only assert official status when the workbook was actually read.
+      ...(haveWorkbook ? { isOfficial } : {}),
+      ...(haveWorkbook && isOfficial ? { source: "Rivalries.xlsx" } : {}),
     };
 
     const rivalry = await prisma.rivalry.upsert({

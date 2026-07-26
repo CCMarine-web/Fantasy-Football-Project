@@ -41,7 +41,7 @@ export default async function ManagerProfilePage({
   ]);
   if (!profile) notFound();
 
-  const { manager, stats, seasonLines, bestSeason, worstSeason, finishDistribution, headToHead } = profile;
+  const { manager, stats, seasonLines, eraStats, bestSeason, worstSeason, finishDistribution, headToHead } = profile;
   const currentTeam = manager.fantasyTeams[manager.fantasyTeams.length - 1];
   const photo = manager.photoUrl ?? manager.avatarUrl;
   const teamCount = finishDistribution.length || 10;
@@ -49,34 +49,24 @@ export default async function ManagerProfilePage({
     .filter((l) => l.finalRank != null)
     .map((l) => ({ year: l.year, finalRank: l.finalRank, teamCount }));
   const maxFinishCount = Math.max(1, ...finishDistribution.map((f) => f.count));
+  const hasBiography = !!(manager.bio || manager.nicknameOrigin || manager.signatureMove);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      {/* Header */}
-      <div className="flex flex-col items-start gap-6 sm:flex-row sm:items-center">
+      {/* Header — identity only. Statistics come first, the biography follows. */}
+      <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-6">
         {manager.photoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={photo ?? undefined} alt={manager.displayName} className="h-24 w-24 shrink-0 rounded-xl border border-border/60 object-cover" />
         ) : (
-          <TeamAvatar name={manager.displayName} imageUrl={manager.avatarUrl} className="h-20 w-20" />
+          <TeamAvatar name={manager.displayName} imageUrl={manager.avatarUrl} className="h-20 w-20 shrink-0" />
         )}
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
             {currentTeam?.teamName ?? "Free Agent"}
           </p>
-          <h1 className="font-heading text-3xl font-semibold uppercase sm:text-4xl">{manager.displayName}</h1>
-          {manager.nickname ? (
-            <p className="mt-1 text-sm text-primary">
-              &ldquo;{manager.nickname}&rdquo;
-              {manager.nicknameOrigin ? <span className="text-muted-foreground"> — {manager.nicknameOrigin}</span> : null}
-            </p>
-          ) : null}
-          {manager.signatureMove ? (
-            <p className="mt-1 text-xs text-muted-foreground">
-              <span className="font-semibold text-foreground">Signature move:</span> {manager.signatureMove}
-            </p>
-          ) : null}
-          {manager.bio ? <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{manager.bio}</p> : null}
+          <h1 className="font-heading text-3xl font-semibold break-words uppercase sm:text-4xl">{manager.displayName}</h1>
+          {manager.nickname ? <p className="mt-1 text-sm text-primary">&ldquo;{manager.nickname}&rdquo;</p> : null}
           <div className="mt-3 flex flex-wrap gap-2">
             {stats.championships > 0 ? (
               <Badge className="bg-primary text-primary-foreground">{stats.championships}&times; Champion</Badge>
@@ -84,6 +74,7 @@ export default async function ManagerProfilePage({
             {stats.finalsAppearances > 0 ? (
               <Badge variant="secondary">{stats.finalsAppearances} Finals</Badge>
             ) : null}
+            {!manager.isActive ? <Badge variant="outline">Retired</Badge> : null}
             <Badge className={`border ${LUCK_STYLES[stats.luck.label]}`}>
               {stats.luck.label === "neutral"
                 ? "Neutral luck"
@@ -96,21 +87,83 @@ export default async function ManagerProfilePage({
 
       <Separator className="my-8" />
 
-      {/* Career headline stats */}
+      {/* Career / era breakdown — the headline table. */}
       <section>
-        <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Career</h2>
+        <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Career Statistics</h2>
+        <p className="mt-1 mb-4 text-sm text-muted-foreground">
+          The league ran on ESPN through 2022 and on Sleeper from 2023. Both eras are counted in the
+          career totals. Records are regular season, so they match the season-by-season table below;
+          postseason games are listed separately, and points per game is the fair comparison between
+          eras of different lengths.
+        </p>
+        {/* Eleven columns cannot fit a phone, and dropping any of them would
+            defeat the point of the table, so this one genuinely scrolls. The
+            note below is the affordance — without it a phone user sees a
+            column sliced at the right edge and reads it as a bug. */}
+        <p className="mb-2 text-xs text-muted-foreground sm:hidden" aria-hidden>
+          Swipe the table sideways to see every column →
+        </p>
+        <div className="overflow-x-auto rounded-lg border border-border/60">
+          <table className="w-full min-w-[52rem] text-sm">
+            <caption className="sr-only">Career, ESPN-era and Sleeper-era statistics</caption>
+            <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
+              <tr>
+                <th scope="col" className="px-3 py-2 text-left">Era</th>
+                <th scope="col" className="px-3 py-2 text-left">Years</th>
+                <th scope="col" className="px-3 py-2 text-right">Seasons</th>
+                <th scope="col" className="px-3 py-2 text-right" title="Regular-season record">Record</th>
+                <th scope="col" className="px-3 py-2 text-right">Win%</th>
+                <th scope="col" className="px-3 py-2 text-right" title="Postseason record, consolation-bracket games included">
+                  Postseason
+                </th>
+                <th scope="col" className="px-3 py-2 text-right">PF/G</th>
+                <th scope="col" className="px-3 py-2 text-right">PA/G</th>
+                <th scope="col" className="px-3 py-2 text-right">Titles</th>
+                <th scope="col" className="px-3 py-2 text-right" title="Seasons in which this manager reached the playoffs">
+                  Berths
+                </th>
+                <th scope="col" className="px-3 py-2 text-right" title="Best final standing on record. Sleeper only reports a final placing for the top three, so a finish outside the podium shows as —.">
+                  Best
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {eraStats.map((era) => (
+                <tr key={era.key} className={era.key === "CAREER" ? "bg-card/30 font-semibold" : undefined}>
+                  <th scope="row" className="px-3 py-2 text-left font-medium">{era.label}</th>
+                  <td className="px-3 py-2 text-muted-foreground">{era.years}</td>
+                  <td className="px-3 py-2 text-right font-mono">{era.seasonsPlayed}</td>
+                  <td className="px-3 py-2 text-right font-mono">
+                    {era.wins}-{era.losses}
+                    {era.ties ? `-${era.ties}` : ""}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">{(era.winningPercentage * 100).toFixed(1)}%</td>
+                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                    {era.playoffWins + era.playoffLosses > 0 ? `${era.playoffWins}-${era.playoffLosses}` : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">{era.pointsForPerGame?.toFixed(1) ?? "—"}</td>
+                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                    {era.pointsAgainstPerGame?.toFixed(1) ?? "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono">{era.championships}</td>
+                  <td className="px-3 py-2 text-right font-mono">{era.playoffAppearances}</td>
+                  <td className="px-3 py-2 text-right font-mono">{era.bestFinish ? `#${era.bestFinish}` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Career headline stats */}
+      <section className="mt-8">
+        <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Career Highs &amp; Splits</h2>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatTile
-            label="Record"
-            value={`${stats.record.wins}-${stats.record.losses}${stats.record.ties ? `-${stats.record.ties}` : ""}`}
-            sub={`${(stats.winningPercentage * 100).toFixed(1)}% win rate`}
-          />
           <StatTile
             label="All-Play Record"
             value={`${stats.allPlay.wins}-${stats.allPlay.losses}`}
             sub={`${(stats.allPlay.winPct * 100).toFixed(1)}% vs the field`}
           />
-          <StatTile label="Championships" value={stats.championships} sub={`${stats.playoffAppearances} playoff appearances`} />
           <StatTile label="Avg. Finish" value={stats.averageFinish || "—"} />
           <StatTile label="Total PF" value={stats.totalPointsFor.toFixed(0)} sub={`${stats.totalPointsAgainst.toFixed(0)} against`} />
           <StatTile label="High / Low Game" value={`${stats.highestWeeklyScore?.toFixed(0) ?? "—"} / ${stats.lowestWeeklyScore?.toFixed(0) ?? "—"}`} />
@@ -119,24 +172,20 @@ export default async function ManagerProfilePage({
             label="Avg Margin (W / L)"
             value={`+${stats.avgMarginVictory.toFixed(0)} / -${stats.avgMarginDefeat.toFixed(0)}`}
           />
+          <StatTile label="Close Games (<5)" value={`${stats.closeRecord.wins}-${stats.closeRecord.losses}`} />
+          <StatTile label="Blowouts (≥40)" value={`${stats.blowoutRecord.wins}-${stats.blowoutRecord.losses}`} />
+          <StatTile
+            label="Best Season"
+            value={bestSeason ? String(bestSeason.year) : "—"}
+            sub={bestSeason ? `${bestSeason.wins}-${bestSeason.losses}, ${bestSeason.pointsFor.toFixed(0)} PF` : undefined}
+          />
+          <StatTile
+            label="Worst Season"
+            value={worstSeason ? String(worstSeason.year) : "—"}
+            sub={worstSeason ? `${worstSeason.wins}-${worstSeason.losses}, ${worstSeason.pointsFor.toFixed(0)} PF` : undefined}
+          />
         </div>
       </section>
-
-      {/* Best/worst season + close/blowout */}
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-4">
-        <StatTile
-          label="Best Season"
-          value={bestSeason ? String(bestSeason.year) : "—"}
-          sub={bestSeason ? `${bestSeason.wins}-${bestSeason.losses}, ${bestSeason.pointsFor.toFixed(0)} PF` : undefined}
-        />
-        <StatTile
-          label="Worst Season"
-          value={worstSeason ? String(worstSeason.year) : "—"}
-          sub={worstSeason ? `${worstSeason.wins}-${worstSeason.losses}, ${worstSeason.pointsFor.toFixed(0)} PF` : undefined}
-        />
-        <StatTile label="Close Games (<5)" value={`${stats.closeRecord.wins}-${stats.closeRecord.losses}`} />
-        <StatTile label="Blowouts (≥40)" value={`${stats.blowoutRecord.wins}-${stats.blowoutRecord.losses}`} />
-      </div>
 
       <Separator className="my-8" />
 
@@ -148,27 +197,39 @@ export default async function ManagerProfilePage({
             <EmptyState title="No seasons played yet" />
           ) : (
             <div className="overflow-x-auto rounded-lg border border-border/60">
+              {/* No min-width: with PA hidden below `sm` the five remaining
+                  columns fit a phone, and a 24rem floor was itself forcing a
+                  28px overflow on a 356px container. */}
               <table className="w-full text-sm">
                 <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
                   <tr>
-                    <th className="px-3 py-2 text-left">Year</th>
-                    <th className="px-3 py-2 text-right">W-L</th>
-                    <th className="px-3 py-2 text-right">PF</th>
-                    <th className="px-3 py-2 text-right">PA</th>
-                    <th className="px-3 py-2 text-right">Finish</th>
+                    <th scope="col" className="px-2 py-2 sm:px-3 text-left">Year</th>
+                    <th scope="col" className="px-2 py-2 sm:px-3 text-left">Era</th>
+                    <th scope="col" className="px-2 py-2 sm:px-3 text-right">W-L</th>
+                    <th scope="col" className="px-2 py-2 sm:px-3 text-right">PF</th>
+                    {/* Adding the Era column pushed this table past a phone's
+                        width; PA is the least-cited figure, so it steps aside
+                        below `sm` rather than being clipped mid-number. */}
+                    <th scope="col" className="hidden px-2 py-2 sm:px-3 text-right sm:table-cell">PA</th>
+                    <th scope="col" className="px-2 py-2 sm:px-3 text-right">Finish</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {[...seasonLines].reverse().map((l) => (
                     <tr key={l.year}>
-                      <td className="px-3 py-2 font-medium">{l.year}</td>
-                      <td className="px-3 py-2 text-right font-mono">
+                      <th scope="row" className="px-2 py-2 sm:px-3 text-left font-medium">{l.year}</th>
+                      <td className="px-2 py-2 sm:px-3 text-xs text-muted-foreground">
+                        {l.dataSource === "ESPN" ? "ESPN" : l.dataSource === "SLEEPER" ? "Sleeper" : "Manual"}
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono">
                         {l.wins}-{l.losses}
                         {l.ties ? `-${l.ties}` : ""}
                       </td>
-                      <td className="px-3 py-2 text-right font-mono">{l.pointsFor.toFixed(0)}</td>
-                      <td className="px-3 py-2 text-right font-mono text-muted-foreground">{l.pointsAgainst.toFixed(0)}</td>
-                      <td className="px-3 py-2 text-right">
+                      <td className="px-2 py-2 sm:px-3 text-right font-mono">{l.pointsFor.toFixed(0)}</td>
+                      <td className="hidden px-2 py-2 sm:px-3 text-right font-mono text-muted-foreground sm:table-cell">
+                        {l.pointsAgainst.toFixed(0)}
+                      </td>
+                      <td className="px-2 py-2 sm:px-3 text-right">
                         {l.isChampion ? (
                           <Badge className="bg-primary text-primary-foreground">Champ</Badge>
                         ) : l.finalRank ? (
@@ -299,6 +360,31 @@ export default async function ManagerProfilePage({
           </section>
         </>
       ) : null}
+
+      <Separator className="my-8" />
+
+      {/* Biography — deliberately below the statistics tables. */}
+      <section>
+        <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Biography</h2>
+        {hasBiography ? (
+          <div className="space-y-3 rounded-lg border border-border/60 bg-card/30 p-4">
+            {manager.bio ? <p className="text-sm leading-relaxed text-foreground/90">{manager.bio}</p> : null}
+            {manager.nickname && manager.nicknameOrigin ? (
+              <p className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">Nickname:</span> &ldquo;{manager.nickname}&rdquo; —{" "}
+                {manager.nicknameOrigin}
+              </p>
+            ) : null}
+            {manager.signatureMove ? (
+              <p className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground">Signature move:</span> {manager.signatureMove}
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <EmptyState title="No biography yet" description="A commissioner can add one from the admin manager editor." />
+        )}
+      </section>
 
       <Separator className="my-8" />
 

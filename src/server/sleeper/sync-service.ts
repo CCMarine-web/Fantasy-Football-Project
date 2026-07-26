@@ -771,11 +771,24 @@ export async function syncCurrentLeague(): Promise<{ seasonId: string; recordsPr
     const year = Number.parseInt(leagueData.season, 10) || new Date().getFullYear();
 
     const seasonRow = await prisma.$transaction(async (tx) => {
-      const leagueRow = await tx.league.upsert({
-        where: { sleeperLeagueId },
-        update: { name: leagueData.name },
-        create: { name: leagueData.name, sleeperLeagueId, foundedYear: year },
-      });
+      // League is a singleton: every read in the app is `league.findFirst()`.
+      // Sleeper issues a NEW league id for each season, so upserting League on
+      // `sleeperLeagueId` created a second League row every year and silently
+      // split the league's history across two roots. Reuse whatever League row
+      // exists and only create one when the database is empty. The per-season
+      // Sleeper id still lives on `Season.sleeperLeagueId`, which is the real
+      // link to Sleeper (see resolveSleeperLeagueId).
+      const existingLeague = await tx.league.findFirst({ orderBy: { createdAt: "asc" } });
+      const leagueRow = existingLeague
+        ? await tx.league.update({
+            where: { id: existingLeague.id },
+            // `foundedYear` is deliberately not touched: it may have been
+            // corrected to an earlier, pre-Sleeper season by the ESPN import.
+            data: { name: leagueData.name },
+          })
+        : await tx.league.create({
+            data: { name: leagueData.name, sleeperLeagueId, foundedYear: year },
+          });
 
       const season = await tx.season.upsert({
         where: { sleeperLeagueId },

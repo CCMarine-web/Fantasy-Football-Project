@@ -177,7 +177,10 @@ export default async function ChampionshipBeltPage() {
                     <tr>
                       <th className="px-4 py-2 text-left">Season</th>
                       <th className="px-4 py-2 text-left">Champion</th>
-                      <th className="px-4 py-2 text-left">Team</th>
+                      {/* The team name is the least essential column and the
+                          widest; hiding it below `sm` keeps Runner-Up on screen
+                          instead of clipped past the right edge on a phone. */}
+                      <th className="hidden px-4 py-2 text-left sm:table-cell">Team</th>
                       <th className="px-4 py-2 text-left">Runner-Up</th>
                     </tr>
                   </thead>
@@ -194,7 +197,9 @@ export default async function ChampionshipBeltPage() {
                             {row.championName}
                           </Link>
                         </td>
-                        <td className="px-4 py-2 text-muted-foreground">{row.championTeamName}</td>
+                        <td className="hidden px-4 py-2 text-muted-foreground sm:table-cell">
+                          {row.championTeamName}
+                        </td>
                         <td className="px-4 py-2 text-muted-foreground">{row.runnerUpName ?? "—"}</td>
                       </tr>
                     ))}

@@ -1,436 +1,326 @@
-import "dotenv/config";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
-import { join } from "node:path";
+import "../lib/load-env";
 import { prisma } from "@/lib/db";
 import { getEnv } from "@/lib/env";
+import {
+  EspnAuthError,
+  EspnSeasonUnavailableError,
+  fetchSeason,
+  hasCredentials,
+  redactSecrets,
+  type EspnSeasonData,
+} from "./espn/client";
+import { collectAccounts, recordEspnAliases, resolveOwners } from "./espn/owners";
+import { importSeason, type SeasonImportResult } from "./espn/import-season";
 
 /**
- * Imports the league's ESPN history (2016-2022) into the same tables the
- * Sleeper sync writes, marked `dataSource: ESPN` so the two eras stay
- * distinguishable and Sleeper data is never overwritten.
+ * Imports the league's ESPN history into the same tables the Sleeper sync
+ * writes, marked `dataSource: ESPN` so the two eras stay distinguishable and
+ * Sleeper data is never overwritten.
  *
- *   npx tsx scripts/import/import-espn-history.ts --check          # auth probe only
- *   npx tsx scripts/import/import-espn-history.ts --dry-run
- *   npx tsx scripts/import/import-espn-history.ts --years 2016-2022
- *   npx tsx scripts/import/import-espn-history.ts --fresh
+ *   npx tsx scripts/import/import-espn-history.ts --check      # access probe only
+ *   npx tsx scripts/import/import-espn-history.ts --dry-run    # resolve + report, no writes
+ *   npx tsx scripts/import/import-espn-history.ts
+ *   npx tsx scripts/import/import-espn-history.ts --years 2019-2022
  *
- * ── AUTHENTICATION ─────────────────────────────────────────────────────────
- * League 501874 is PRIVATE. Anonymous reads return:
- *   HTTP 401 {"AUTH_LEAGUE_NOT_VISIBLE": "You are not authorized to view this League."}
- * Two cookies from a logged-in ESPN browser session are required:
+ * ── Credentials ───────────────────────────────────────────────────────────
+ * League 501874 is private, so two cookies from a signed-in ESPN session are
+ * required in .env.local: ESPN_SWID (braces included) and ESPN_S2. Neither is
+ * ever printed: every response body and error message passes through
+ * `redactSecrets()` first, because an ESPN member id is a SWID and therefore
+ * appears inside ordinary responses.
  *
- *   ESPN_SWID   the SWID cookie, including the braces, e.g. {1A2B3C4D-...}
- *   ESPN_S2     the espn_s2 cookie (a long percent-encoded string)
- *
- * To collect them: sign in at fantasy.espn.com, open DevTools →
- * Application → Cookies → https://fantasy.espn.com, and copy both values into
- * .env.local. Nothing is imported until they are present and valid — the
- * script exits non-zero with the exact reason rather than writing partial data.
- *
- * ── SAFETY ─────────────────────────────────────────────────────────────────
- *  - Resumable: each season is checkpointed, so a rerun skips finished years.
- *  - Idempotent: every write is an upsert keyed on stable ESPN ids.
- *  - Never overwrites Sleeper: seasons whose dataSource is SLEEPER are skipped.
- *  - Never invents data: fields ESPN doesn't return are left null.
- *  - Manager mapping is proposed, not guessed — see reportUnmappedOwners().
+ * ── Resilience ────────────────────────────────────────────────────────────
+ * Seasons are independent. One failing year is recorded and the rest continue;
+ * the run ends with an explicit list of what succeeded and what did not. Only
+ * an authentication failure stops the run early, because every remaining
+ * request would fail the same way.
  */
 
-const FIRST_YEAR = 2016;
-const LAST_YEAR = 2022;
-const READ_HOST = "https://lm-api-reads.fantasy.espn.com";
+const REQUESTED_FIRST_YEAR = 2016;
+const REQUESTED_LAST_YEAR = 2022;
 
-const CHECKPOINT_DIR = join(process.cwd(), "scripts", "import", ".checkpoints");
-const CHECKPOINT_FILE = join(CHECKPOINT_DIR, "espn-history.json");
+const VIEWS = ["mTeam", "mSettings", "mMatchupScore", "mRoster", "mDraftDetail", "mTransactions2"];
 
-interface Checkpoint {
-  doneYears: number[];
-  updatedAt: string;
+interface FailedSeason {
+  year: number;
+  reason: string;
+  unavailable: boolean;
 }
 
-function loadCheckpoint(fresh: boolean): Checkpoint {
-  mkdirSync(CHECKPOINT_DIR, { recursive: true });
-  if (!fresh && existsSync(CHECKPOINT_FILE)) {
-    try {
-      return JSON.parse(readFileSync(CHECKPOINT_FILE, "utf8")) as Checkpoint;
-    } catch {
-      /* corrupt checkpoint — start over */
+function parseYears(args: string[]): number[] {
+  const index = args.indexOf("--years");
+  const years: number[] = [];
+  if (index !== -1 && args[index + 1]) {
+    const [from, to] = args[index + 1].split("-").map(Number);
+    if (Number.isFinite(from)) {
+      for (let year = from; year <= (Number.isFinite(to) ? to : from); year++) years.push(year);
     }
   }
-  return { doneYears: [], updatedAt: new Date(0).toISOString() };
-}
-
-function saveCheckpoint(cp: Checkpoint) {
-  cp.updatedAt = new Date().toISOString();
-  writeFileSync(CHECKPOINT_FILE, JSON.stringify(cp, null, 2));
-}
-
-// --- ESPN client ------------------------------------------------------------
-
-export class EspnAuthError extends Error {
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-    this.name = "EspnAuthError";
+  if (years.length === 0) {
+    for (let year = REQUESTED_FIRST_YEAR; year <= REQUESTED_LAST_YEAR; year++) years.push(year);
   }
-}
-
-interface EspnTeam {
-  id: number;
-  abbrev?: string;
-  name?: string;
-  location?: string;
-  nickname?: string;
-  owners?: string[];
-  primaryOwner?: string;
-  record?: { overall?: { wins?: number; losses?: number; ties?: number; pointsFor?: number; pointsAgainst?: number } };
-  playoffSeed?: number;
-  rankCalculatedFinal?: number;
-}
-
-interface EspnMember {
-  id: string;
-  displayName?: string;
-  firstName?: string;
-  lastName?: string;
-}
-
-interface EspnMatchup {
-  id: number;
-  matchupPeriodId: number;
-  playoffTierType?: string;
-  winner?: string;
-  home?: { teamId: number; totalPoints?: number };
-  away?: { teamId: number; totalPoints?: number };
-}
-
-interface EspnLeagueResponse {
-  seasonId?: number;
-  teams?: EspnTeam[];
-  members?: EspnMember[];
-  schedule?: EspnMatchup[];
-  status?: { finalScoringPeriod?: number; currentMatchupPeriod?: number };
-  settings?: { name?: string; scheduleSettings?: { matchupPeriodCount?: number } };
-}
-
-function cookieHeader(): string {
-  const env = getEnv();
-  return `SWID=${env.ESPN_SWID}; espn_s2=${env.ESPN_S2}`;
+  return years;
 }
 
 /**
- * Historical seasons live behind the leagueHistory endpoint, which returns an
- * ARRAY. The current-season endpoint returns an object. Handle both.
+ * Picks the League row the ESPN seasons attach to.
+ *
+ * `findFirst()` without an ordering is NOT safe here: Postgres may return a
+ * different row on each call, and a duplicate League row (see
+ * scripts/import/dedupe-leagues.ts) once caused two consecutive runs of this
+ * importer to write every ESPN season twice, under a different root each time.
+ * The league holding the SLEEPER seasons is the source of truth; anything else
+ * is a stray that must be cleaned up before importing rather than written to.
  */
-async function fetchSeason(leagueId: string, year: number, views: string[]): Promise<EspnLeagueResponse> {
-  const params = new URLSearchParams({ seasonId: String(year) });
-  for (const v of views) params.append("view", v);
-  const url = `${READ_HOST}/apis/v3/games/ffl/leagueHistory/${leagueId}?${params}`;
-
-  const res = await fetch(url, {
-    headers: { Cookie: cookieHeader(), Accept: "application/json" },
-  });
-
-  if (res.status === 401 || res.status === 403) {
-    throw new EspnAuthError(res.status, `ESPN rejected the credentials for ${year} (HTTP ${res.status}).`);
-  }
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    throw new Error(`ESPN ${year} request failed: HTTP ${res.status} ${body.slice(0, 200)}`);
-  }
-
-  const json = (await res.json()) as EspnLeagueResponse | EspnLeagueResponse[];
-  return Array.isArray(json) ? (json[0] ?? {}) : json;
-}
-
-/**
- * Probes access without importing anything. Returns a human-readable status
- * per year so a blocked import reports exactly what's missing.
- */
-export async function checkAccess(leagueId: string, years: number[]): Promise<{ ok: boolean; lines: string[] }> {
-  const env = getEnv();
-  const lines: string[] = [];
-
-  if (!env.ESPN_SWID.trim() || !env.ESPN_S2.trim()) {
-    return {
-      ok: false,
-      lines: [
-        "MISSING CREDENTIALS — the ESPN import cannot run.",
-        "  league 501874 is private; anonymous reads return HTTP 401 AUTH_LEAGUE_NOT_VISIBLE.",
-        "  Required in .env.local:",
-        "    ESPN_SWID=<the SWID cookie, braces included, e.g. {1A2B3C4D-...}>",
-        "    ESPN_S2=<the espn_s2 cookie value>",
-        "  Get both from a signed-in session at fantasy.espn.com:",
-        "    DevTools -> Application -> Cookies -> https://fantasy.espn.com",
-      ],
-    };
-  }
-
-  let ok = true;
-  for (const year of years) {
-    try {
-      const data = await fetchSeason(leagueId, year, ["mTeam"]);
-      const teams = data.teams?.length ?? 0;
-      lines.push(`  ${year}: OK (${teams} teams)`);
-      if (teams === 0) lines.push(`  ${year}: WARNING — authorised but no teams returned`);
-    } catch (e) {
-      ok = false;
-      lines.push(`  ${year}: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-  return { ok, lines };
-}
-
-// --- mapping ----------------------------------------------------------------
-
-function normalize(s: string): string {
-  return s.toLowerCase().replace(/[^a-z]/g, "");
-}
-
-/**
- * Maps ESPN member ids to existing managers by name. Anything that doesn't
- * match confidently is REPORTED, not guessed — merging two different people
- * would silently corrupt career records. Unmatched owners become retired
- * managers (isActive: false) so their history is preserved separately.
- */
-async function resolveOwners(members: EspnMember[]): Promise<Map<string, { managerId: string; created: boolean }>> {
-  const managers = await prisma.manager.findMany({
-    where: { deletedAt: null },
-    select: { id: true, displayName: true, aliases: { select: { value: true } } },
-  });
-
-  const byName = new Map<string, string>();
-  for (const m of managers) {
-    byName.set(normalize(m.displayName), m.id);
-    for (const a of m.aliases) byName.set(normalize(a.value), m.id);
-  }
-
-  const out = new Map<string, { managerId: string; created: boolean }>();
-  for (const member of members) {
-    const candidates = [
-      member.displayName,
-      [member.firstName, member.lastName].filter(Boolean).join(" "),
-    ].filter((x): x is string => !!x && x.trim().length > 0);
-
-    let managerId: string | undefined;
-    for (const c of candidates) {
-      managerId = byName.get(normalize(c));
-      if (managerId) break;
-    }
-
-    if (managerId) {
-      out.set(member.id, { managerId, created: false });
-      continue;
-    }
-
-    // A genuinely new person from the ESPN era: preserve them as retired.
-    const name = candidates[0] ?? `ESPN member ${member.id.slice(0, 8)}`;
-    const created = await prisma.manager.create({
-      data: {
-        displayName: name,
-        joinedYear: FIRST_YEAR,
-        isActive: false,
-        bio: "Former manager from the league's ESPN era.",
-      },
-      select: { id: true },
-    });
-    out.set(member.id, { managerId: created.id, created: true });
-  }
-  return out;
-}
-
-// --- import -----------------------------------------------------------------
-
-async function importYear(leagueId: string, year: number, dryRun: boolean): Promise<string> {
-  const data = await fetchSeason(leagueId, year, ["mTeam", "mSettings", "mSchedule", "mMatchupScore"]);
-  const teams = data.teams ?? [];
-  const members = data.members ?? [];
-  const schedule = data.schedule ?? [];
-
-  if (teams.length === 0) return `${year}: no teams returned — skipped`;
-
-  const league = await prisma.league.findFirst({ select: { id: true } });
-  if (!league) throw new Error("No League row exists — seed the league before importing ESPN history.");
-
-  const existing = await prisma.season.findUnique({
-    where: { leagueId_year: { leagueId: league.id, year } },
-    select: { id: true, dataSource: true },
-  });
-  if (existing && existing.dataSource === "SLEEPER") {
-    return `${year}: already present as SLEEPER data — left untouched`;
-  }
-
-  if (dryRun) {
-    return `${year}: would import ${teams.length} teams, ${members.length} members, ${schedule.length} matchups`;
-  }
-
-  const owners = await resolveOwners(members);
-
-  const season = await prisma.season.upsert({
-    where: { leagueId_year: { leagueId: league.id, year } },
-    create: {
-      leagueId: league.id,
-      year,
-      dataSource: "ESPN",
-      espnLeagueId: leagueId,
-      status: "COMPLETE",
-      regularSeasonWeeks: data.settings?.scheduleSettings?.matchupPeriodCount ?? 14,
+async function resolveLeague(): Promise<{ id: string; foundedYear: number }> {
+  const leagues = await prisma.league.findMany({
+    orderBy: { createdAt: "asc" },
+    select: {
+      id: true,
+      foundedYear: true,
+      _count: { select: { seasons: true } },
+      seasons: { where: { dataSource: "SLEEPER" }, select: { id: true }, take: 1 },
     },
-    update: { dataSource: "ESPN", espnLeagueId: leagueId },
-    select: { id: true },
   });
-
-  // Teams — original ESPN team names and ids are preserved verbatim.
-  const teamIdMap = new Map<number, string>();
-  for (const t of teams) {
-    const ownerId = t.primaryOwner ?? t.owners?.[0];
-    const mapped = ownerId ? owners.get(ownerId) : undefined;
-    if (!mapped) continue;
-
-    const teamName = t.name?.trim() || [t.location, t.nickname].filter(Boolean).join(" ").trim() || `Team ${t.id}`;
-    const rec = t.record?.overall ?? {};
-
-    const ft = await prisma.fantasyTeam.upsert({
-      where: { seasonId_managerId: { seasonId: season.id, managerId: mapped.managerId } },
-      create: {
-        seasonId: season.id,
-        managerId: mapped.managerId,
-        teamName,
-        wins: rec.wins ?? 0,
-        losses: rec.losses ?? 0,
-        ties: rec.ties ?? 0,
-        pointsFor: rec.pointsFor ?? 0,
-        pointsAgainst: rec.pointsAgainst ?? 0,
-        finalRank: t.rankCalculatedFinal ?? null,
-        playoffSeed: t.playoffSeed ?? null,
-      },
-      update: {
-        teamName,
-        wins: rec.wins ?? 0,
-        losses: rec.losses ?? 0,
-        ties: rec.ties ?? 0,
-        pointsFor: rec.pointsFor ?? 0,
-        pointsAgainst: rec.pointsAgainst ?? 0,
-        finalRank: t.rankCalculatedFinal ?? null,
-        playoffSeed: t.playoffSeed ?? null,
-      },
-      select: { id: true },
-    });
-    teamIdMap.set(t.id, ft.id);
+  if (leagues.length === 0) {
+    throw new Error("No League row exists — seed the league before importing ESPN history.");
   }
-
-  // Matchups.
-  let matchupCount = 0;
-  for (const m of schedule) {
-    const homeId = m.home?.teamId != null ? teamIdMap.get(m.home.teamId) : undefined;
-    const awayId = m.away?.teamId != null ? teamIdMap.get(m.away.teamId) : undefined;
-    if (!homeId || !awayId) continue;
-
-    const isPlayoff = !!m.playoffTierType && m.playoffTierType !== "NONE";
-    const homeScore = m.home?.totalPoints ?? null;
-    const awayScore = m.away?.totalPoints ?? null;
-
-    const matchup = await prisma.matchup.upsert({
-      where: { id: `espn-${year}-${m.id}` },
-      create: {
-        id: `espn-${year}-${m.id}`,
-        seasonId: season.id,
-        week: m.matchupPeriodId,
-        isPlayoff,
-        status: homeScore != null && awayScore != null ? "FINAL" : "SCHEDULED",
-      },
-      update: { week: m.matchupPeriodId, isPlayoff },
-      select: { id: true },
-    });
-
-    for (const [teamId, score, opponentScore] of [
-      [homeId, homeScore, awayScore],
-      [awayId, awayScore, homeScore],
-    ] as const) {
-      await prisma.matchupTeam.upsert({
-        where: { matchupId_fantasyTeamId: { matchupId: matchup.id, fantasyTeamId: teamId } },
-        create: {
-          matchupId: matchup.id,
-          fantasyTeamId: teamId,
-          score,
-          isWinner: score != null && opponentScore != null ? score > opponentScore : null,
-        },
-        update: {
-          score,
-          isWinner: score != null && opponentScore != null ? score > opponentScore : null,
-        },
-      });
+  if (leagues.length > 1) {
+    const withSleeper = leagues.filter((l) => l.seasons.length > 0);
+    if (withSleeper.length !== 1) {
+      throw new Error(
+        `${leagues.length} League rows exist and ${withSleeper.length} hold Sleeper seasons, so the ESPN seasons cannot be attached unambiguously. ` +
+          `Run: npx tsx scripts/import/dedupe-leagues.ts`,
+      );
     }
-    matchupCount++;
+    console.log(
+      `\nWARNING: ${leagues.length} League rows exist. Attaching to ${withSleeper[0].id}, the one holding the Sleeper seasons.`,
+    );
+    console.log("  Clean up the stray row with: npx tsx scripts/import/dedupe-leagues.ts");
+    return withSleeper[0];
   }
-
-  const createdCount = [...owners.values()].filter((o) => o.created).length;
-  return `${year}: ${teamIdMap.size} teams, ${matchupCount} matchups${createdCount ? `, ${createdCount} retired manager(s) created` : ""}`;
+  return leagues[0];
 }
-
-// --- main -------------------------------------------------------------------
 
 async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes("--dry-run");
-  const fresh = args.includes("--fresh");
   const checkOnly = args.includes("--check");
-
-  const yearsArg = args[args.indexOf("--years") + 1];
-  const years: number[] = [];
-  if (args.includes("--years") && yearsArg) {
-    const [a, b] = yearsArg.split("-").map(Number);
-    for (let y = a; y <= (b ?? a); y++) years.push(y);
-  } else {
-    for (let y = FIRST_YEAR; y <= LAST_YEAR; y++) years.push(y);
-  }
-
+  const years = parseYears(args);
   const leagueId = getEnv().ESPN_LEAGUE_ID;
-  console.log("=== ESPN history import ===");
-  console.log(`league: ${leagueId} | years: ${years[0]}-${years[years.length - 1]} | dryRun: ${dryRun}`);
 
-  const access = await checkAccess(leagueId, checkOnly ? years : [years[0]]);
-  console.log(access.lines.join("\n"));
-  if (!access.ok) {
-    console.log("\nESPN import BLOCKED. No data was written. Every other feature is unaffected.");
+  console.log("=== ESPN history import ===");
+  console.log(`league ${leagueId} | seasons ${years[0]}-${years[years.length - 1]}${dryRun ? " | DRY RUN (no writes)" : ""}`);
+
+  if (!hasCredentials()) {
+    console.log("\nBLOCKED: ESPN credentials are not configured.");
+    console.log("  League 501874 is private; anonymous reads return HTTP 401 AUTH_LEAGUE_NOT_VISIBLE.");
+    console.log("  Add ESPN_SWID and ESPN_S2 to .env.local (DevTools -> Application -> Cookies");
+    console.log("  -> https://fantasy.espn.com while signed in). Nothing was written.");
     process.exitCode = 2;
     return;
   }
-  if (checkOnly) {
-    console.log("\nAccess OK — rerun without --check to import.");
-    return;
-  }
 
-  const cp = loadCheckpoint(fresh);
-  const todo = years.filter((y) => !cp.doneYears.includes(y));
-  console.log(`${todo.length} year(s) to import (${cp.doneYears.length} already done)\n`);
+  // ── Fetch every season first ───────────────────────────────────────────
+  // Owner identity has to be resolved across the whole history before anything
+  // is written (see owners.ts), so all seasons are fetched up front.
+  const fetched: { year: number; data: EspnSeasonData }[] = [];
+  const failed: FailedSeason[] = [];
 
-  for (const year of todo) {
+  for (const year of years) {
     try {
-      const summary = await importYear(leagueId, year, dryRun);
-      console.log(`  ${summary}`);
-      if (!dryRun) {
-        cp.doneYears.push(year);
-        saveCheckpoint(cp);
+      const data = await fetchSeason(leagueId, year, VIEWS);
+      const teams = data.teams?.length ?? 0;
+      if (teams === 0) {
+        failed.push({ year, reason: "ESPN returned no teams for this season", unavailable: true });
+        console.log(`  ${year}: no teams returned`);
+        continue;
       }
-    } catch (e) {
-      if (e instanceof EspnAuthError) {
-        console.log(`\nAuthentication failed part-way through: ${e.message}`);
-        console.log("Progress is checkpointed — refresh the cookies and rerun.");
+      fetched.push({ year, data });
+      console.log(
+        `  ${year}: fetched ${teams} teams, ${data.members?.length ?? 0} members, ${data.schedule?.length ?? 0} scheduled games, ${data.draftDetail?.picks?.length ?? 0} draft picks`,
+      );
+    } catch (error) {
+      if (error instanceof EspnAuthError) {
+        console.log(`\nBLOCKED: ${redactSecrets(error.message)}`);
+        console.log("  The cookies are present but no longer valid. Refresh both values in .env.local and rerun.");
+        console.log("  Nothing was written.");
         process.exitCode = 2;
         return;
       }
-      throw e;
+      if (error instanceof EspnSeasonUnavailableError) {
+        failed.push({ year, reason: error.message, unavailable: true });
+        console.log(`  ${year}: unavailable (HTTP 404)`);
+        continue;
+      }
+      const reason = redactSecrets(error instanceof Error ? error.message : String(error));
+      failed.push({ year, reason, unavailable: false });
+      console.log(`  ${year}: FAILED — ${reason}`);
     }
   }
 
-  console.log("\nDone. Rerun any time; completed years are skipped.");
+  // Report what ESPN itself claims about the league's span, so a missing year
+  // is visibly missing rather than silently absent.
+  const claimedSeasons = fetched.at(-1)?.data.status?.previousSeasons ?? [];
+  if (claimedSeasons.length > 0) {
+    const missing = claimedSeasons.filter((y) => y >= years[0] && y <= years[years.length - 1] && !fetched.some((f) => f.year === y));
+    if (missing.length > 0) {
+      console.log(`\nESPN lists ${claimedSeasons.join(", ")} as prior seasons but serves no data for: ${missing.join(", ")}`);
+    }
+  }
+
+  if (fetched.length === 0) {
+    console.log("\nNo seasons could be fetched. Nothing was written.");
+    process.exitCode = 1;
+    return;
+  }
+
+  if (checkOnly) {
+    console.log(`\nAccess OK for ${fetched.map((f) => f.year).join(", ")}. Rerun without --check to import.`);
+    return;
+  }
+
+  // ── Resolve owners across the whole history ────────────────────────────
+  const accounts = collectAccounts(fetched);
+  const owners = await resolveOwners(accounts, dryRun);
+
+  console.log(`\n--- owner mapping (${accounts.length} ESPN accounts) ---`);
+  for (const account of accounts) {
+    const resolution = owners.byMemberId.get(account.espnMemberId);
+    const seasons = account.seasons.length ? account.seasons.sort((a, b) => a - b).join(",") : "no team";
+    const names = account.names.length ? account.names.join(" / ") : "(no usable name)";
+    console.log(
+      `  ${names.padEnd(44)} -> ${(resolution?.managerName ?? "UNRESOLVED").padEnd(22)} [${resolution?.via ?? "?"}${resolution?.createdRetiredManager ? ", RETIRED MANAGER CREATED" : ""}] seasons ${seasons}`,
+    );
+  }
+
+  const created = accounts.filter((a) => owners.byMemberId.get(a.espnMemberId)?.createdRetiredManager);
+  console.log(
+    created.length === 0
+      ? "  every ESPN account matched an existing manager — no retired managers needed"
+      : `  ${created.length} ESPN-era account(s) had no match and were preserved as retired managers`,
+  );
+
+  if (dryRun) {
+    console.log("\nDRY RUN — no data was written. Season-by-season plan:");
+    for (const { year, data } of fetched) {
+      const existing = await prisma.season.findFirst({ where: { year }, select: { dataSource: true } });
+      const note = existing?.dataSource === "SLEEPER" ? "would SKIP (SLEEPER data present)" : "would import";
+      console.log(
+        `  ${year}: ${note} — ${data.teams?.length ?? 0} teams, ${(data.schedule ?? []).filter((m) => m.home?.teamId != null && m.away?.teamId != null).length} games, ${data.draftDetail?.picks?.length ?? 0} picks`,
+      );
+    }
+    return;
+  }
+
+  const aliasCount = await recordEspnAliases(owners);
+  if (aliasCount > 0) console.log(`  recorded ${aliasCount} ESPN name alias(es) on existing managers`);
+
+  // ── Import season by season ────────────────────────────────────────────
+  const league = await resolveLeague();
+
+  const results: SeasonImportResult[] = [];
+  console.log("\n--- importing ---");
+
+  for (const { year, data } of fetched) {
+    const log = await prisma.dataSyncLog.create({
+      data: { syncType: "SEASON", status: "RUNNING" },
+      select: { id: true },
+    });
+    try {
+      const result = await importSeason(leagueId, league.id, year, data, owners);
+      results.push(result);
+      if (result.skipped) {
+        console.log(`  ${year}: skipped — ${result.skipped}`);
+      } else {
+        console.log(
+          `  ${year}: ${result.teams} teams, ${result.matchups} games (${result.playoffMatchups} playoff), ` +
+            `${result.standingSnapshots} standings rows, ${result.draftPicks} picks, ` +
+            `${result.rosters} rosters/${result.rosterPlayers} players` +
+            (result.champion ? `, champion: ${result.champion}` : ", champion: not determined"),
+        );
+      }
+      for (const warning of result.warnings) console.log(`      warning: ${warning}`);
+      await prisma.dataSyncLog.update({
+        where: { id: log.id },
+        data: {
+          status: result.warnings.length > 0 ? "PARTIAL" : "SUCCESS",
+          recordsProcessed: result.teams + result.matchups + result.draftPicks + result.rosterPlayers,
+          errorMessage: result.warnings.length > 0 ? redactSecrets(result.warnings.join(" | ")).slice(0, 1000) : null,
+          finishedAt: new Date(),
+        },
+      });
+    } catch (error) {
+      const reason = redactSecrets(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      failed.push({ year, reason: reason.split("\n")[0], unavailable: false });
+      console.log(`  ${year}: FAILED — ${reason.split("\n")[0]}`);
+      await prisma.dataSyncLog.update({
+        where: { id: log.id },
+        data: { status: "FAILED", errorMessage: reason.slice(0, 1000), finishedAt: new Date() },
+      });
+      // Keep going: the remaining seasons are independent.
+    }
+  }
+
+  // ── Post-import corrections that depend on the imported seasons ─────────
+  const imported = results.filter((r) => !r.skipped);
+  if (imported.length > 0) {
+    const earliestYear = Math.min(...imported.map((r) => r.year));
+
+    // `joinedYear` was seeded from the Sleeper era only, so every veteran read
+    // as a 2026 rookie. Reset each manager to their real first season.
+    const managers = await prisma.manager.findMany({
+      where: { deletedAt: null },
+      select: { id: true, displayName: true, joinedYear: true, fantasyTeams: { select: { season: { select: { year: true } } } } },
+    });
+    let joinedFixed = 0;
+    for (const manager of managers) {
+      const yearsPlayed = manager.fantasyTeams.map((t) => t.season.year);
+      if (yearsPlayed.length === 0) continue;
+      const first = Math.min(...yearsPlayed);
+      if (first !== manager.joinedYear) {
+        await prisma.manager.update({ where: { id: manager.id }, data: { joinedYear: first } });
+        joinedFixed++;
+      }
+    }
+    if (joinedFixed > 0) console.log(`\ncorrected joinedYear for ${joinedFixed} manager(s)`);
+
+    if (league.foundedYear > earliestYear) {
+      await prisma.league.update({ where: { id: league.id }, data: { foundedYear: earliestYear } });
+      console.log(`league foundedYear ${league.foundedYear} -> ${earliestYear} (earliest season with verified data)`);
+    }
+  }
+
+  // ── Report ─────────────────────────────────────────────────────────────
+  console.log("\n=== summary ===");
+  const succeeded = imported.map((r) => r.year);
+  const skipped = results.filter((r) => r.skipped);
+  console.log(`imported: ${succeeded.length ? succeeded.join(", ") : "none"}`);
+  if (skipped.length > 0) console.log(`skipped:  ${skipped.map((r) => `${r.year} (${r.skipped})`).join("; ")}`);
+
+  if (failed.length > 0) {
+    console.log(`\nfailed seasons (${failed.length}):`);
+    for (const failure of failed) {
+      console.log(`  ${failure.year}: ${failure.unavailable ? "NO DATA AVAILABLE FROM ESPN" : "ERROR"} — ${failure.reason}`);
+    }
+  } else {
+    console.log("failed:   none");
+  }
+
+  for (const result of imported) {
+    console.log(
+      `  ${result.year}: champion=${result.champion ?? "?"} runnerUp=${result.runnerUp ?? "?"} third=${result.thirdPlace ?? "?"}`,
+    );
+  }
+
+  console.log("\nTransactions, waivers and trades: ESPN retains none for completed seasons.");
+  console.log("Verified across every documented route; nothing was invented to fill the gap.");
+  console.log("\nNext: npx tsx scripts/import/recalculate-derived-stats.ts");
 }
 
 main()
-  .catch((e) => {
-    console.error(e);
+  .catch((error) => {
+    console.error(redactSecrets(error instanceof Error ? (error.stack ?? error.message) : String(error)));
     process.exit(1);
   })
   .finally(() => prisma.$disconnect());

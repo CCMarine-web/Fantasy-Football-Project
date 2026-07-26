@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ManagerLink } from "@/components/shared/manager-link";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,9 +35,7 @@ export default async function HallOfShamePage() {
                   <p className="mt-1 font-heading text-3xl font-semibold tabular-nums">{e.value}</p>
                   <p className="mt-1 text-sm font-medium">
                     {e.holderManagerId ? (
-                      <Link href={`/managers/${e.holderManagerId}`} className="hover:text-primary">
-                        {e.holderName}
-                      </Link>
+                      <ManagerLink managerId={e.holderManagerId}>{e.holderName}</ManagerLink>
                     ) : (
                       e.holderName
                     )}
@@ -67,25 +66,25 @@ export default async function HallOfShamePage() {
             <table className="w-full text-sm">
               <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
                 <tr>
-                  <th className="px-4 py-2 text-left">Season</th>
-                  <th className="px-4 py-2 text-left">Last Place</th>
-                  <th className="px-4 py-2 text-left">Team</th>
-                  <th className="px-4 py-2 text-right">Record</th>
-                  <th className="px-4 py-2 text-right">PF</th>
+                  <th className="px-2 sm:px-4 py-2 text-left">Season</th>
+                  <th className="px-2 py-2 sm:px-4 text-left">Last Place</th>
+                  {/* Widest and least essential column — hidden below `sm` so
+                      Record and PF stay on screen rather than clipped. */}
+                  <th className="hidden px-2 py-2 sm:px-4 text-left sm:table-cell">Team</th>
+                  <th className="px-2 py-2 sm:px-4 text-right">Record</th>
+                  <th className="px-2 py-2 sm:px-4 text-right">PF</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
                 {shame.toiletBowl.map((t) => (
                   <tr key={t.year}>
-                    <td className="px-4 py-2 font-medium">{t.year}</td>
-                    <td className="px-4 py-2">
-                      <Link href={`/managers/${t.managerId}`} className="hover:text-primary">
-                        {t.managerName}
-                      </Link>
+                    <td className="px-2 py-2 sm:px-4 font-medium">{t.year}</td>
+                    <td className="px-2 py-2 sm:px-4">
+                      <ManagerLink managerId={t.managerId}>{t.managerName}</ManagerLink>
                     </td>
-                    <td className="px-4 py-2 text-muted-foreground">{t.teamName}</td>
-                    <td className="px-4 py-2 text-right font-mono">{t.record}</td>
-                    <td className="px-4 py-2 text-right font-mono text-muted-foreground">{t.pointsFor.toFixed(0)}</td>
+                    <td className="hidden px-2 py-2 sm:px-4 text-muted-foreground sm:table-cell">{t.teamName}</td>
+                    <td className="px-2 py-2 sm:px-4 text-right font-mono">{t.record}</td>
+                    <td className="px-2 py-2 sm:px-4 text-right font-mono text-muted-foreground">{t.pointsFor.toFixed(0)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -126,10 +125,16 @@ export default async function HallOfShamePage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline">{p.year}</Badge>
-                      {p.managerName ? (
-                        <Link href={`/managers/${p.managerId}`} className="text-sm font-semibold hover:text-primary">
+                      {/* A punishment can name a manager who has no linked row
+                          (hand-entered history), so the link is only rendered
+                          when there is an id to link to — previously this built
+                          an href of "/managers/null". */}
+                      {p.managerName && p.managerId ? (
+                        <ManagerLink managerId={p.managerId} className="text-sm font-semibold">
                           {p.managerName}
-                        </Link>
+                        </ManagerLink>
+                      ) : p.managerName ? (
+                        <span className="text-sm font-semibold">{p.managerName}</span>
                       ) : null}
                     </div>
                     <p className="mt-1 text-sm text-foreground/90">{p.description}</p>

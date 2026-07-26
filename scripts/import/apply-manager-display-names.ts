@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../lib/load-env";
 import { prisma } from "@/lib/db";
 
 /**

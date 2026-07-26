@@ -29,7 +29,7 @@ export function StandingsTable({ rows }: { rows: StandingsRow[] }) {
             <TableHead>Team</TableHead>
             <TableHead className="text-center">W-L-T</TableHead>
             <TableHead className="text-right">PF</TableHead>
-            <TableHead className="text-right">PA</TableHead>
+            <TableHead className="hidden text-right sm:table-cell">PA</TableHead>
             <TableHead className="hidden text-center sm:table-cell">All-Play</TableHead>
             <TableHead className="hidden text-right md:table-cell">Exp. W</TableHead>
             <TableHead className="hidden text-right md:table-cell">Sched. Luck</TableHead>
@@ -45,8 +45,12 @@ export function StandingsTable({ rows }: { rows: StandingsRow[] }) {
                   href={`/managers/${row.managerId}`}
                   className="flex items-center gap-3 hover:text-primary"
                 >
-                  <TeamAvatar name={row.managerName} imageUrl={row.avatarUrl} className="h-8 w-8" />
-                  <span className="min-w-0">
+                  <TeamAvatar name={row.managerName} imageUrl={row.avatarUrl} className="h-8 w-8 shrink-0" />
+                  {/* A max-width is required for `truncate` to engage: without
+                      one the cell takes its intrinsic content width, which held
+                      the table at 431px and clipped the points columns
+                      mid-number on any phone. */}
+                  <span className="min-w-0 max-w-[7rem] sm:max-w-none">
                     <span className="block truncate text-sm font-semibold">{row.teamName}</span>
                     <span className="block truncate text-xs text-muted-foreground">
                       {row.managerName}
@@ -61,7 +65,10 @@ export function StandingsTable({ rows }: { rows: StandingsRow[] }) {
               <TableCell className="text-right font-mono tabular-nums">
                 {row.pointsFor.toFixed(1)}
               </TableCell>
-              <TableCell className="text-right font-mono tabular-nums text-muted-foreground">
+              {/* Points-against joins the progressively-disclosed columns: at
+                  phone widths there is not room for both points columns, and a
+                  half-visible number reads as a rendering bug. */}
+              <TableCell className="hidden text-right font-mono tabular-nums text-muted-foreground sm:table-cell">
                 {row.pointsAgainst.toFixed(1)}
               </TableCell>
               <TableCell className="hidden text-center font-mono tabular-nums sm:table-cell">

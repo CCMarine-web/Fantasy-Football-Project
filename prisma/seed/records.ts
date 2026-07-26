@@ -243,8 +243,12 @@ export async function computeLeagueRecords(prisma: PrismaClient): Promise<void> 
   let bestEff: { value: number; managerId: string; seasonId: string; week: number } | null = null;
   let worstEff: { value: number; managerId: string; seasonId: string; week: number } | null = null;
   for (const roster of rosters) {
-    const starterPoints = roster.playerScores.filter((p) => p.isStarter).reduce((a, p) => a + p.points, 0);
-    const top9 = [...roster.playerScores].sort((a, b) => b.points - a.points).slice(0, 9);
+    // Only fully-scored rosters can produce a lineup-efficiency figure; ESPN-era
+    // rosters record membership with a null score.
+    const scored = roster.playerScores.filter((p): p is typeof p & { points: number } => p.points != null);
+    if (scored.length !== roster.playerScores.length) continue;
+    const starterPoints = scored.filter((p) => p.isStarter).reduce((a, p) => a + p.points, 0);
+    const top9 = [...scored].sort((a, b) => b.points - a.points).slice(0, 9);
     const optimalPoints = top9.reduce((a, p) => a + p.points, 0);
     if (optimalPoints <= 0) continue;
     const efficiency = starterPoints / optimalPoints;

@@ -138,12 +138,18 @@ export async function getHallOfShame(): Promise<HallOfShame> {
   let worstBench: { value: number; managerId: string; managerName: string; year: number; week: number } | null = null;
   for (const roster of rosters) {
     if (roster.playerScores.length === 0) continue;
+    // ESPN-era rosters record who was on the team but no trustworthy per-week
+    // score (points is null). Reading those as zero would make every ESPN
+    // roster look like a total lineup failure, so skip any roster that isn't
+    // fully scored rather than compare incomparable numbers.
+    const scored = roster.playerScores.filter((p): p is typeof p & { points: number } => p.points != null);
+    if (scored.length !== roster.playerScores.length) continue;
     benchYears.add(roster.fantasyTeam.season.year);
-    const starters = roster.playerScores.filter((p) => p.isStarter);
+    const starters = scored.filter((p) => p.isStarter);
     const starterCount = starters.length || 9;
     const actualStarterPts = starters.reduce((a, p) => a + p.points, 0);
     // Optimal (position-agnostic): best `starterCount` scorers on the roster.
-    const optimalPts = [...roster.playerScores].sort((a, b) => b.points - a.points).slice(0, starterCount).reduce((a, p) => a + p.points, 0);
+    const optimalPts = [...scored].sort((a, b) => b.points - a.points).slice(0, starterCount).reduce((a, p) => a + p.points, 0);
     const left = optimalPts - actualStarterPts;
     if (!worstBench || left > worstBench.value) {
       worstBench = { value: left, managerId: roster.fantasyTeam.manager.id, managerName: roster.fantasyTeam.manager.displayName, year: roster.fantasyTeam.season.year, week: roster.week };

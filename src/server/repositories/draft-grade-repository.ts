@@ -341,28 +341,61 @@ export async function revisitDraftGradesForSeason(
 /**
  * Run generate + revisit for every COMPLETE season that has a draft, so a
  * single call backfills both grades for all past seasons.
+ *
+ * `backfillMissingCommentary` re-runs a season whose grades exist but carry no
+ * prose. Grades created before the AI rationale was wired up (or by the seed)
+ * have a letter and an empty rationale, and plain generate-once-reuse skips
+ * them forever — which is why the Sleeper seasons showed report cards with no
+ * commentary while the freshly imported ESPN seasons had it. Only seasons that
+ * are actually missing text are re-run, so seasons with good copy are neither
+ * rewritten nor re-paid for.
  */
-export async function ensureAllPastSeasonsGraded(): Promise<{
+export async function ensureAllPastSeasonsGraded(
+  options: { backfillMissingCommentary?: boolean } = {},
+): Promise<{
   seasons: number;
   generated: number;
   revisited: number;
+  backfilledSeasons: number[];
 }> {
   const seasons = await prisma.season.findMany({
     where: { status: "COMPLETE", drafts: { some: {} } },
-    select: { id: true },
+    select: { id: true, year: true },
     orderBy: { year: "asc" },
   });
 
   let generated = 0;
   let revisited = 0;
+  const backfilledSeasons: number[] = [];
+
   for (const season of seasons) {
-    const gen = await generateDraftGradesForSeason(season.id);
+    let forceOriginal = false;
+    let forceRevisit = false;
+
+    if (options.backfillMissingCommentary) {
+      const [missingOriginal, missingRevisit] = await Promise.all([
+        prisma.draftGrade.count({
+          where: { seasonId: season.id, OR: [{ rationale: null }, { rationale: "" }] },
+        }),
+        prisma.draftGrade.count({
+          where: {
+            seasonId: season.id,
+            OR: [{ revisitedRationale: null }, { revisitedRationale: "" }, { revisitedAt: null }],
+          },
+        }),
+      ]);
+      forceOriginal = missingOriginal > 0;
+      forceRevisit = missingRevisit > 0;
+      if (forceOriginal || forceRevisit) backfilledSeasons.push(season.year);
+    }
+
+    const gen = await generateDraftGradesForSeason(season.id, { force: forceOriginal });
     generated += gen.created;
-    const rev = await revisitDraftGradesForSeason(season.id);
+    const rev = await revisitDraftGradesForSeason(season.id, { force: forceRevisit });
     revisited += rev.revisited;
   }
 
-  return { seasons: seasons.length, generated, revisited };
+  return { seasons: seasons.length, generated, revisited, backfilledSeasons };
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,10 @@
 // shapes the (separately built) repository layer must map its DB rows into before calling
 // the functions in this package.
 
+// Which system a season's results came from. Mirrors the SeasonDataSource enum
+// in the schema, restated here so this package stays free of Prisma imports.
+export type GameDataSource = "SLEEPER" | "ESPN" | "MANUAL";
+
 // A single game from one manager's point of view.
 export interface GameResult {
   week: number;
@@ -11,6 +15,11 @@ export interface GameResult {
   pointsAgainst: number;
   opponentId: string;
   result: "W" | "L" | "T";
+  // Optional so existing callers and fixtures stay valid. Set by the repository
+  // layer, and required for the ESPN-era / Sleeper-era splits on the manager
+  // pages — the eras are distinguished by where the data came from, not by a
+  // hard-coded year boundary.
+  dataSource?: GameDataSource;
 }
 
 // One manager's roster output for a single week, used for lineup-efficiency stats.

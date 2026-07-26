@@ -30,9 +30,19 @@ function LineupTable({
 
   const starters = roster.playerScores.filter((p) => p.isStarter);
   const bench = roster.playerScores.filter((p) => !p.isStarter);
-  const benchPoints = bench.reduce((sum, p) => sum + p.points, 0);
-  const highestScorer = [...roster.playerScores].sort((a, b) => b.points - a.points)[0];
-  const worstStarter = [...starters].sort((a, b) => a.points - b.points)[0];
+  // ESPN's archived seasons give roster membership without a trustworthy
+  // per-week score. The lineup is still worth showing; the points column and
+  // the top/worst-scorer notes are simply omitted rather than shown as 0.0.
+  const scored = roster.playerScores.filter((p): p is typeof p & { points: number } => p.points != null);
+  const hasPoints = scored.length === roster.playerScores.length && scored.length > 0;
+  const benchPoints = bench.reduce((sum, p) => sum + (p.points ?? 0), 0);
+  const highestScorer = hasPoints ? [...scored].sort((a, b) => b.points - a.points)[0] : null;
+  const worstStarter = hasPoints
+    ? [...starters]
+        .filter((p): p is typeof p & { points: number } => p.points != null)
+        .sort((a, b) => a.points - b.points)[0]
+    : null;
+  const fmt = (points: number | null) => (points == null ? "—" : points.toFixed(1));
 
   return (
     <div>
@@ -52,13 +62,13 @@ function LineupTable({
                   <span className="ml-1 text-xs text-muted-foreground">{p.player.position}</span>
                 </td>
                 <td className="px-3 py-1.5 text-right font-mono tabular-nums">
-                  {p.points.toFixed(1)}
+                  {fmt(p.points)}
                 </td>
               </tr>
             ))}
             <tr className="bg-card/40">
               <td colSpan={3} className="px-3 py-1.5 text-xs font-medium tracking-wide uppercase">
-                Bench ({benchPoints.toFixed(1)} pts)
+                Bench{hasPoints ? ` (${benchPoints.toFixed(1)} pts)` : ""}
               </td>
             </tr>
             {bench.map((p) => (
@@ -69,7 +79,7 @@ function LineupTable({
                   <span className="ml-1 text-xs">{p.player.position}</span>
                 </td>
                 <td className="px-3 py-1.5 text-right font-mono tabular-nums">
-                  {p.points.toFixed(1)}
+                  {fmt(p.points)}
                 </td>
               </tr>
             ))}

@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../lib/load-env";
 import { readFileSync, mkdirSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import sharp from "sharp";

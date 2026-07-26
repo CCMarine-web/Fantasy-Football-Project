@@ -236,6 +236,9 @@ model TeamNameHistory {
 model FantasyPlayer {
   id              String   @id @default(cuid())
   sleeperPlayerId String?  @unique
+  /// ESPN's player id, set by the ESPN history import. A player active in both
+  /// eras carries both ids on one row; ESPN-only players carry just this one.
+  espnPlayerId    Int?     @unique
   firstName       String
   lastName        String
   position        String
@@ -277,7 +280,13 @@ model WeeklyPlayerScore {
   player          FantasyPlayer @relation(fields: [playerId], references: [id])
   lineupSlot      String
   isStarter       Boolean       @default(false)
-  points          Float         @default(0)
+  /// Null means "roster membership is known, the per-week score is not".
+  /// ESPN's archived seasons return season-end rosters whose only points field
+  /// aggregates the final two weeks, so it cannot honestly be stored as a
+  /// weekly score. Everything that derives lineup efficiency or best/worst
+  /// player figures must skip rows where this is null rather than read it
+  /// as a zero.
+  points          Float?
   projectedPoints Float?
   createdAt       DateTime      @default(now())
 
@@ -306,6 +315,10 @@ model Matchup {
   season           Season        @relation(fields: [seasonId], references: [id])
   week             Int
   sleeperMatchupId String?
+  /// ESPN's `schedule[].id` for the game, unique within a season. Gives the
+  /// ESPN import a stable upsert key so re-running it updates rather than
+  /// duplicates.
+  espnMatchupId    Int?
   isPlayoff        Boolean       @default(false)
   playoffRound     Int?
   bracketType      BracketType?
@@ -316,6 +329,7 @@ model Matchup {
 
   teams MatchupTeam[]
 
+  @@unique([seasonId, espnMatchupId])
   @@index([seasonId, week])
 }
 
@@ -366,6 +380,10 @@ enum DraftType {
   SNAKE
   AUCTION
   LINEAR
+  /// ESPN "offline" draft — conducted away from the app with results typed in
+  /// afterwards. Pick order is whatever the commissioner entered, so it is not
+  /// necessarily a snake.
+  OFFLINE
 }
 
 model Draft {

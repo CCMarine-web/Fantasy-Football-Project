@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../lib/load-env";
 import { prisma } from "@/lib/db";
 import { getEnv, isAIConfigured } from "@/lib/env";
 import { getAIProvider } from "@/server/ai/get-ai-provider";
@@ -151,10 +151,15 @@ async function backfillPowerRankings(ctx: Ctx, limit: number | null) {
 // --- rivalries --------------------------------------------------------------
 
 async function backfillRivalries(ctx: Ctx, limit: number | null) {
+  // No default cap. A cap here is worse than it looks: a pairing that already
+  // has a summary but falls outside the cap keeps commentary written from
+  // superseded numbers, so after the ESPN import most rivalry pages would have
+  // described the wrong series record. Each pairing is still skipped when its
+  // input hash is unchanged, so a rerun costs nothing unless the numbers moved.
   const rivalries = await prisma.rivalry.findMany({
     where: { gamesPlayed: { gt: 0 } },
     orderBy: [{ isOfficial: "desc" }, { rivalryScore: "desc" }],
-    take: limit ?? 13,
+    ...(limit ? { take: limit } : {}),
     select: {
       id: true, isOfficial: true, gamesPlayed: true, managerAWins: true, managerBWins: true, ties: true,
       managerAPoints: true, managerBPoints: true, averageMargin: true, playoffMeetings: true,

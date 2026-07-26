@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   careerSummary,
   closestGame,
+  filterByDataSource,
   filterBySegment,
   highestScoreInLoss,
   highestWeeklyScore,
@@ -207,5 +208,45 @@ describe("career stats", () => {
     expect(summary.winningPercentage).toBe(0);
     expect(summary.highestWeeklyScore).toBeNull();
     expect(summary.closestGame).toBeNull();
+  });
+});
+
+describe("filterByDataSource", () => {
+  const espn2019 = game({ season: 2019, dataSource: "ESPN", result: "W" });
+  const espn2022 = game({ season: 2022, dataSource: "ESPN", result: "L" });
+  const sleeper2024 = game({ season: 2024, dataSource: "SLEEPER", result: "W" });
+  const unlabelled = game({ season: 2016, result: "W" });
+  const log = [espn2019, espn2022, sleeper2024, unlabelled];
+
+  it("splits a career into eras", () => {
+    expect(filterByDataSource(log, "ESPN")).toEqual([espn2019, espn2022]);
+    expect(filterByDataSource(log, "SLEEPER")).toEqual([sleeper2024]);
+    expect(filterByDataSource(log, "MANUAL")).toEqual([]);
+  });
+
+  it("excludes games with no recorded source from every era", () => {
+    // An era total must never quietly absorb data of unknown origin, so the
+    // two era subsets are allowed to be smaller than the whole log.
+    const eras = (["ESPN", "SLEEPER", "MANUAL"] as const).flatMap((s) => filterByDataSource(log, s));
+    expect(eras).not.toContain(unlabelled);
+    expect(eras).toHaveLength(log.length - 1);
+  });
+
+  it("keeps era records summing to the whole when every game is labelled", () => {
+    const labelled = [espn2019, espn2022, sleeper2024];
+    const espn = record(filterByDataSource(labelled, "ESPN"));
+    const sleeper = record(filterByDataSource(labelled, "SLEEPER"));
+    const whole = record(labelled);
+    expect(espn.wins + sleeper.wins).toBe(whole.wins);
+    expect(espn.losses + sleeper.losses).toBe(whole.losses);
+    expect(espn.ties + sleeper.ties).toBe(whole.ties);
+  });
+
+  it("composes with segment filtering so postseason games stay separable per era", () => {
+    const espnPlayoff = game({ season: 2020, dataSource: "ESPN", isPlayoff: true, result: "L" });
+    const withPlayoff = [espn2019, espnPlayoff, sleeper2024];
+    const espnGames = filterByDataSource(withPlayoff, "ESPN");
+    expect(record(filterBySegment(espnGames, "regularSeason"))).toEqual({ wins: 1, losses: 0, ties: 0 });
+    expect(record(filterBySegment(espnGames, "playoffs"))).toEqual({ wins: 0, losses: 1, ties: 0 });
   });
 });

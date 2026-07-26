@@ -66,8 +66,11 @@ export async function getSeasonHistory(year: number) {
     orderBy: [{ playoffRound: "asc" }],
   });
 
+  // `points: { not: null }` is load-bearing, not defensive: Postgres sorts
+  // NULLs FIRST on a DESC ordering, so without it an ESPN-era row (membership
+  // known, weekly score unknown) would be returned as the season's top score.
   const highestScore = await prisma.weeklyPlayerScore.findFirst({
-    where: { roster: { fantasyTeam: { seasonId: season.id } } },
+    where: { roster: { fantasyTeam: { seasonId: season.id } }, points: { not: null } },
     include: { player: true, roster: { include: { fantasyTeam: { include: { manager: true } } } } },
     orderBy: { points: "desc" },
   });

@@ -1,4 +1,4 @@
-import type { GameResult, SeasonSegment } from "./types";
+import type { GameDataSource, GameResult, SeasonSegment } from "./types";
 
 // Sorts games chronologically (season, then week) so streak calculations read in play order.
 function sortChronologically(games: GameResult[]): GameResult[] {
@@ -10,6 +10,13 @@ export function filterBySegment(games: GameResult[], segment: SeasonSegment = "a
   if (segment === "regularSeason") return games.filter((g) => !g.isPlayoff);
   if (segment === "playoffs") return games.filter((g) => g.isPlayoff);
   return games;
+}
+
+// Restricts a game log to one era (the system its results came from). Games
+// with no recorded source are excluded rather than assumed, so an era total
+// never quietly absorbs data of unknown origin.
+export function filterByDataSource(games: GameResult[], dataSource: GameDataSource): GameResult[] {
+  return games.filter((g) => g.dataSource === dataSource);
 }
 
 export interface WinLossRecord {

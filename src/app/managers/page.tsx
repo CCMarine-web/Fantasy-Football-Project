@@ -4,7 +4,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { Badge } from "@/components/ui/badge";
-import { listManagerRows } from "@/server/repositories/manager-repository";
+import { getStatsCoverage, listManagerRows } from "@/server/repositories/manager-repository";
 import { Trophy, Users, ChevronRight, Info } from "lucide-react";
 import { BRAND } from "@/lib/branding";
 
@@ -18,11 +18,10 @@ export default async function ManagersPage({
   const { status } = await searchParams;
   const tab: "active" | "retired" = status === "retired" ? "retired" : "active";
 
-  const all = await listManagerRows();
+  const [all, coverage] = await Promise.all([listManagerRows(), getStatsCoverage()]);
   const active = all.filter((m) => m.isActive);
   const retired = all.filter((m) => !m.isActive);
   const managers = tab === "retired" ? retired : active;
-  const historyIncomplete = all.some((m) => !m.statsComplete);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -32,13 +31,18 @@ export default async function ManagersPage({
         description={`Every manager who has ever fielded a team in ${BRAND.longName}.`}
       />
 
-      {historyIncomplete ? (
+      {coverage.eras.length > 0 ? (
         <div className="mt-6 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <p>
-            Career stats currently cover the seasons loaded from Sleeper (2023–present). Earlier
-            seasons back to the league&apos;s founding are not yet imported, so records shown here are
-            partial.
+            Career stats cover every season on record:{" "}
+            {coverage.eras.map((era, index) => (
+              <span key={era.key}>
+                {index > 0 ? (index === coverage.eras.length - 1 ? " and " : ", ") : ""}
+                <strong className="text-foreground">{era.label}</strong> {era.years}
+              </span>
+            ))}
+            .
           </p>
         </div>
       ) : null}
@@ -76,8 +80,8 @@ export default async function ManagersPage({
           tab === "retired" ? (
             <EmptyState
               icon={Users}
-              title="No retired managers yet"
-              description="Managers who have left the league will be listed here with their full history intact. The pre-2023 ESPN seasons that would introduce former managers have not been imported yet."
+              title="No retired managers"
+              description="Managers who leave the league are listed here with their full history intact, never merged into anyone else. Every manager in the ESPN era still plays today, so there are none yet."
             />
           ) : (
             <EmptyState icon={Users} title="No managers yet" description="Managers will appear here once the league is synced or seeded." />

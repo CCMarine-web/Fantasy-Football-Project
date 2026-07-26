@@ -1,4 +1,4 @@
-import "dotenv/config";
+import "../lib/load-env";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
