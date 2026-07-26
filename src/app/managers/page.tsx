@@ -10,9 +10,19 @@ import { BRAND } from "@/lib/branding";
 
 export const metadata = { title: "Managers" };
 
-export default async function ManagersPage() {
-  const managers = await listManagerRows();
-  const historyIncomplete = managers.some((m) => !m.statsComplete);
+export default async function ManagersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ status?: string }>;
+}) {
+  const { status } = await searchParams;
+  const tab: "active" | "retired" = status === "retired" ? "retired" : "active";
+
+  const all = await listManagerRows();
+  const active = all.filter((m) => m.isActive);
+  const retired = all.filter((m) => !m.isActive);
+  const managers = tab === "retired" ? retired : active;
+  const historyIncomplete = all.some((m) => !m.statsComplete);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -33,9 +43,45 @@ export default async function ManagersPage() {
         </div>
       ) : null}
 
-      <div className="mt-8">
+      {/* Active / Retired tabs. Retired managers are those no longer in the
+          league — they keep their full history and are never merged into an
+          active manager. */}
+      <div className="mt-6 inline-flex rounded-lg border border-border/60 bg-card/40 p-1">
+        <Link
+          href="/managers"
+          aria-current={tab === "active" ? "page" : undefined}
+          className={
+            tab === "active"
+              ? "rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground"
+              : "rounded-md px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          }
+        >
+          Active <span className="tabular-nums opacity-70">({active.length})</span>
+        </Link>
+        <Link
+          href="/managers?status=retired"
+          aria-current={tab === "retired" ? "page" : undefined}
+          className={
+            tab === "retired"
+              ? "rounded-md bg-primary px-4 py-1.5 text-sm font-medium text-primary-foreground"
+              : "rounded-md px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+          }
+        >
+          Retired <span className="tabular-nums opacity-70">({retired.length})</span>
+        </Link>
+      </div>
+
+      <div className="mt-6">
         {managers.length === 0 ? (
-          <EmptyState icon={Users} title="No managers yet" description="Managers will appear here once the league is synced or seeded." />
+          tab === "retired" ? (
+            <EmptyState
+              icon={Users}
+              title="No retired managers yet"
+              description="Managers who have left the league will be listed here with their full history intact. The pre-2023 ESPN seasons that would introduce former managers have not been imported yet."
+            />
+          ) : (
+            <EmptyState icon={Users} title="No managers yet" description="Managers will appear here once the league is synced or seeded." />
+          )
         ) : (
           <div className="space-y-3">
             {managers.map((m) => (

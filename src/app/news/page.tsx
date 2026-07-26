@@ -31,7 +31,7 @@ export default async function NewsPage() {
               <Card className="transition-colors hover:border-primary/60">
                 <CardContent>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[10px] uppercase">
+                    <Badge variant="outline" className="text-[12px] uppercase">
                       {article.type.replace("_", " ")}
                     </Badge>
                     <span className="text-xs text-muted-foreground">

@@ -15,6 +15,12 @@ const envSchema = z.object({
   AUTH_URL: z.string().url().default("http://localhost:3000"),
   SLEEPER_LEAGUE_ID: z.string().optional().default(""),
   SLEEPER_API_BASE_URL: z.string().url().default("https://api.sleeper.app/v1"),
+  // ESPN historical import (2016-2022). The league is private, so the ESPN
+  // read API requires the two browser cookies below. Both are optional: without
+  // them the importer refuses to run and every other feature is unaffected.
+  ESPN_LEAGUE_ID: z.string().optional().default("501874"),
+  ESPN_SWID: z.string().optional().default(""),
+  ESPN_S2: z.string().optional().default(""),
   OPENAI_API_KEY: z.string().optional().default(""),
   // Default model for bulk work (per-conversation knowledge extraction).
   OPENAI_MODEL: z.string().default("gpt-5-mini"),

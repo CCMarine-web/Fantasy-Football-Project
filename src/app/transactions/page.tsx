@@ -72,7 +72,7 @@ export default async function TransactionsPage({
               <CardContent className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[10px] uppercase">
+                    <Badge variant="outline" className="text-[12px] uppercase">
                       {tx.type.replace("_", " ")}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
@@ -80,7 +80,7 @@ export default async function TransactionsPage({
                       {tx.week ? ` · Week ${tx.week}` : ""}
                     </span>
                     {tx.faabSpent ? (
-                      <Badge variant="secondary" className="text-[10px]">
+                      <Badge variant="secondary" className="text-[12px]">
                         ${tx.faabSpent} FAAB
                       </Badge>
                     ) : null}

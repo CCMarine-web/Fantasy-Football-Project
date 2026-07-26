@@ -88,7 +88,7 @@ function KnowledgeCard({ item }: { item: KnowledgeView }) {
         {item.managerNames.length > 0 ? (
           <div className="flex flex-wrap gap-1">
             {item.managerNames.map((name) => (
-              <Badge key={name} variant="outline" className="text-[10px]">
+              <Badge key={name} variant="outline" className="text-[12px]">
                 {name}
               </Badge>
             ))}

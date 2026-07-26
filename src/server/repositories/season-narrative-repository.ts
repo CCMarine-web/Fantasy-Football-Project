@@ -128,6 +128,8 @@ export async function getLastSeasonNarrative(): Promise<SeasonNarrative | null> 
   if (!input) return null;
   const safeguards = await getContentSafeguards();
   const result = await generateSeasonSummary(input, safeguards);
+  // A null generationId means the output was mock and deliberately not logged.
+  if (!result.generationId) return { ...base, text: result.text, isMock: true };
   const gen = await prisma.aIContentGeneration.findUnique({ where: { id: result.generationId } });
   return { ...base, text: result.text, isMock: gen?.providerName === "mock" };
 }

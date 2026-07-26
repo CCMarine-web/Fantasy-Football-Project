@@ -95,7 +95,7 @@ export default async function ChampionshipBeltPage() {
                           {g.result ? (
                             <Badge
                               variant={g.result === "W" ? "default" : "outline"}
-                              className="px-1.5 py-0 text-[10px]"
+                              className="px-1.5 py-0 text-[12px]"
                             >
                               {g.result}
                             </Badge>

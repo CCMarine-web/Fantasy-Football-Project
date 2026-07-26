@@ -214,14 +214,14 @@ export default async function ManagerProfilePage({
         <div className="flex items-end gap-1.5 sm:gap-2">
           {finishDistribution.map((f) => (
             <div key={f.finish} className="flex flex-1 flex-col items-center gap-1">
-              <span className="font-mono text-[11px] text-muted-foreground">{f.count}</span>
+              <span className="font-mono text-[13px] text-muted-foreground">{f.count}</span>
               <div className="flex h-28 w-full items-end">
                 <div
                   className={`w-full rounded-t ${f.finish === 1 ? "bg-primary" : "bg-primary/40"}`}
                   style={{ height: `${(f.count / maxFinishCount) * 100}%`, minHeight: f.count ? "4px" : "0" }}
                 />
               </div>
-              <span className="text-[11px] text-muted-foreground">{f.finish}</span>
+              <span className="text-[13px] text-muted-foreground">{f.finish}</span>
             </div>
           ))}
         </div>

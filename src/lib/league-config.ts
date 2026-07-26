@@ -4,12 +4,15 @@
  */
 export const LEAGUE_CONFIG = {
   /**
-   * ▼▼▼ CHANGE THIS to your real draft date/time. ▼▼▼
-   * ISO 8601 with a timezone offset so the countdown is correct everywhere.
-   * Example (7:00 PM US Central on Aug 28, 2026): "2026-08-28T19:00:00-05:00".
-   * This is a PLACEHOLDER until you set the real one.
+   * Draft: 5:00 PM America/Chicago on September 5, 2026.
+   * ISO 8601 with an explicit offset so the countdown is identical for every
+   * viewer regardless of their local timezone. Early September is inside US
+   * daylight saving time, so Chicago is CDT (UTC-5) on this date.
    */
-  draftDate: "2026-08-28T19:00:00-05:00",
+  draftDate: "2026-09-05T17:00:00-05:00",
+
+  /** IANA zone the draft time is quoted in — used to label the countdown. */
+  draftTimeZone: "America/Chicago",
 
   /** Set false to hide the draft countdown once the draft has passed / season is live. */
   showDraftCountdown: true,

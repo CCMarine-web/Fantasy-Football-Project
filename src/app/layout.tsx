@@ -3,6 +3,7 @@ import { Geist, Geist_Mono, Oswald } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
+import { SiteBackground } from "@/components/layout/site-background";
 import { auth } from "@/auth";
 import { BRAND } from "@/lib/branding";
 import "./globals.css";
@@ -45,6 +46,7 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className="flex min-h-full flex-col bg-background text-foreground">
+        <SiteBackground />
         <TooltipProvider>
           <SiteHeader user={session?.user ?? null} />
           <main className="flex-1">{children}</main>

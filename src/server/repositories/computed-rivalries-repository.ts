@@ -1,189 +1,186 @@
 import { prisma } from "@/lib/db";
-import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
-import { generateRivalryBlurb } from "@/server/ai/services/rivalry-blurb";
-
-export interface RivalryView {
-  key: string;
-  managerAId: string;
-  managerAName: string;
-  managerBId: string;
-  managerBName: string;
-  gamesPlayed: number;
-  aWins: number;
-  bWins: number;
-  ties: number;
-  aPoints: number;
-  bPoints: number;
-  avgMargin: number;
-  playoffMeetings: number;
-  closest: { margin: number; year: number; week: number; winner: string } | null;
-  biggest: { margin: number; year: number; week: number; winner: string } | null;
-  currentStreak: string;
-  rivalryScore: number;
-  blurb: string;
-}
-
-const MIN_MEETINGS = 3;
-
-interface PairGame {
-  aId: string;
-  bId: string;
-  aName: string;
-  bName: string;
-  aScore: number;
-  bScore: number;
-  year: number;
-  week: number;
-  isPlayoff: boolean;
-}
 
 /**
- * Computes rivalries live from synced matchups for every manager pairing with
- * at least MIN_MEETINGS games. Sorted by a rivalry score that rewards volume,
- * closeness, and playoff stakes so the most meaningful rivalries surface first.
+ * Rivalries, read straight from the persisted Rivalry / RivalryMeeting tables.
+ *
+ * This used to recompute every head-to-head pairing from raw MatchupTeam rows
+ * on each request AND call the model once per pairing — O(n²) LLM calls per
+ * page view. Now scripts/import/import-rivalries.ts computes and stores the
+ * numbers (from verified results only, with the commissioner's workbook naming
+ * the official pairings) and scripts/ai/backfill-blurbs.ts writes the
+ * commentary. Rendering is a couple of indexed queries.
  */
+
+export interface RivalryMeetingView {
+  seasonYear: number;
+  week: number;
+  managerAScore: number;
+  managerBScore: number;
+  winnerId: string | null;
+  isPlayoff: boolean;
+  isChampionship: boolean;
+}
+
+export interface RivalryView {
+  id: string;
+  isOfficial: boolean;
+  managerAId: string;
+  managerAName: string;
+  managerAPhoto: string | null;
+  managerBId: string;
+  managerBName: string;
+  managerBPhoto: string | null;
+  gamesPlayed: number;
+  managerAWins: number;
+  managerBWins: number;
+  ties: number;
+  managerAPoints: number;
+  managerBPoints: number;
+  managerAAvg: number | null;
+  managerBAvg: number | null;
+  averageMargin: number | null;
+  playoffMeetings: number;
+  championshipMeetings: number;
+  closestGameMargin: number | null;
+  closestGameSeason: number | null;
+  largestBlowoutMargin: number | null;
+  largestBlowoutManagerId: string | null;
+  largestBlowoutSeason: number | null;
+  currentStreakManagerId: string | null;
+  currentStreakCount: number;
+  longestStreakManagerId: string | null;
+  longestStreakCount: number;
+  lastMeetingWinnerId: string | null;
+  lastMeetingSeason: number | null;
+  lastMeetingWeek: number | null;
+  rivalryScore: number;
+  /** Persisted commentary, or null when none has been generated yet. */
+  blurb: string | null;
+  meetings: RivalryMeetingView[];
+}
+
+const SELECT = {
+  id: true,
+  isOfficial: true,
+  managerAId: true,
+  managerBId: true,
+  gamesPlayed: true,
+  managerAWins: true,
+  managerBWins: true,
+  ties: true,
+  managerAPoints: true,
+  managerBPoints: true,
+  averageMargin: true,
+  playoffMeetings: true,
+  championshipMeetings: true,
+  closestGameMargin: true,
+  closestGameSeason: true,
+  largestBlowoutMargin: true,
+  largestBlowoutManagerId: true,
+  largestBlowoutSeason: true,
+  currentStreakManagerId: true,
+  currentStreakCount: true,
+  longestStreakManagerId: true,
+  longestStreakCount: true,
+  lastMeetingWinnerId: true,
+  lastMeetingSeason: true,
+  lastMeetingWeek: true,
+  rivalryScore: true,
+  summary: true,
+  summaryIsMock: true,
+  managerA: { select: { displayName: true, photoUrl: true, avatarUrl: true } },
+  managerB: { select: { displayName: true, photoUrl: true, avatarUrl: true } },
+} as const;
+
+type RivalryRow = Awaited<ReturnType<typeof fetchRivalries>>[number];
+
+async function fetchRivalries(where: { isOfficial?: boolean; id?: string }) {
+  return prisma.rivalry.findMany({
+    where: { ...where, gamesPlayed: { gt: 0 } },
+    select: SELECT,
+    orderBy: [{ isOfficial: "desc" }, { rivalryScore: "desc" }],
+  });
+}
+
+function toView(r: RivalryRow, meetings: RivalryMeetingView[] = []): RivalryView {
+  const games = r.gamesPlayed || 0;
+  return {
+    id: r.id,
+    isOfficial: r.isOfficial,
+    managerAId: r.managerAId,
+    managerAName: r.managerA.displayName,
+    managerAPhoto: r.managerA.photoUrl ?? r.managerA.avatarUrl ?? null,
+    managerBId: r.managerBId,
+    managerBName: r.managerB.displayName,
+    managerBPhoto: r.managerB.photoUrl ?? r.managerB.avatarUrl ?? null,
+    gamesPlayed: games,
+    managerAWins: r.managerAWins,
+    managerBWins: r.managerBWins,
+    ties: r.ties,
+    managerAPoints: r.managerAPoints,
+    managerBPoints: r.managerBPoints,
+    managerAAvg: games ? Number((r.managerAPoints / games).toFixed(1)) : null,
+    managerBAvg: games ? Number((r.managerBPoints / games).toFixed(1)) : null,
+    averageMargin: r.averageMargin,
+    playoffMeetings: r.playoffMeetings,
+    championshipMeetings: r.championshipMeetings,
+    closestGameMargin: r.closestGameMargin,
+    closestGameSeason: r.closestGameSeason,
+    largestBlowoutMargin: r.largestBlowoutMargin,
+    largestBlowoutManagerId: r.largestBlowoutManagerId,
+    largestBlowoutSeason: r.largestBlowoutSeason,
+    currentStreakManagerId: r.currentStreakManagerId,
+    currentStreakCount: r.currentStreakCount,
+    longestStreakManagerId: r.longestStreakManagerId,
+    longestStreakCount: r.longestStreakCount,
+    lastMeetingWinnerId: r.lastMeetingWinnerId,
+    lastMeetingSeason: r.lastMeetingSeason,
+    lastMeetingWeek: r.lastMeetingWeek,
+    rivalryScore: r.rivalryScore,
+    // Never surface placeholder copy.
+    blurb: r.summary && !r.summaryIsMock ? r.summary : null,
+    meetings,
+  };
+}
+
+/** Official (commissioner-declared) rivalries, strongest first. */
+export async function getOfficialRivalries(): Promise<RivalryView[]> {
+  const rows = await fetchRivalries({ isOfficial: true });
+  return rows.map((r) => toView(r));
+}
+
+/** Every pairing that has met, official first then by rivalry score. */
 export async function getComputedRivalries(): Promise<RivalryView[]> {
-  const rows = await prisma.matchupTeam.findMany({
-    where: { score: { not: null } },
-    include: {
-      fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } },
-      matchup: {
-        select: {
-          week: true,
-          isPlayoff: true,
-          season: { select: { year: true } },
-          teams: {
-            select: { fantasyTeamId: true, score: true, fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } } },
-          },
-        },
-      },
+  const rows = await fetchRivalries({});
+  return rows.map((r) => toView(r));
+}
+
+/** One rivalry with its full season-by-season meeting log. */
+export async function getRivalryDetail(id: string): Promise<RivalryView | null> {
+  const [row] = await fetchRivalries({ id });
+  if (!row) return null;
+  const meetings = await prisma.rivalryMeeting.findMany({
+    where: { rivalryId: id },
+    orderBy: [{ seasonYear: "desc" }, { week: "desc" }],
+    select: {
+      seasonYear: true,
+      week: true,
+      managerAScore: true,
+      managerBScore: true,
+      winnerId: true,
+      isPlayoff: true,
+      isChampionship: true,
     },
   });
+  return toView(row, meetings);
+}
 
-  // Build one record per matchup (dedupe the two MatchupTeam rows) keyed by pair.
-  const seenMatchup = new Set<string>();
-  const byPair = new Map<string, PairGame[]>();
-  for (const r of rows) {
-    const teams = r.matchup.teams;
-    if (teams.length !== 2 || teams.some((t) => t.score == null)) continue;
-    const [t1, t2] = teams;
-    const matchupKey = [t1.fantasyTeamId, t2.fantasyTeamId, r.matchup.season.year, r.matchup.week].sort().join("|");
-    if (seenMatchup.has(matchupKey)) continue;
-    seenMatchup.add(matchupKey);
-
-    const m1 = t1.fantasyTeam.managerId;
-    const m2 = t2.fantasyTeam.managerId;
-    if (m1 === m2) continue;
-    const [aId, bId] = [m1, m2].sort();
-    const aIsT1 = aId === m1;
-    const game: PairGame = {
-      aId,
-      bId,
-      aName: (aIsT1 ? t1 : t2).fantasyTeam.manager.displayName,
-      bName: (aIsT1 ? t2 : t1).fantasyTeam.manager.displayName,
-      aScore: (aIsT1 ? t1 : t2).score!,
-      bScore: (aIsT1 ? t2 : t1).score!,
-      year: r.matchup.season.year,
-      week: r.matchup.week,
-      isPlayoff: r.matchup.isPlayoff,
-    };
-    const key = `${aId}::${bId}`;
-    const list = byPair.get(key) ?? [];
-    list.push(game);
-    byPair.set(key, list);
-  }
-
-  const safeguards = await getContentSafeguards();
-
-  const views = await Promise.all(
-    [...byPair.entries()]
-      .filter(([, games]) => games.length >= MIN_MEETINGS)
-      .map(async ([key, games]) => {
-        games.sort((x, y) => x.year - y.year || x.week - y.week);
-        let aWins = 0;
-        let bWins = 0;
-        let ties = 0;
-        let aPoints = 0;
-        let bPoints = 0;
-        let playoffMeetings = 0;
-        let marginSum = 0;
-        let closest: RivalryView["closest"] = null;
-        let biggest: RivalryView["biggest"] = null;
-        let streakName: string | null = null;
-        let streakCount = 0;
-
-        const { aName, bName } = games[0];
-        for (const g of games) {
-          aPoints += g.aScore;
-          bPoints += g.bScore;
-          if (g.isPlayoff) playoffMeetings += 1;
-          const margin = Math.abs(g.aScore - g.bScore);
-          marginSum += margin;
-          const winnerName = g.aScore > g.bScore ? aName : g.bScore > g.aScore ? bName : null;
-          if (g.aScore > g.bScore) aWins += 1;
-          else if (g.bScore > g.aScore) bWins += 1;
-          else ties += 1;
-          if (winnerName) {
-            if (winnerName === streakName) streakCount += 1;
-            else {
-              streakName = winnerName;
-              streakCount = 1;
-            }
-          } else {
-            streakName = null;
-            streakCount = 0;
-          }
-          if (g.aScore !== g.bScore) {
-            if (!closest || margin < closest.margin) closest = { margin: Number(margin.toFixed(1)), year: g.year, week: g.week, winner: winnerName! };
-            if (!biggest || margin > biggest.margin) biggest = { margin: Number(margin.toFixed(1)), year: g.year, week: g.week, winner: winnerName! };
-          }
-        }
-
-        const leader = aWins > bWins ? aName : bWins > aWins ? bName : null;
-        const record = leader
-          ? `${leader} leads ${Math.max(aWins, bWins)}-${Math.min(aWins, bWins)}${ties ? `-${ties}` : ""}`
-          : `Dead even ${aWins}-${bWins}${ties ? `-${ties}` : ""}`;
-        const currentStreak = streakName ? `${streakName} has won ${streakCount} straight` : "no active streak";
-        const avgMargin = games.length ? marginSum / games.length : 0;
-        // Rivalry score: volume + playoff stakes + closeness (tight series score higher).
-        const rivalryScore = games.length * 3 + playoffMeetings * 6 + Math.max(0, 25 - avgMargin);
-
-        const blurb = await generateRivalryBlurb(
-          {
-            managerA: aName,
-            managerB: bName,
-            record,
-            gamesPlayed: games.length,
-            playoffMeetings,
-            closestMargin: closest?.margin ?? 0,
-            biggestMargin: biggest?.margin ?? 0,
-            currentStreak,
-          },
-          safeguards,
-        );
-
-        return {
-          key,
-          managerAId: games[0].aId,
-          managerAName: aName,
-          managerBId: games[0].bId,
-          managerBName: bName,
-          gamesPlayed: games.length,
-          aWins,
-          bWins,
-          ties,
-          aPoints: Number(aPoints.toFixed(1)),
-          bPoints: Number(bPoints.toFixed(1)),
-          avgMargin: Number(avgMargin.toFixed(1)),
-          playoffMeetings,
-          closest,
-          biggest,
-          currentStreak,
-          rivalryScore: Number(rivalryScore.toFixed(1)),
-          blurb,
-        } satisfies RivalryView;
-      }),
-  );
-
-  return views.sort((a, b) => b.rivalryScore - a.rivalryScore);
+/** Rivalry records involving one manager — used on the manager profile. */
+export async function getRivalriesForManager(managerId: string): Promise<RivalryView[]> {
+  const rows = await prisma.rivalry.findMany({
+    where: { gamesPlayed: { gt: 0 }, OR: [{ managerAId: managerId }, { managerBId: managerId }] },
+    select: SELECT,
+    orderBy: [{ isOfficial: "desc" }, { rivalryScore: "desc" }],
+  });
+  return rows.map((r) => toView(r));
 }

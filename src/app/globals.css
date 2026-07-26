@@ -52,6 +52,38 @@
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/*
+ * Type scale: Tailwind's stock scale multiplied by 1.2 (+20% site-wide).
+ * Overriding the --text-* tokens rather than bumping the root font-size keeps
+ * spacing, radii and max-widths (all rem-based) at their designed values, so
+ * layouts don't inflate along with the text. Line heights are scaled by the
+ * same factor to preserve each step's original ratio.
+ */
+@theme {
+  --text-xs: 0.9rem;
+  --text-xs--line-height: 1.2rem;
+  --text-sm: 1.05rem;
+  --text-sm--line-height: 1.5rem;
+  --text-base: 1.2rem;
+  --text-base--line-height: 1.8rem;
+  --text-lg: 1.35rem;
+  --text-lg--line-height: 2.1rem;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 2.1rem;
+  --text-2xl: 1.8rem;
+  --text-2xl--line-height: 2.4rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.7rem;
+  --text-4xl: 2.7rem;
+  --text-4xl--line-height: 3rem;
+  --text-5xl: 3.6rem;
+  --text-5xl--line-height: 1;
+  --text-6xl: 4.5rem;
+  --text-6xl--line-height: 1;
+  --text-7xl: 5.4rem;
+  --text-7xl--line-height: 1;
+}
+
 :root {
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);

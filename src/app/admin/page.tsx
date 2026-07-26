@@ -179,7 +179,7 @@ export default async function AdminPage() {
               <span className="text-muted-foreground">Sensitive-topic exclusions</span>
               <div className="mt-1 flex flex-wrap gap-1">
                 {(overview.league?.sensitiveTopics ?? []).map((topic) => (
-                  <Badge key={topic} variant="outline" className="text-[10px]">
+                  <Badge key={topic} variant="outline" className="text-[12px]">
                     {topic}
                   </Badge>
                 ))}

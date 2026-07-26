@@ -82,7 +82,7 @@ function ManagerRow({ manager }: { manager: ManagerIdentityView }) {
                 <div key={type} className="flex flex-wrap items-center gap-1">
                   <span className="text-xs font-medium text-muted-foreground">{type}:</span>
                   {values.map((v) => (
-                    <Badge key={`${type}-${v}`} variant="outline" className="text-[10px]">
+                    <Badge key={`${type}-${v}`} variant="outline" className="text-[12px]">
                       {v}
                     </Badge>
                   ))}
@@ -97,7 +97,7 @@ function ManagerRow({ manager }: { manager: ManagerIdentityView }) {
               <span className="text-xs text-muted-foreground">none</span>
             ) : (
               manager.identityRawIdentifiers.map((raw) => (
-                <Badge key={raw} variant="secondary" className="font-mono text-[10px]">
+                <Badge key={raw} variant="secondary" className="font-mono text-[12px]">
                   {raw}
                 </Badge>
               ))

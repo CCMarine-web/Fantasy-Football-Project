@@ -8,7 +8,7 @@ function FormBadge({ result }: { result: "W" | "L" | "T" }) {
   return (
     <span
       className={cn(
-        "flex h-5 w-5 items-center justify-center rounded-sm text-[10px] font-bold",
+        "flex h-5 w-5 items-center justify-center rounded-sm text-[12px] font-bold",
         result === "W" && "bg-field text-field-foreground",
         result === "L" && "bg-destructive/20 text-destructive",
         result === "T" && "bg-muted text-muted-foreground",

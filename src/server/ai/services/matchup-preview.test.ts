@@ -21,11 +21,14 @@ vi.mock("@/lib/db", () => ({
 // actually made it into the constructed system prompt, not just that the
 // safeguards object was passed around.
 let lastRequest: AIGenerationRequest | undefined;
+// Swappable per test: logGeneration deliberately refuses to persist mock
+// output, so tests that assert on the generation log need a real provider.
+let providerResponse = { text: "A real preview.", providerName: "openai", model: "gpt-5-mini" };
 vi.mock("../get-ai-provider", () => ({
   getAIProvider: () => ({
     generate: async (request: AIGenerationRequest) => {
       lastRequest = request;
-      return { text: "[MOCK AI CONTENT] stub", providerName: "mock", model: "mock-v1" };
+      return providerResponse;
     },
   }),
 }));
@@ -56,6 +59,7 @@ describe("generateMatchupPreview", () => {
   beforeEach(() => {
     createMock.mockClear();
     lastRequest = undefined;
+    providerResponse = { text: "A real preview.", providerName: "openai", model: "gpt-5-mini" };
   });
 
   it("folds sensitive-topic exclusions and the no-roast manager name into the constructed system prompt", async () => {
@@ -98,7 +102,7 @@ describe("generateMatchupPreview", () => {
     });
 
     expect(result.generationId).toBe("gen_test_1");
-    expect(result.text).toContain("[MOCK AI CONTENT]");
+    expect(result.text).toBe("A real preview.");
   });
 
   it("never sets status explicitly, relying on the GENERATED default (no auto-publish)", async () => {
@@ -106,5 +110,31 @@ describe("generateMatchupPreview", () => {
 
     const createArgs = createMock.mock.calls[0][0];
     expect(createArgs.data.status).toBeUndefined();
+  });
+
+  // Caching placeholder copy is what made the site serve "[MOCK AI CONTENT]"
+  // indefinitely: the generate-once-reuse lookups treat any stored row as
+  // done, so a mock written before a key was configured is never replaced.
+  it("does not persist mock output, and reports a null generation id", async () => {
+    providerResponse = { text: "[MOCK AI CONTENT] stub", providerName: "mock", model: "mock-v1" };
+
+    const result = await generateMatchupPreview(baseInput, {
+      humorLevel: 3,
+      sensitiveTopics: [],
+      noRoastManagerNames: [],
+    });
+
+    expect(createMock).not.toHaveBeenCalled();
+    expect(result.generationId).toBeNull();
+    // The text still comes back so a caller can choose to show or suppress it.
+    expect(result.text).toContain("[MOCK AI CONTENT]");
+  });
+
+  it("still persists real output that merely mentions the phrase in passing", async () => {
+    providerResponse = { text: "A clean preview.", providerName: "openai", model: "gpt-5-mini" };
+
+    await generateMatchupPreview(baseInput, { humorLevel: 3, sensitiveTopics: [], noRoastManagerNames: [] });
+
+    expect(createMock).toHaveBeenCalledTimes(1);
   });
 });

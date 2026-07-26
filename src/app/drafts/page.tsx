@@ -73,7 +73,7 @@ export default async function DraftsPage({
                         {pick.manager?.displayName}
                       </span>
                       {pick.isKeeper ? (
-                        <Badge variant="outline" className="ml-2 text-[9px]">
+                        <Badge variant="outline" className="ml-2 text-[11px]">
                           KEEP
                         </Badge>
                       ) : null}

@@ -1,7 +1,5 @@
 import { prisma } from "@/lib/db";
-import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
-import { generateTradeVerdict } from "@/server/ai/services/trade-verdict";
-import type { TradeVerdictSide } from "@/server/ai/services/trade-verdict";
+import { getBlurbs } from "@/server/ai/blurb-cache";
 
 /** One trade, ready to render on the Trade Tribunal page. */
 export interface TradeTribunalSide {
@@ -21,7 +19,10 @@ export interface TradeTribunalView {
   sides: TradeTribunalSide[];
   /** |A − B| of the two sides' hindsight points; null when unavailable. */
   differential: number | null;
-  verdict: string;
+  /** Persisted verdict, or null when none has been generated yet. */
+  verdict: string | null;
+  /** Deterministic summary of who won the trade — input for verdict writing. */
+  hindsightSummary: string;
   notable: boolean;
   notes: string | null;
 }
@@ -87,7 +88,12 @@ export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
     }),
   );
 
-  const safeguards = await getContentSafeguards();
+  // One query for every cached verdict, instead of one model call per trade.
+  const cached = await getBlurbs(
+    "TRADE_VERDICT",
+    trades.map((t) => ({ subjectKey: t.id, inputHash: "" })),
+  );
+  const verdictByTransaction = new Map([...cached].map(([k, v]) => [k, v.text]));
 
   const views = await Promise.all(
     trades.map(async (t): Promise<TradeTribunalView> => {
@@ -167,21 +173,10 @@ export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
         }
       }
 
-      const verdictSides: TradeVerdictSide[] = workingSides.map((s) => ({
-        managerName: s.managerName,
-        acquired: s.acquired,
-      }));
-
-      const verdict = await generateTradeVerdict(
-        {
-          seasonYear: t.season.year,
-          week: t.week,
-          sides: verdictSides,
-          hindsightSummary,
-          hindsightAvailable,
-        },
-        safeguards,
-      );
+      // Verdicts are READ from the cache — never generated during a render.
+      // scripts/ai/backfill-blurbs.ts writes them; a missing one renders as
+      // null and the page simply omits the verdict line.
+      const verdict = verdictByTransaction.get(t.id) ?? null;
 
       return {
         transactionId: t.id,
@@ -196,6 +191,7 @@ export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
         })),
         differential,
         verdict,
+        hindsightSummary,
         notable: t.trade?.isNotable ?? false,
         notes: t.trade?.notes ?? null,
       };

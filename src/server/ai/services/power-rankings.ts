@@ -25,7 +25,8 @@ export interface PowerRankingsInput {
 }
 
 export interface PowerRankingsResult {
-  generationId: string;
+  /** Null when the generation was mock output and therefore not logged. */
+  generationId: string | null;
   text: string;
 }
 
@@ -55,5 +56,5 @@ export async function generatePowerRankings(
     outputText: result.text,
   });
 
-  return { generationId: generation.id, text: result.text };
+  return { generationId: generation?.id ?? null, text: result.text };
 }

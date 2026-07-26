@@ -3,101 +3,155 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getComputedRivalries } from "@/server/repositories/computed-rivalries-repository";
-import { isAIConfigured } from "@/lib/env";
-import { Swords } from "lucide-react";
+import { TeamAvatar } from "@/components/shared/team-avatar";
+import { getComputedRivalries, type RivalryView } from "@/server/repositories/computed-rivalries-repository";
+import { Swords, Trophy } from "lucide-react";
 
 export const metadata = { title: "Rivalries" };
 
-export default async function RivalriesPage() {
-  const rivalries = await getComputedRivalries();
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <dt className="text-xs tracking-wide text-muted-foreground uppercase">{label}</dt>
+      <dd className="font-mono text-sm font-semibold tabular-nums">{value}</dd>
+    </div>
+  );
+}
+
+function RivalryCard({ r }: { r: RivalryView }) {
+  const aLeads = r.managerAWins > r.managerBWins;
+  const bLeads = r.managerBWins > r.managerAWins;
+  const nameFor = (id: string | null) =>
+    id === r.managerAId ? r.managerAName : id === r.managerBId ? r.managerBName : null;
+  const streakName = nameFor(r.currentStreakManagerId);
+  const longestName = nameFor(r.longestStreakManagerId);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
-        eyebrow="Bad Blood"
-        title="Rivalries"
-        description="Every manager pairing with real history, ranked by how much it matters — meetings, playoff stakes, and how close it's been."
-      />
+    <Card className={r.isOfficial ? "border-primary/40" : undefined}>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center gap-2">
+          {r.isOfficial ? <Badge>Official rivalry</Badge> : null}
+          {r.championshipMeetings > 0 ? (
+            <Badge className="bg-gold text-gold-foreground">
+              <Trophy className="h-3 w-3" /> {r.championshipMeetings} title game
+              {r.championshipMeetings > 1 ? "s" : ""}
+            </Badge>
+          ) : null}
+          {r.playoffMeetings > 0 ? <Badge variant="outline">{r.playoffMeetings} playoff</Badge> : null}
+        </div>
 
-      {!isAIConfigured() && rivalries.length > 0 ? (
-        <p className="mt-4 rounded-md border border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
-          Rivalry one-liners are placeholder text. Add an <code>OPENAI_API_KEY</code> for real
-          commentary.
-        </p>
-      ) : null}
+        <div className="flex items-center justify-between gap-3">
+          <Link href={`/managers/${r.managerAId}`} className="flex min-w-0 items-center gap-2 hover:text-primary">
+            <TeamAvatar name={r.managerAName} imageUrl={r.managerAPhoto} className="h-10 w-10" />
+            <span className={`truncate font-heading text-base font-semibold ${aLeads ? "text-primary" : ""}`}>
+              {r.managerAName}
+            </span>
+          </Link>
 
-      <div className="mt-8 space-y-4">
-        {rivalries.length === 0 ? (
+          <div className="shrink-0 text-center">
+            <div className="font-heading text-2xl font-semibold tabular-nums">
+              {r.managerAWins}
+              <span className="mx-1 text-muted-foreground">–</span>
+              {r.managerBWins}
+              {r.ties ? <span className="text-muted-foreground">–{r.ties}</span> : null}
+            </div>
+            <div className="text-xs text-muted-foreground">{r.gamesPlayed} meetings</div>
+          </div>
+
+          <Link
+            href={`/managers/${r.managerBId}`}
+            className="flex min-w-0 items-center justify-end gap-2 hover:text-primary"
+          >
+            <span className={`truncate text-right font-heading text-base font-semibold ${bLeads ? "text-primary" : ""}`}>
+              {r.managerBName}
+            </span>
+            <TeamAvatar name={r.managerBName} imageUrl={r.managerBPhoto} className="h-10 w-10" />
+          </Link>
+        </div>
+
+        {r.blurb ? <p className="text-sm text-foreground/90">{r.blurb}</p> : null}
+
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Total points" value={`${Math.round(r.managerAPoints)} – ${Math.round(r.managerBPoints)}`} />
+          <Stat label="Avg score" value={`${r.managerAAvg ?? "—"} – ${r.managerBAvg ?? "—"}`} />
+          <Stat label="Avg margin" value={r.averageMargin != null ? `${r.averageMargin}` : "—"} />
+          <Stat
+            label="Closest"
+            value={r.closestGameMargin != null ? `${r.closestGameMargin} (${r.closestGameSeason})` : "—"}
+          />
+          <Stat
+            label="Biggest win"
+            value={r.largestBlowoutMargin != null ? `${r.largestBlowoutMargin} (${r.largestBlowoutSeason})` : "—"}
+          />
+          <Stat label="Current streak" value={streakName ? `${streakName} ×${r.currentStreakCount}` : "—"} />
+          <Stat label="Longest streak" value={longestName ? `${longestName} ×${r.longestStreakCount}` : "—"} />
+          <Stat
+            label="Last meeting"
+            value={r.lastMeetingSeason ? `${r.lastMeetingSeason} wk ${r.lastMeetingWeek}` : "—"}
+          />
+        </dl>
+
+        <Link href={`/rivalries/${r.id}`} className="inline-block text-sm font-medium text-primary hover:underline">
+          Season-by-season history →
+        </Link>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default async function RivalriesPage() {
+  const all = await getComputedRivalries();
+  const official = all.filter((r) => r.isOfficial);
+  const others = all.filter((r) => !r.isOfficial).slice(0, 8);
+
+  if (all.length === 0) {
+    return (
+      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+        <PageHeader eyebrow="Bad Blood" title="Rivalries" />
+        <div className="mt-8">
           <EmptyState
             icon={Swords}
             title="No rivalries yet"
-            description="Rivalries are computed once managers have met at least three times."
+            description="Rivalry records appear once managers have played each other and the rivalry import has run."
           />
-        ) : (
-          rivalries.map((r, i) => (
-            <Card key={r.key} className={i === 0 ? "border-primary/40" : undefined}>
-              <CardContent className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    {i === 0 ? <Badge className="bg-primary text-primary-foreground">Top Rivalry</Badge> : null}
-                    <Link href={`/managers/${r.managerAId}`} className="font-heading text-lg font-semibold hover:text-primary">
-                      {r.managerAName}
-                    </Link>
-                    <span className="text-muted-foreground">vs</span>
-                    <Link href={`/managers/${r.managerBId}`} className="font-heading text-lg font-semibold hover:text-primary">
-                      {r.managerBName}
-                    </Link>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-mono text-xl font-semibold tabular-nums">
-                      {r.aWins}-{r.bWins}
-                      {r.ties ? `-${r.ties}` : ""}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{r.gamesPlayed} meetings</p>
-                  </div>
-                </div>
-
-                <p className="text-sm text-foreground/90">{r.blurb}</p>
-
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
-                  <span>
-                    Total pts:{" "}
-                    <span className="font-mono text-foreground">
-                      {r.aPoints.toFixed(0)}–{r.bPoints.toFixed(0)}
-                    </span>
-                  </span>
-                  <span>
-                    Avg margin: <span className="font-mono text-foreground">{r.avgMargin.toFixed(1)}</span>
-                  </span>
-                  <span>
-                    Streak: <span className="text-foreground">{r.currentStreak}</span>
-                  </span>
-                  <span>
-                    Playoff meetings: <span className="font-mono text-foreground">{r.playoffMeetings}</span>
-                  </span>
-                  {r.closest ? (
-                    <span>
-                      Closest:{" "}
-                      <span className="font-mono text-foreground">
-                        {r.closest.margin} pts ({r.closest.year})
-                      </span>
-                    </span>
-                  ) : null}
-                  {r.biggest ? (
-                    <span>
-                      Biggest:{" "}
-                      <span className="font-mono text-foreground">
-                        {r.biggest.margin} pts ({r.biggest.year})
-                      </span>
-                    </span>
-                  ) : null}
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        )}
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <PageHeader
+        eyebrow="Bad Blood"
+        title="Rivalries"
+        description="The league's declared rivalries, plus the closest-fought pairings by the numbers. Every record is computed from verified matchup results."
+      />
+
+      {official.length > 0 ? (
+        <section className="mt-8">
+          <h2 className="font-heading text-xl font-semibold">Official rivalries</h2>
+          <p className="mt-1 text-sm text-muted-foreground">Declared by the commissioner.</p>
+          <div className="mt-4 space-y-4">
+            {official.map((r) => (
+              <RivalryCard key={r.id} r={r} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {others.length > 0 ? (
+        <section className="mt-10">
+          <h2 className="font-heading text-xl font-semibold">Other heated pairings</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ranked by meetings, postseason stakes, and how close the games have been.
+          </p>
+          <div className="mt-4 space-y-4">
+            {others.map((r) => (
+              <RivalryCard key={r.id} r={r} />
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

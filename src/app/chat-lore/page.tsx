@@ -152,7 +152,7 @@ export default function ChatLorePage() {
                   <td className="px-3 py-2">&ldquo;bury your kicker, Kevin&rdquo;</td>
                   <td className="px-3 py-2">Marcus Cole</td>
                   <td className="px-3 py-2">
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[12px]">
                       Pending review
                     </Badge>
                   </td>

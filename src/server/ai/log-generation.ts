@@ -18,7 +18,19 @@ export interface LogGenerationInput {
   outputText: string;
 }
 
-export async function logGeneration(input: LogGenerationInput): Promise<AIContentGeneration> {
+/**
+ * Persisting mock output is how the site ended up serving "[MOCK AI CONTENT]"
+ * indefinitely: the generate-once-reuse lookups treat any stored row as done,
+ * so a placeholder written before a key was configured is never replaced.
+ * Refusing it here covers every service in one place.
+ */
+export function isMockOutput(providerName: string, outputText: string): boolean {
+  return providerName === "mock" || outputText.includes("[MOCK AI CONTENT]");
+}
+
+export async function logGeneration(input: LogGenerationInput): Promise<AIContentGeneration | null> {
+  if (isMockOutput(input.providerName, input.outputText)) return null;
+
   return prisma.aIContentGeneration.create({
     data: {
       contentType: input.contentType,

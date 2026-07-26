@@ -25,7 +25,8 @@ export interface ScoutingReportInput {
 }
 
 export interface ScoutingReportResult {
-  generationId: string;
+  /** Null when the generation was mock output and therefore not logged. */
+  generationId: string | null;
   text: string;
   providerName: string;
 }
@@ -56,5 +57,5 @@ export async function generateScoutingReport(
     outputText: result.text,
   });
 
-  return { generationId: generation.id, text: result.text, providerName: result.providerName };
+  return { generationId: generation?.id ?? null, text: result.text, providerName: result.providerName };
 }

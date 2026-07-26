@@ -50,10 +50,13 @@ export default async function HomePage() {
     historicalFact,
   } = data;
 
-  // Trim the AI season-review to a short preview so it never dominates the page.
-  const reviewPreview = seasonNarrative
-    ? seasonNarrative.text.replace(/\s+/g, " ").trim().slice(0, 280)
-    : null;
+  // Trim the AI season-review to a short preview so it never dominates the
+  // page. Placeholder (mock) copy is suppressed entirely — the champion facts
+  // below are verified and stand on their own without invented narrative.
+  const reviewPreview =
+    seasonNarrative && !seasonNarrative.isMock
+      ? seasonNarrative.text.replace(/\s+/g, " ").trim().slice(0, 280)
+      : null;
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -73,7 +76,7 @@ export default async function HomePage() {
         </div>
         {LEAGUE_CONFIG.showDraftCountdown ? (
           <div className="w-full shrink-0 lg:max-w-xs">
-            <DraftCountdown isoDate={LEAGUE_CONFIG.draftDate} />
+            <DraftCountdown isoDate={LEAGUE_CONFIG.draftDate} timeZone={LEAGUE_CONFIG.draftTimeZone} />
           </div>
         ) : null}
       </section>
@@ -183,10 +186,12 @@ export default async function HomePage() {
                     <span className="font-semibold">{seasonNarrative!.championName}</span> won the{" "}
                     {seasonNarrative!.seasonYear} title with {seasonNarrative!.championTeam}.
                   </p>
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    {reviewPreview}
-                    {seasonNarrative!.text.length > 280 ? "…" : ""}
-                  </p>
+                  {reviewPreview ? (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {reviewPreview}
+                      {seasonNarrative!.text.length > 280 ? "…" : ""}
+                    </p>
+                  ) : null}
                   <Link
                     href={`/history/${seasonNarrative!.seasonYear}`}
                     className="inline-block text-sm text-primary hover:underline"
@@ -268,7 +273,7 @@ export default async function HomePage() {
                 ) : (
                   recentTransactions.map((tx) => (
                     <div key={tx.id} className="text-sm">
-                      <Badge variant="outline" className="mb-1 text-[10px] uppercase">
+                      <Badge variant="outline" className="mb-1 text-[12px] uppercase">
                         {tx.type.replace("_", " ")}
                       </Badge>
                       <p className="text-muted-foreground">

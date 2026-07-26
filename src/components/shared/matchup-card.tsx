@@ -57,7 +57,7 @@ export function MatchupCard({ data, className }: { data: MatchupCardData; classN
           </span>
           <Badge
             variant={data.status === "FINAL" ? "secondary" : "outline"}
-            className="text-[10px] tracking-wide uppercase"
+            className="text-[12px] tracking-wide uppercase"
           >
             {data.status === "IN_PROGRESS" ? "Live" : data.status === "FINAL" ? "Final" : "Upcoming"}
           </Badge>

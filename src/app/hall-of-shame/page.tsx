@@ -43,7 +43,7 @@ export default async function HallOfShamePage() {
                   </p>
                   <p className="text-xs text-muted-foreground">{e.detail}</p>
                   {e.key === "bench" && benchGap.length > 0 ? (
-                    <p className="mt-2 text-[11px] text-muted-foreground/80">
+                    <p className="mt-2 text-[13px] text-muted-foreground/80">
                       Player-level data available for {benchCovered.join(", ")}; not for{" "}
                       {benchGap.join(", ")}.
                     </p>

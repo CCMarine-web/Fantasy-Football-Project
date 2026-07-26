@@ -73,7 +73,7 @@ export default async function HistoryPage() {
                     <CardContent className="flex items-center justify-between gap-4">
                       <div>
                         <p className="font-heading text-xl font-semibold">{season.year}</p>
-                        <Badge variant="outline" className="mt-1 text-[10px] uppercase">
+                        <Badge variant="outline" className="mt-1 text-[12px] uppercase">
                           {season.status.replace("_", " ")}
                         </Badge>
                       </div>

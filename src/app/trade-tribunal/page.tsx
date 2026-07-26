@@ -4,7 +4,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
-import { isAIConfigured } from "@/lib/env";
 import { Gavel, ArrowRight } from "lucide-react";
 
 export const metadata = { title: "Trade Tribunal" };
@@ -23,14 +22,7 @@ export default async function TradeTribunalPage() {
         description="Every trade in league history, dragged before the court and judged on the cold evidence of rest-of-season production. The biggest fleeces are on top."
       />
 
-      {!isAIConfigured() && trades.length > 0 ? (
-        <p className="mt-4 rounded-md border border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
-          Tribunal verdicts are placeholder text. Add an <code>OPENAI_API_KEY</code> for real
-          commentary.
-        </p>
-      ) : null}
-
-      <div className="mt-8 space-y-4">
+            <div className="mt-8 space-y-4">
         {trades.length === 0 ? (
           <EmptyState
             icon={Gavel}
@@ -107,9 +99,11 @@ export default async function TradeTribunalPage() {
                     ))}
                   </div>
 
-                  <p className="border-l-2 border-primary/40 pl-3 text-sm text-foreground/90 italic">
-                    {t.verdict}
-                  </p>
+                  {t.verdict ? (
+                    <p className="border-l-2 border-primary/40 pl-3 text-sm text-foreground/90 italic">
+                      {t.verdict}
+                    </p>
+                  ) : null}
 
                   {t.notes ? (
                     <p className="text-xs text-muted-foreground">{t.notes}</p>

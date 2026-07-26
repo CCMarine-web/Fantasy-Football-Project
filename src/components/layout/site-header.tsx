@@ -87,7 +87,7 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
             <span className="font-heading text-lg font-semibold tracking-wide uppercase">
               {BRAND.name}
             </span>
-            <span className="text-[11px] tracking-[0.2em] text-muted-foreground uppercase">
+            <span className="text-[13px] tracking-[0.2em] text-muted-foreground uppercase">
               {BRAND.tagline}
             </span>
           </span>
@@ -148,7 +148,7 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
             <nav className="flex flex-col gap-5 overflow-y-auto px-4 pb-6">
               {mobileNavGroups.map((group) => (
                 <div key={group.label} className="flex flex-col gap-2">
-                  <p className="text-[11px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">
+                  <p className="text-[13px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">
                     {group.label}
                   </p>
                   {group.links.map((link) => (

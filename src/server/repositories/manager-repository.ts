@@ -430,6 +430,8 @@ export interface ManagerRow {
   bestFinish: number | null;
   statsComplete: boolean;
   performanceSummary: string | null;
+  /** False for managers who no longer play in the league (retired). */
+  isActive: boolean;
 }
 
 /**
@@ -455,14 +457,37 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
 
   const historyIncomplete = !!(league && earliestSeason && league.foundedYear < earliestSeason.year);
 
+  // Previously this loop ran three sequential queries PER manager (a full game
+  // log plus two championship counts) — ~30 round-trips for ten managers. All
+  // three are now answered by one query each, up front.
+  const [gameLogs, championships] = await Promise.all([
+    buildAllManagerGameLogs(),
+    prisma.championship.findMany({
+      select: {
+        championManagerId: true,
+        runnerUpFantasyTeam: { select: { managerId: true } },
+      },
+    }),
+  ]);
+
+  const champCount = new Map<string, number>();
+  const finalsCount = new Map<string, number>();
+  const bump = (map: Map<string, number>, key: string | null | undefined) => {
+    if (key) map.set(key, (map.get(key) ?? 0) + 1);
+  };
+  for (const c of championships) {
+    bump(champCount, c.championManagerId);
+    bump(finalsCount, c.championManagerId);
+    const runnerUp = c.runnerUpFantasyTeam?.managerId;
+    if (runnerUp && runnerUp !== c.championManagerId) bump(finalsCount, runnerUp);
+  }
+
   const rows: ManagerRow[] = [];
   for (const m of managers) {
-    const games = await buildManagerGameLog(m.id);
+    const games = gameLogs.get(m.id) ?? [];
     const summary = careerSummary(games);
-    const champs = await prisma.championship.count({ where: { championManagerId: m.id } });
-    const finals = await prisma.championship.count({
-      where: { OR: [{ championManagerId: m.id }, { runnerUpFantasyTeam: { managerId: m.id } }] },
-    });
+    const champs = champCount.get(m.id) ?? 0;
+    const finals = finalsCount.get(m.id) ?? 0;
 
     const played = m.fantasyTeams.filter((t) => t.wins + t.losses + t.ties > 0);
     const years = played.map((t) => t.season.year);
@@ -489,9 +514,51 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
       bestFinish: finishes.length ? Math.min(...finishes) : null,
       statsComplete: !historyIncomplete,
       performanceSummary: m.performanceSummary?.summary ?? null,
+      isActive: m.isActive,
     });
   }
   return rows;
+}
+
+/**
+ * Builds every manager's game log from a single query. Same shape as
+ * buildManagerGameLog, just batched — used by the list pages so they don't
+ * issue one query per manager.
+ */
+async function buildAllManagerGameLogs(): Promise<Map<string, GameResult[]>> {
+  const rows = await prisma.matchupTeam.findMany({
+    where: { score: { not: null } },
+    include: {
+      matchup: {
+        include: {
+          teams: { include: { fantasyTeam: { select: { managerId: true } } } },
+          season: { select: { year: true } },
+        },
+      },
+      fantasyTeam: { select: { managerId: true } },
+    },
+  });
+
+  const byManager = new Map<string, GameResult[]>();
+  for (const mt of rows) {
+    const managerId = mt.fantasyTeam.managerId;
+    if (!managerId) continue;
+    const opponent = mt.matchup.teams.find((t) => t.fantasyTeamId !== mt.fantasyTeamId);
+    if (!opponent || mt.score == null || opponent.score == null) continue;
+
+    const list = byManager.get(managerId) ?? [];
+    list.push({
+      week: mt.matchup.week,
+      season: mt.matchup.season.year,
+      isPlayoff: mt.matchup.isPlayoff,
+      pointsFor: mt.score,
+      pointsAgainst: opponent.score,
+      opponentId: opponent.fantasyTeam.managerId ?? "",
+      result: mt.isWinner === true ? "W" : mt.isWinner === false ? "L" : "T",
+    });
+    byManager.set(managerId, list);
+  }
+  return byManager;
 }
 
 async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | null> {

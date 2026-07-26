@@ -186,16 +186,22 @@ async function coreSyncTeams(seasonId: string, sleeperLeagueId: string, provider
       const teamName =
         sleeperUser?.metadata?.team_name ?? sleeperUser?.display_name ?? sleeperUser?.username ?? `Roster ${roster.roster_id}`;
 
+      // Sleeper hands back a bare avatar id, not a URL. Store the CDN URL so
+      // the value is directly usable as an <img> src.
+      const avatarUrl = sleeperUser?.avatar ? `https://sleepercdn.com/avatars/thumbs/${sleeperUser.avatar}` : null;
+
       const manager = await tx.manager.upsert({
         where: { sleeperUserId: roster.owner_id },
         update: {
-          displayName: sleeperUser?.display_name ?? sleeperUser?.username ?? teamName,
-          avatarUrl: sleeperUser?.avatar ?? null,
+          // displayName is deliberately NOT overwritten. The commissioner
+          // curates real names (see scripts/import/seed-managers-identity.ts);
+          // syncing used to clobber them back to Sleeper handles on every run.
+          avatarUrl,
         },
         create: {
           sleeperUserId: roster.owner_id,
           displayName: sleeperUser?.display_name ?? sleeperUser?.username ?? teamName,
-          avatarUrl: sleeperUser?.avatar ?? null,
+          avatarUrl,
           // TODO: derive from the earliest synced season for this manager once
           // multi-season historical sync is wired up, instead of "this year".
           joinedYear: new Date().getFullYear(),

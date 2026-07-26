@@ -18,7 +18,8 @@ export interface ManagerProfileInput {
 }
 
 export interface ManagerProfileResult {
-  generationId: string;
+  /** Null when the generation was mock output and therefore not logged. */
+  generationId: string | null;
   text: string;
 }
 
@@ -48,5 +49,5 @@ export async function generateManagerProfile(
     outputText: result.text,
   });
 
-  return { generationId: generation.id, text: result.text };
+  return { generationId: generation?.id ?? null, text: result.text };
 }

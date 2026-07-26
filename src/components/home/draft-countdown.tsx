@@ -30,18 +30,22 @@ function Unit({ value, label }: { value: number; label: string }) {
       <span className="font-heading text-3xl font-semibold tabular-nums text-primary-foreground">
         {String(value).padStart(2, "0")}
       </span>
-      <span className="text-[10px] tracking-[0.15em] text-primary-foreground/70 uppercase">{label}</span>
+      <span className="text-[12px] tracking-[0.15em] text-primary-foreground/70 uppercase">{label}</span>
     </div>
   );
 }
 
 /**
  * Live draft countdown. The target date comes from LEAGUE_CONFIG.draftDate
- * (passed in as an ISO string so this stays a pure client component). Renders
- * nothing until mounted to avoid a server/client time mismatch, and switches
- * to a "draft is here" state once the date passes.
+ * (passed in as an ISO string so this stays a pure client component). The
+ * ticking digits render as zeros until the first timer tick so SSR and the
+ * first client render agree; the date label is formatted in a FIXED locale and
+ * timezone for the same reason — formatting it with the viewer's locale would
+ * produce different text on the server (UTC) than in the browser and trip a
+ * hydration mismatch. Showing league time is also just more useful: everyone
+ * sees the same draft time the commissioner announced.
  */
-export function DraftCountdown({ isoDate }: { isoDate: string }) {
+export function DraftCountdown({ isoDate, timeZone = "America/Chicago" }: { isoDate: string; timeZone?: string }) {
   const targetMs = new Date(isoDate).getTime();
   const [remaining, setRemaining] = useState<Remaining | null>(null);
 
@@ -60,13 +64,17 @@ export function DraftCountdown({ isoDate }: { isoDate: string }) {
 
   if (Number.isNaN(targetMs)) return null;
 
-  const dateLabel = new Date(isoDate).toLocaleString(undefined, {
+  // Fixed locale + timezone => byte-identical on server and client.
+  const dateLabel = new Intl.DateTimeFormat("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
+    year: "numeric",
     hour: "numeric",
     minute: "2-digit",
-  });
+    timeZone,
+    timeZoneName: "short",
+  }).format(new Date(isoDate));
 
   return (
     <div className="rounded-xl bg-primary px-5 py-4 text-primary-foreground shadow-lg">
