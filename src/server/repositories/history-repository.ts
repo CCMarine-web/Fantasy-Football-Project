@@ -109,3 +109,65 @@ export async function listApprovedHistorySections(): Promise<HistoryNarrativeSec
   });
   return rows;
 }
+
+export interface SeasonArticleView {
+  id: string;
+  year: number;
+  title: string;
+  /** Paragraphs, already split, ready to render. */
+  paragraphs: string[];
+}
+
+/**
+ * The published season retrospectives, newest first.
+ *
+ * These are written once by scripts/ai/generate-season-articles.ts and stored,
+ * so the page is a read. It used to render `LeagueHistorySection.body` raw —
+ * the transcribed commissioner pages, complete with "RECAP PART 2" markers and
+ * sentences cut off mid-clause where one photograph ended.
+ */
+/** The published retrospective for one season, or null if none is written. */
+export async function getSeasonArticle(year: number): Promise<SeasonArticleView | null> {
+  const article = await prisma.article.findFirst({
+    where: { type: "SEASON_SUMMARY", status: "PUBLISHED", deletedAt: null, season: { year } },
+    select: {
+      id: true,
+      title: true,
+      season: { select: { year: true } },
+      sections: { orderBy: { order: "asc" }, select: { body: true } },
+    },
+  });
+  if (!article) return null;
+  return {
+    id: article.id,
+    year: article.season.year,
+    title: article.title,
+    paragraphs: article.sections
+      .flatMap((s) => s.body.split(/\n\s*\n/))
+      .map((p) => p.trim())
+      .filter(Boolean),
+  };
+}
+
+export async function listSeasonArticles(): Promise<SeasonArticleView[]> {
+  const articles = await prisma.article.findMany({
+    where: { type: "SEASON_SUMMARY", status: "PUBLISHED", deletedAt: null },
+    orderBy: { season: { year: "desc" } },
+    select: {
+      id: true,
+      title: true,
+      season: { select: { year: true } },
+      sections: { orderBy: { order: "asc" }, select: { body: true } },
+    },
+  });
+
+  return articles.map((article) => ({
+    id: article.id,
+    year: article.season.year,
+    title: article.title,
+    paragraphs: article.sections
+      .flatMap((s) => s.body.split(/\n\s*\n/))
+      .map((p) => p.trim())
+      .filter(Boolean),
+  }));
+}

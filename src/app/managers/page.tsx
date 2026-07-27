@@ -138,7 +138,15 @@ export default async function ManagersPage({
 
                   {m.performanceSummary ? (
                     <CardContent className="border-t border-border/40 pt-3">
-                      <p className="text-sm text-foreground/80">{m.performanceSummary}</p>
+                      {/* The profiles are now several paragraphs. The list shows
+                          the opening one so ten managers still fit on a screen;
+                          the full piece lives on the manager's own page. */}
+                      <p className="text-sm text-foreground/80">
+                        {m.performanceSummary.split(/\n\s*\n/)[0]}
+                      </p>
+                      <span className="mt-1 inline-block text-xs font-medium text-primary">
+                        Read the full profile →
+                      </span>
                     </CardContent>
                   ) : null}
                 </Card>

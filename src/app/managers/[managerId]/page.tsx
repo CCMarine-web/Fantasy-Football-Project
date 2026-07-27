@@ -6,7 +6,11 @@ import { Separator } from "@/components/ui/separator";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ManagerTrajectoryChart } from "@/components/charts/manager-trajectory-chart";
-import { getManagerProfileDetailed, getManagerScoutingReport } from "@/server/repositories/manager-repository";
+import {
+  getManagerProfileDetailed,
+  getManagerScoutingReport,
+  getOrCreateManagerPerformanceSummary,
+} from "@/server/repositories/manager-repository";
 import { getManagerAwardTally } from "@/server/repositories/weekly-awards-repository";
 import { Quote, Sparkles, TrendingUp } from "lucide-react";
 
@@ -34,10 +38,11 @@ export default async function ManagerProfilePage({
   params: Promise<{ managerId: string }>;
 }) {
   const { managerId } = await params;
-  const [profile, scouting, awardTally] = await Promise.all([
+  const [profile, scouting, awardTally, performance] = await Promise.all([
     getManagerProfileDetailed(managerId),
     getManagerScoutingReport(managerId),
     getManagerAwardTally(managerId),
+    getOrCreateManagerPerformanceSummary(managerId),
   ]);
   if (!profile) notFound();
 
@@ -50,6 +55,14 @@ export default async function ManagerProfilePage({
     .map((l) => ({ year: l.year, finalRank: l.finalRank, teamCount }));
   const maxFinishCount = Math.max(1, ...finishDistribution.map((f) => f.count));
   const hasBiography = !!(manager.bio || manager.nicknameOrigin || manager.signatureMove);
+  // Placeholder text is never shown as if it were a real profile.
+  const profileParagraphs =
+    performance && !performance.isMock
+      ? performance.text
+          .split(/\n\s*\n/)
+          .map((paragraph) => paragraph.trim())
+          .filter(Boolean)
+      : [];
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -204,21 +217,30 @@ export default async function ManagerProfilePage({
                 <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
                   <tr>
                     <th scope="col" className="px-2 py-2 sm:px-3 text-left">Year</th>
-                    <th scope="col" className="px-2 py-2 sm:px-3 text-left">Era</th>
+                    {/* Era and PA are the least-cited columns, so they are the
+                        ones that step aside on a phone rather than the table
+                        clipping a number in half. */}
+                    <th scope="col" className="hidden px-2 py-2 text-left sm:table-cell sm:px-3">Era</th>
                     <th scope="col" className="px-2 py-2 sm:px-3 text-right">W-L</th>
                     <th scope="col" className="px-2 py-2 sm:px-3 text-right">PF</th>
-                    {/* Adding the Era column pushed this table past a phone's
-                        width; PA is the least-cited figure, so it steps aside
-                        below `sm` rather than being clipped mid-number. */}
-                    <th scope="col" className="hidden px-2 py-2 sm:px-3 text-right sm:table-cell">PA</th>
-                    <th scope="col" className="px-2 py-2 sm:px-3 text-right">Finish</th>
+                    <th scope="col" className="hidden px-2 py-2 text-right sm:table-cell sm:px-3">PA</th>
+                    {/* Two separate columns: where the team finished the regular
+                        season, and where it finished the season overall. They
+                        are different facts and a single "Finish" column was
+                        ambiguous about which one it meant. */}
+                    <th scope="col" className="px-2 py-2 text-right sm:px-3" title="Regular-season standing">
+                      Reg.
+                    </th>
+                    <th scope="col" className="px-2 py-2 text-right sm:px-3" title="Final placing after the postseason">
+                      Final
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border/60">
                   {[...seasonLines].reverse().map((l) => (
                     <tr key={l.year}>
                       <th scope="row" className="px-2 py-2 sm:px-3 text-left font-medium">{l.year}</th>
-                      <td className="px-2 py-2 sm:px-3 text-xs text-muted-foreground">
+                      <td className="hidden px-2 py-2 text-xs text-muted-foreground sm:table-cell sm:px-3">
                         {l.dataSource === "ESPN" ? "ESPN" : l.dataSource === "SLEEPER" ? "Sleeper" : "Manual"}
                       </td>
                       <td className="px-2 py-2 sm:px-3 text-right font-mono">
@@ -226,10 +248,13 @@ export default async function ManagerProfilePage({
                         {l.ties ? `-${l.ties}` : ""}
                       </td>
                       <td className="px-2 py-2 sm:px-3 text-right font-mono">{l.pointsFor.toFixed(0)}</td>
-                      <td className="hidden px-2 py-2 sm:px-3 text-right font-mono text-muted-foreground sm:table-cell">
+                      <td className="hidden px-2 py-2 text-right font-mono text-muted-foreground sm:table-cell sm:px-3">
                         {l.pointsAgainst.toFixed(0)}
                       </td>
-                      <td className="px-2 py-2 sm:px-3 text-right">
+                      <td className="px-2 py-2 text-right font-mono sm:px-3">
+                        {l.regularSeasonRank ? `#${l.regularSeasonRank}` : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="px-2 py-2 text-right sm:px-3">
                         {l.isChampion ? (
                           <Badge className="bg-primary text-primary-foreground">Champ</Badge>
                         ) : l.finalRank ? (
@@ -366,6 +391,20 @@ export default async function ManagerProfilePage({
       {/* Biography — deliberately below the statistics tables. */}
       <section>
         <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Biography</h2>
+
+        {/* The written career profile, generated once from the verified record
+            and saved. Rendered as real paragraphs — it is several hundred
+            words, not the couple of sentences it used to be. */}
+        {profileParagraphs.length > 0 ? (
+          <div className="mb-4 space-y-4">
+            {profileParagraphs.map((paragraph, i) => (
+              <p key={i} className="text-sm leading-relaxed text-foreground/90">
+                {paragraph}
+              </p>
+            ))}
+          </div>
+        ) : null}
+
         {hasBiography ? (
           <div className="space-y-3 rounded-lg border border-border/60 bg-card/30 p-4">
             {manager.bio ? <p className="text-sm leading-relaxed text-foreground/90">{manager.bio}</p> : null}

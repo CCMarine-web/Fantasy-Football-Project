@@ -9,16 +9,18 @@ import {
   getLeagueScoringTrend,
   listSeasonsWithChampions,
   listApprovedHistorySections,
+  listSeasonArticles,
 } from "@/server/repositories/history-repository";
 import { History as HistoryIcon, ScrollText, Trophy } from "lucide-react";
 
 export const metadata = { title: "League History" };
 
 export default async function HistoryPage() {
-  const [seasons, trend, narrative] = await Promise.all([
+  const [seasons, trend, narrative, articles] = await Promise.all([
     listSeasonsWithChampions(),
     getLeagueScoringTrend(),
     listApprovedHistorySections(),
+    listSeasonArticles(),
   ]);
 
   return (
@@ -29,7 +31,55 @@ export default async function HistoryPage() {
         description="Every season, every champion, every finals matchup since founding."
       />
 
-      {narrative.length > 0 ? (
+      {articles.length > 0 ? (
+        <section className="mt-8">
+          <div className="mb-3 flex items-center gap-2">
+            <ScrollText className="h-4 w-4 text-primary" />
+            <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+              Season Retrospectives
+            </h2>
+          </div>
+          <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
+            The league&apos;s story season by season, built from the commissioner&apos;s own recaps and
+            the verified record. Where a narrative detail and the numbers disagree, the season pages
+            below are the record of truth.
+          </p>
+          <div className="space-y-4">
+            {articles.map((article) => (
+              <Card key={article.id}>
+                <CardHeader>
+                  {/* The year lives here once. The article title deliberately
+                      does not repeat it — the two together used to render as
+                      "2023 2023 Season". */}
+                  <CardTitle className="flex flex-wrap items-baseline gap-2">
+                    <span className="font-mono text-primary">{article.year}</span>
+                    <span className="uppercase">{article.title}</span>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* Real paragraphs with breathing room, rather than one wall
+                      of pre-line text. */}
+                  <div className="max-w-3xl space-y-4">
+                    {article.paragraphs.map((paragraph, i) => (
+                      <p key={i} className="text-sm leading-relaxed text-foreground/90">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                  <Link
+                    href={`/history/${article.year}`}
+                    className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
+                  >
+                    {article.year} standings, playoffs and draft →
+                  </Link>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      ) : narrative.length > 0 ? (
+        // Fallback while the articles have not been generated yet: show the
+        // commissioner's raw text rather than nothing at all.
         <section className="mt-8">
           <div className="mb-3 flex items-center gap-2">
             <ScrollText className="h-4 w-4 text-primary" />
@@ -37,19 +87,11 @@ export default async function HistoryPage() {
               From the Commissioner
             </h2>
           </div>
-          <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
-            The league&apos;s story in the commissioner&apos;s own words, season by season. Narrative
-            history — where it mentions specific results, the verified season pages above are the
-            record of truth.
-          </p>
           <div className="space-y-4">
             {narrative.map((s) => (
               <Card key={s.id}>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 uppercase">
-                    {s.year ? <span className="font-mono text-primary">{s.year}</span> : null}
-                    <span>{s.title}</span>
-                  </CardTitle>
+                  <CardTitle className="uppercase">{s.title}</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/90">{s.body}</p>

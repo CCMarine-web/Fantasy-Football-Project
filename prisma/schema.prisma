@@ -1059,8 +1059,12 @@ enum GradeLetter {
   F
 }
 
-/// AI draft grade for one manager in one season, plus an optional "revisited"
-/// grade computed after the season completes (original vs. actual outcome).
+/// Draft grade for one manager in one season.
+///
+/// `grade` is the ORIGINAL grade: it scores the draft using only what was
+/// knowable on draft day (see server/stats/draft-quality.ts). `revisitedGrade`
+/// is a separate, clearly-labelled hindsight view based on how the season
+/// actually went — it never overwrites the original.
 model DraftGrade {
   id                 String       @id @default(cuid())
   seasonId           String
@@ -1069,6 +1073,14 @@ model DraftGrade {
   manager            Manager      @relation(fields: [managerId], references: [id])
   grade              GradeLetter?
   rationale          String?
+  /// 0-100 composite behind `grade`, stored so the letter and the displayed
+  /// score can never drift apart.
+  originalScore      Float?
+  /// The per-factor breakdown the score was built from, for the report card.
+  originalFactors    Json?
+  /// False when the season had no average-draft-position data, so the page can
+  /// say which factors were actually available.
+  adpAvailable       Boolean      @default(false)
   revisitedGrade     GradeLetter?
   revisitedRationale String?
   providerName       String?

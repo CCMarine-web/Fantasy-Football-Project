@@ -16,6 +16,8 @@ import { generateScoutingReport } from "@/server/ai/services/scouting-report";
 import {
   generateManagerPerformanceSummary,
   type ManagerPerfPacket,
+  type ManagerEraFact,
+  type ManagerSeasonFact,
 } from "@/server/ai/services/manager-performance-summary";
 
 const CLOSE_GAME_MARGIN = 5; // games decided by < 5 points
@@ -779,6 +781,127 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
     take: 4,
   });
 
+  // ── Everything below feeds the long-form profile ─────────────────────────
+  // The packet is the writer's ONLY source, so anything the profile should be
+  // able to mention has to be gathered here as a verified number.
+
+  const detailed = await getManagerProfileDetailed(managerId);
+  const seasonFacts: ManagerSeasonFact[] = (detailed?.seasonLines ?? [])
+    .filter((line) => line.wins + line.losses + line.ties > 0)
+    .map((line) => ({
+      year: line.year,
+      era: line.dataSource === "ESPN" ? "ESPN" : line.dataSource === "SLEEPER" ? "Sleeper" : "Manual",
+      record: `${line.wins}-${line.losses}${line.ties ? `-${line.ties}` : ""}`,
+      pointsFor: Number(line.pointsFor.toFixed(1)),
+      pointsAgainst: Number(line.pointsAgainst.toFixed(1)),
+      regularSeasonRank: line.regularSeasonRank,
+      finalRank: line.finalRank,
+      madePlayoffs: line.madePlayoffs,
+      isChampion: line.isChampion,
+      teamName: line.teamName,
+    }));
+
+  const eras: ManagerEraFact[] = (detailed?.eraStats ?? [])
+    .filter((era) => era.key !== "CAREER")
+    .map((era) => ({
+      label: era.label,
+      years: era.years,
+      seasons: era.seasonsPlayed,
+      record: `${era.wins}-${era.losses}${era.ties ? `-${era.ties}` : ""}`,
+      winPct: era.winningPercentage,
+      pointsForPerGame: era.pointsForPerGame,
+      championships: era.championships,
+      playoffAppearances: era.playoffAppearances,
+      bestFinish: era.bestFinish,
+    }));
+
+  const championshipRows = await prisma.championship.findMany({
+    where: { championManagerId: managerId },
+    select: { season: { select: { year: true } } },
+    orderBy: { season: { year: "asc" } },
+  });
+
+  const regularGames = games.filter((g) => !g.isPlayoff);
+  const careerPpg = regularGames.length
+    ? Number((regularGames.reduce((s, g) => s + g.pointsFor, 0) / regularGames.length).toFixed(1))
+    : null;
+  const recentYears = [...new Set(seasonFacts.map((s) => s.year))].sort((a, b) => b - a).slice(0, 3);
+  const recentGames = regularGames.filter((g) => recentYears.includes(g.season));
+  const recentPpg = recentGames.length
+    ? Number((recentGames.reduce((s, g) => s + g.pointsFor, 0) / recentGames.length).toFixed(1))
+    : null;
+  const trajectory =
+    careerPpg == null || recentPpg == null
+      ? "not enough data"
+      : recentPpg > careerPpg + 4
+        ? `scoring ${(recentPpg - careerPpg).toFixed(1)} pts/gm above their career rate over the last ${recentYears.length} seasons`
+        : recentPpg < careerPpg - 4
+          ? `scoring ${(careerPpg - recentPpg).toFixed(1)} pts/gm below their career rate over the last ${recentYears.length} seasons`
+          : "scoring in line with their career rate recently";
+
+  // Draft / waiver / trade behaviour. Only claims the data can actually carry.
+  const [assets, r1picks, allPicks] = await Promise.all([
+    prisma.transactionAsset.findMany({
+      where: { managerId, direction: "ADD" },
+      select: { transaction: { select: { type: true, faabSpent: true, season: { select: { year: true } } } } },
+    }),
+    prisma.draftPick.findMany({
+      where: { managerId, round: 1 },
+      select: { player: { select: { position: true } }, draft: { select: { season: { select: { year: true } } } } },
+    }),
+    prisma.draftPick.count({ where: { managerId } }),
+  ]);
+
+  const tendencies: string[] = [];
+  const tradeCount = assets.filter((a) => a.transaction.type === "TRADE").length;
+  const waiverCount = assets.filter((a) => a.transaction.type === "WAIVER").length;
+  const faCount = assets.filter((a) => a.transaction.type === "FREE_AGENT").length;
+  const txSeasons = [...new Set(assets.map((a) => a.transaction.season.year))].sort();
+  if (assets.length > 0) {
+    tendencies.push(
+      `Transaction record covers ${txSeasons.join(", ")} only: ${tradeCount} players acquired by trade, ${waiverCount} on waivers, ${faCount} as free agents.`,
+    );
+  }
+  if (r1picks.length > 0) {
+    const positions = r1picks.map((p) => p.player?.position ?? "unknown");
+    const counts = positions.reduce<Record<string, number>>((acc, p) => ({ ...acc, [p]: (acc[p] ?? 0) + 1 }), {});
+    const summaryText = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([pos, n]) => `${n} ${pos}`)
+      .join(", ");
+    tendencies.push(`First-round picks across ${r1picks.length} drafts: ${summaryText}.`);
+  }
+  if (allPicks > 0) tendencies.push(`${allPicks} total draft picks on record.`);
+
+  // Head-to-head history against the most-played opponents.
+  const topRivalries = (detailed?.headToHead ?? []).slice(0, 4).map((h) => ({
+    opponent: h.opponentName,
+    record: `${h.wins}-${h.losses}${h.ties ? `-${h.ties}` : ""}`,
+    note: `${h.wins + h.losses + h.ties} meetings, ${h.pointsForAvg} pts/gm scored`,
+  }));
+
+  // Private, admin-only communication profile — tone guidance only.
+  const commProfile = await prisma.managerCommunicationProfile.findUnique({
+    where: { managerId },
+    select: { styleSummary: true, isMock: true },
+  });
+
+  const unavailable: string[] = [];
+  if (txSeasons.length === 0) {
+    unavailable.push("No transaction history at all is on record for this manager.");
+  } else if (txSeasons[0] > (years[0] ?? txSeasons[0])) {
+    unavailable.push(
+      `Waiver, free-agent and trade history exists only for ${txSeasons.join(", ")}. ESPN does not retain transactions for its archived seasons, so nothing can be said about this manager's trading or waiver activity before ${txSeasons[0]}.`,
+    );
+  }
+  unavailable.push(
+    "Per-player weekly scoring is not on record for the ESPN seasons, so lineup-setting and bench decisions from that era cannot be assessed.",
+  );
+
+  const bestLine = detailed?.bestSeason;
+  const worstLine = detailed?.worstSeason;
+  const asFact = (year: number | undefined) => seasonFacts.find((s) => s.year === year) ?? null;
+
   return {
     managerName: manager.displayName,
     yearsActive: years.length ? (years[0] === years.at(-1) ? `${years[0]}` : `${years[0]}–${years.at(-1)}`) : "—",
@@ -794,6 +917,22 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
     statsComplete: !(league && earliest && league.foundedYear < earliest.year),
     approvedKnowledge: knowledge.map((k) => k.title),
     historyNotes: historySections.map((h) => `${h.year ?? ""} ${h.title}`.trim()),
+    eras,
+    seasons: seasonFacts,
+    championshipYears: championshipRows.map((c) => c.season.year),
+    bestSeason: asFact(bestLine?.year),
+    worstSeason: asFact(worstLine?.year),
+    careerPointsPerGame: careerPpg,
+    recentPointsPerGame: recentPpg,
+    recentTrajectory: trajectory,
+    allPlayRecord: detailed ? `${detailed.stats.allPlay.wins}-${detailed.stats.allPlay.losses}` : "—",
+    allPlayWinPct: detailed?.stats.allPlay.winPct ?? 0,
+    luckLabel: detailed?.stats.luck.label ?? "unknown",
+    topRivalries,
+    tendencies,
+    // Mock profiles are placeholder text and would mislead the writer.
+    communicationStyle: commProfile && !commProfile.isMock ? commProfile.styleSummary : null,
+    unavailable,
   };
 }
 

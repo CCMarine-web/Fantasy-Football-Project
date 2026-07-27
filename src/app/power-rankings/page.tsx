@@ -5,32 +5,45 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
-import { POSTSEASON_LABELS } from "@/server/stats/season-power-rankings";
-import { Trophy, TrendingUp } from "lucide-react";
+import { ArrowDown, ArrowUp, Info, Minus, TrendingUp } from "lucide-react";
 
 export const metadata = { title: "Power Rankings" };
 
 function FactorBar({ label, weight, value, raw }: { label: string; weight: number; value: number; raw: string }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="w-28 shrink-0 text-[13px] text-muted-foreground">
+      <span className="w-32 shrink-0 text-[13px] text-muted-foreground">
         {label} <span className="text-muted-foreground/60">{Math.round(weight * 100)}%</span>
       </span>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, value)}%` }} />
       </div>
-      <span className="w-24 shrink-0 text-right font-mono text-[13px] tabular-nums text-muted-foreground">
+      <span className="w-28 shrink-0 text-right font-mono text-[13px] tabular-nums text-muted-foreground">
         {raw}
       </span>
     </div>
   );
 }
 
-const PODIUM: Record<string, string> = {
-  CHAMPION: "bg-gold text-gold-foreground",
-  RUNNER_UP: "bg-secondary text-secondary-foreground",
-  THIRD: "bg-secondary text-secondary-foreground",
-};
+function Movement({ rank, previousRank }: { rank: number; previousRank: number | null }) {
+  if (previousRank == null) return null;
+  const delta = previousRank - rank;
+  if (delta === 0) {
+    return (
+      <span className="flex items-center gap-0.5 text-[13px] text-muted-foreground">
+        <Minus className="h-3 w-3" aria-hidden /> <span className="sr-only">No change</span>
+      </span>
+    );
+  }
+  const up = delta > 0;
+  return (
+    <span className={`flex items-center gap-0.5 text-[13px] ${up ? "text-field" : "text-destructive"}`}>
+      {up ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden />}
+      {Math.abs(delta)}
+      <span className="sr-only">{up ? "places up" : "places down"}</span>
+    </span>
+  );
+}
 
 export default async function PowerRankingsPage() {
   const data = await getPowerRankings();
@@ -42,39 +55,57 @@ export default async function PowerRankingsPage() {
         <div className="mt-8">
           <EmptyState
             icon={TrendingUp}
-            title="No completed season to rank yet"
-            description={
-              data?.pendingSeasonYear
-                ? `The ${data.pendingSeasonYear} season is still in progress. Final power rankings are published once a season is complete.`
-                : "Final power rankings are published once a season has been played out."
-            }
+            title="Nothing to rank yet"
+            description="Power rankings appear once the league has teams for a season. They update every week during the season."
           />
         </div>
       </div>
     );
   }
 
+  const isPreseason = data.mode === "PRESEASON";
+  const updatedLabel = isPreseason
+    ? "Preseason projection — no games played"
+    : `Updated through Week ${data.throughWeek}`;
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader
-        eyebrow={`${data.seasonYear} Season · Final`}
+        eyebrow={`${data.seasonYear} Season`}
         title="Power Rankings"
-        description={`How every team rated across the ${data.seasonYear} season — the most recently completed year. Built from settled results over ${data.weeksCounted} regular-season weeks plus the postseason; nothing here is a projection. This is a composite rating, not the final standings, so a team that got hot in the playoffs can still rate below a stronger regular season.`}
+        description={
+          isPreseason
+            ? "A projection of team strength before week 1, built from draft capital, roster depth and each manager's multi-season scoring baseline. It switches to live results automatically once games are played."
+            : `A measure of how good each team is right now, rebuilt every week from ${data.weeksCounted} week${data.weeksCounted === 1 ? "" : "s"} of results. Wins and losses are not a scoring category — this rates team quality, not luck.`
+        }
       />
+
+      {/* The "updated through" state, stated prominently. */}
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <Badge className="bg-primary text-primary-foreground">{updatedLabel}</Badge>
+        {!isPreseason ? (
+          <Badge variant="outline">Regular-season games only</Badge>
+        ) : null}
+      </div>
 
       {/* Methodology — stated up front so the ranking is reproducible. */}
       <Card className="mt-6 border-border/60 bg-card/40">
         <CardContent>
           <h2 className="font-heading text-base font-semibold">How the score is built</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Each factor is scored 0-100 relative to the other teams that season, then blended with the
-            weights below. The season&apos;s best team on a factor scores 100 and the worst scores 0, so
-            these are within-season comparisons.
+            Each factor is scored 0-100 relative to the rest of the league, then blended with the
+            weights below.{" "}
+            {isPreseason
+              ? "These are the only inputs available before kickoff; the model swaps to live results the moment week 1 is final."
+              : "Recent weeks carry more weight than early ones, but every week still counts."}{" "}
+            Win-loss record, championships and playoff finishes are deliberately{" "}
+            <strong className="text-foreground">not</strong> inputs — they describe what happened to a
+            team, not how good it is.
           </p>
           <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-            {data.methodology.map((m) => (
+            {data.weights.map((m) => (
               <div key={m.key} className="flex gap-2">
-                <dt className="shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
+                <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
                   {Math.round(m.weight * 100)}%
                 </dt>
                 <dd className="text-sm text-muted-foreground">
@@ -83,25 +114,29 @@ export default async function PowerRankingsPage() {
               </div>
             ))}
           </dl>
+          {data.notes.map((note) => (
+            <p key={note} className="mt-3 flex items-start gap-2 text-[13px] text-muted-foreground">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+              {note}
+            </p>
+          ))}
         </CardContent>
       </Card>
 
       <div className="mt-6 space-y-3">
         {data.rows.map((row) => (
           <Card key={row.fantasyTeamId}>
-            <CardContent className="flex flex-col gap-4 sm:flex-row">
+            <CardContent className="flex flex-col gap-4 lg:flex-row">
               {/* Rank */}
-              <div className="flex shrink-0 flex-row items-center gap-3 sm:w-16 sm:flex-col sm:items-center sm:gap-1">
+              <div className="flex shrink-0 flex-row items-center gap-3 lg:w-16 lg:flex-col lg:items-center lg:gap-1">
                 <span className="font-heading text-3xl font-semibold tabular-nums">{row.rank}</span>
-                {row.postseason === "CHAMPION" ? (
-                  <Trophy className="h-4 w-4 text-gold" aria-label="Champion" />
-                ) : null}
+                <Movement rank={row.rank} previousRank={row.previousRank} />
               </div>
 
               {/* Team */}
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-3">
-                  <TeamAvatar name={row.managerName} imageUrl={row.avatarUrl} className="h-9 w-9" />
+                  <TeamAvatar name={row.managerName} imageUrl={row.avatarUrl} className="h-9 w-9 shrink-0" />
                   <div className="min-w-0">
                     {row.managerId ? (
                       <Link
@@ -113,25 +148,43 @@ export default async function PowerRankingsPage() {
                     ) : (
                       <span className="block truncate font-heading text-lg font-semibold">{row.teamName}</span>
                     )}
-                    <p className="truncate text-xs text-muted-foreground">
-                      {row.managerName} · {row.record} · {row.pointsFor.toLocaleString()} PF
-                    </p>
+                    <p className="truncate text-xs text-muted-foreground">{row.managerName}</p>
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <Badge className={PODIUM[row.postseason] ?? ""} variant={PODIUM[row.postseason] ? undefined : "outline"}>
-                    {POSTSEASON_LABELS[row.postseason]}
-                  </Badge>
-                  <Badge variant="outline">
-                    All-play {row.allPlayWins}-{row.allPlayLosses}
-                    {row.allPlayTies ? `-${row.allPlayTies}` : ""}
-                  </Badge>
+                  {row.weightedPointsPerGame != null ? (
+                    <Badge variant="outline" className="font-mono">
+                      {row.weightedPointsPerGame.toFixed(1)} pts/gm
+                    </Badge>
+                  ) : null}
+                  {!isPreseason ? (
+                    <>
+                      <Badge variant="outline">
+                        All-play {row.allPlayWins}-{row.allPlayLosses}
+                        {row.allPlayTies ? `-${row.allPlayTies}` : ""}
+                      </Badge>
+                      {/* Record is context, never an input to the score. */}
+                      <Badge variant="secondary" title="Actual record — shown for context, not used in the rating">
+                        {row.record}
+                      </Badge>
+                      {row.luck != null && Math.abs(row.luck) >= 1 ? (
+                        <Badge
+                          variant="outline"
+                          className={row.luck > 0 ? "text-field" : "text-destructive"}
+                          title="Actual wins minus expected wins"
+                        >
+                          {row.luck > 0 ? "+" : ""}
+                          {row.luck.toFixed(1)} vs expected
+                        </Badge>
+                      ) : null}
+                    </>
+                  ) : null}
                 </div>
                 {row.blurb ? <p className="mt-2 text-sm text-foreground/90">{row.blurb}</p> : null}
               </div>
 
               {/* Score + factor breakdown */}
-              <div className="shrink-0 sm:w-80">
+              <div className="shrink-0 lg:w-96">
                 <div className="mb-2 flex items-baseline justify-between">
                   <span className="text-xs tracking-wide text-muted-foreground uppercase">Power Score</span>
                   <span className="font-heading text-2xl font-semibold tabular-nums text-primary">

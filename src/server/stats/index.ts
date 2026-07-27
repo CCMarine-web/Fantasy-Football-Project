@@ -6,3 +6,4 @@ export * from "./head-to-head";
 export * from "./elo";
 export * from "./finishes";
 export * from "./power-rankings";
+export * from "./weekly-power-rankings";

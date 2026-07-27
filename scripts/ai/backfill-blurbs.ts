@@ -113,31 +113,45 @@ async function purgeMock() {
 async function backfillPowerRankings(ctx: Ctx, limit: number | null) {
   const data = await getPowerRankings();
   if (!data || data.rows.length === 0) {
-    console.log("[power] no completed season — nothing to write");
+    console.log("[power] no season to rank — nothing to write");
     return;
   }
   const rows = limit ? data.rows.slice(0, limit) : data.rows;
-  console.log(`[power] ${data.seasonYear}: ${rows.length} team(s)`);
+  console.log(`[power] ${data.seasonYear} (${data.mode}, through week ${data.throughWeek}): ${rows.length} team(s)`);
 
   for (const r of rows) {
+    // Only figures the rating actually used, so the copy cannot cite a stat the
+    // page doesn't show. Record is passed as context and explicitly labelled as
+    // not being an input.
     const facts = {
       season: data.seasonYear,
+      basis: data.mode === "PRESEASON" ? "preseason projection, no games played" : `through week ${data.throughWeek}`,
       rank: r.rank,
       of: data.rows.length,
+      previousRank: r.previousRank,
       team: r.teamName,
       manager: r.managerName,
-      record: r.record,
-      pointsFor: r.pointsFor,
+      powerScore: r.score,
+      pointsPerGame: r.weightedPointsPerGame,
       allPlay: `${r.allPlayWins}-${r.allPlayLosses}`,
-      postseason: r.postseason,
-      score: r.score,
+      expectedWins: r.expectedWins,
+      actualRecordForContextOnly: r.record,
+      lineupEfficiencyPct: r.lineupEfficiency,
       strongest: [...r.factors].sort((a, b) => b.value - a.value)[0]?.label,
       weakest: [...r.factors].sort((a, b) => a.value - b.value)[0]?.label,
     };
-    const inputHash = hashInputs({ rank: r.rank, score: r.score, w: r.wins, l: r.losses, pf: r.pointsFor, post: r.postseason });
+    const inputHash = hashInputs({
+      rank: r.rank,
+      score: r.score,
+      ppg: r.weightedPointsPerGame,
+      allPlay: r.allPlayPct,
+      exp: r.expectedWins,
+      week: data.throughWeek,
+      mode: data.mode,
+    });
     const subjectKey = `${data.seasonYear}:${r.fantasyTeamId}`;
 
-    const prompt = `Write ONE sentence (max 32 words) summing up this team's ${data.seasonYear} season for a final power-rankings list.\n\nVerified facts:\n${JSON.stringify(facts, null, 2)}`;
+    const prompt = `Write ONE sentence (max 32 words) about this team's current standing in the ${data.seasonYear} power rankings.\n\nThese rankings measure team QUALITY, not results: win-loss record is NOT an input. Do not claim the ranking is based on wins, championships or playoff finish, and do not restate the record as if it drove the rating.\n\nVerified facts:\n${JSON.stringify(facts, null, 2)}`;
     const out = await write(ctx, prompt, 900);
     if (!out) {
       console.log(`  [dry/mock] ${r.managerName}`);

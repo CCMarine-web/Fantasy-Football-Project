@@ -10,15 +10,19 @@ import { ChampionshipBeltFeature } from "@/components/championship/championship-
 import { getHomepageData } from "@/server/repositories/homepage-repository";
 import { getLastSeasonNarrative } from "@/server/repositories/season-narrative-repository";
 import { getCurrentChampion } from "@/server/repositories/championship-belt-repository";
+import { getPowerRankingsPreview } from "@/server/repositories/power-rankings-repository";
 import { BRAND } from "@/lib/branding";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
 import { DraftCountdown } from "@/components/home/draft-countdown";
 
 export default async function HomePage() {
-  const [data, seasonNarrative, champion] = await Promise.all([
+  const [data, seasonNarrative, champion, powerPreview] = await Promise.all([
     getHomepageData(),
     getLastSeasonNarrative(),
     getCurrentChampion(),
+    // Same computation as /power-rankings, just truncated, so the preview can
+    // never disagree with the page it links to.
+    getPowerRankingsPreview(5),
   ]);
 
   if (!data) {
@@ -242,16 +246,27 @@ export default async function HomePage() {
             </div>
             <Card>
               <CardContent className="space-y-2">
-                {standings.slice(0, 5).map((row, i) => (
-                  <div key={row.fantasyTeamId} className="flex items-center justify-between text-sm">
-                    <span className="font-medium">
-                      {i + 1}. {row.teamName}
-                    </span>
-                    <Badge variant="outline" className="font-mono">
-                      {row.pointsFor.toFixed(0)} pts
-                    </Badge>
-                  </div>
-                ))}
+                {powerPreview && powerPreview.rows.length > 0 ? (
+                  <>
+                    <p className="text-xs text-muted-foreground">
+                      {powerPreview.mode === "PRESEASON"
+                        ? "Preseason projection"
+                        : `Updated through Week ${powerPreview.throughWeek}`}
+                    </p>
+                    {powerPreview.rows.map((row) => (
+                      <div key={row.fantasyTeamId} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="min-w-0 truncate font-medium">
+                          {row.rank}. {row.teamName}
+                        </span>
+                        <Badge variant="outline" className="shrink-0 font-mono" title="Power score">
+                          {row.score.toFixed(1)}
+                        </Badge>
+                      </div>
+                    ))}
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Power rankings appear once the season has teams.</p>
+                )}
                 <Link href="/power-rankings" className="inline-block pt-2 text-xs text-primary hover:underline">
                   Full power rankings →
                 </Link>

@@ -3,15 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { ChevronDown, LogOut, Menu, ShieldCheck, Trophy } from "lucide-react";
+import { ChevronDown, LogOut, Menu, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Sheet,
-  SheetContent,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,8 +15,16 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { isNavGroup, mobileNavGroups, primaryNav, type NavGroup } from "@/components/layout/nav-links";
+import {
+  INLINE_NAV_COUNT,
+  isNavGroup,
+  mobileNavGroups,
+  primaryNav,
+  type NavGroup,
+  type NavLink as NavLinkType,
+} from "@/components/layout/nav-links";
 import { logoutAction } from "@/app/login/actions";
+import { RatTrapMark } from "@/components/layout/rat-trap-mark";
 import { BRAND } from "@/lib/branding";
 
 export interface SiteHeaderUser {
@@ -31,15 +33,20 @@ export interface SiteHeaderUser {
   role: "ADMIN" | "MEMBER";
 }
 
-function NavItem({ href, label }: { href: string; label: string }) {
+function useIsActive() {
   const pathname = usePathname();
-  const isActive = href === "/" ? pathname === "/" : pathname.startsWith(href);
+  return (href: string) => (href === "/" ? pathname === "/" : pathname.startsWith(href));
+}
+
+function NavItem({ href, label, className }: { href: string; label: string; className?: string }) {
+  const isActive = useIsActive()(href);
   return (
     <Link
       href={href}
       className={cn(
-        "text-sm font-medium transition-colors hover:text-primary",
+        "hover:text-primary text-sm font-medium whitespace-nowrap transition-colors",
         isActive ? "text-primary" : "text-muted-foreground",
+        className,
       )}
     >
       {label}
@@ -47,22 +54,31 @@ function NavItem({ href, label }: { href: string; label: string }) {
   );
 }
 
-function NavDropdown({ group }: { group: NavGroup }) {
-  const pathname = usePathname();
-  const isActive = group.links.some((l) => pathname.startsWith(l.href));
+function NavDropdown({
+  label,
+  links,
+  className,
+}: {
+  label: string;
+  links: NavLinkType[];
+  className?: string;
+}) {
+  const isActive = useIsActive();
+  const active = links.some((l) => isActive(l.href));
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         className={cn(
-          "flex items-center gap-1 text-sm font-medium transition-colors outline-none hover:text-primary",
-          isActive ? "text-primary" : "text-muted-foreground",
+          "hover:text-primary flex items-center gap-1 text-sm font-medium whitespace-nowrap transition-colors outline-none",
+          active ? "text-primary" : "text-muted-foreground",
+          className,
         )}
       >
-        {group.label}
+        {label}
         <ChevronDown className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
-        {group.links.map((l) => (
+        {links.map((l) => (
           <DropdownMenuItem key={l.href} render={<Link href={l.href} />}>
             {l.label}
           </DropdownMenuItem>
@@ -76,33 +92,59 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
   const [open, setOpen] = useState(false);
   const isAdmin = user?.role === "ADMIN";
 
+  const directLinks = primaryNav.filter((i): i is NavLinkType => !isNavGroup(i));
+  const groups = primaryNav.filter(isNavGroup) as NavGroup[];
+  /*
+   * Why the "More" menu is permanent on desktop rather than appearing only at
+   * narrow widths:
+   *
+   * Measured at 1920px, the eight direct links plus the History dropdown come
+   * to 966px of nav. The header's content column is `max-w-7xl` (1280px), and
+   * the masthead takes 280px of it with 64px of padding — leaving 904px. The
+   * full row is 62px too wide, and no viewport fixes that because the column is
+   * capped. Revealing everything at `xl` therefore pushed the page 14px wide at
+   * exactly 1280px and spilled the nav outside the content column above it.
+   *
+   * So the tail always folds. Every destination is still one click away, and
+   * both Draft Report Cards and Trade Tribunal are top-level entries — out of
+   * the History archive group, and listed directly under "Main" on mobile.
+   */
+  const inline = directLinks.slice(0, INLINE_NAV_COUNT);
+  const overflow = directLinks.slice(INLINE_NAV_COUNT);
+
   return (
-    <header className="sticky top-0 z-40 border-b border-border/60 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <header className="border-border/60 bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-40 border-b backdrop-blur">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Link href="/" className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-primary-foreground">
-            <Trophy className="h-5 w-5" aria-hidden />
+        <Link href="/" className="flex shrink-0 items-center gap-2.5">
+          <span className="bg-primary text-primary-foreground flex h-9 w-9 items-center justify-center rounded-md">
+            <RatTrapMark className="h-6 w-6" />
           </span>
           <span className="flex flex-col leading-none">
             <span className="font-heading text-lg font-semibold tracking-wide uppercase">
               {BRAND.name}
             </span>
-            <span className="text-[13px] tracking-[0.2em] text-muted-foreground uppercase">
+            <span className="text-muted-foreground text-[13px] tracking-[0.2em] uppercase">
               {BRAND.tagline}
             </span>
           </span>
         </Link>
 
         <nav className="hidden items-center gap-5 lg:flex">
-          {primaryNav.map((item) =>
-            isNavGroup(item) ? (
-              <NavDropdown key={item.label} group={item} />
-            ) : (
-              <NavItem key={item.href} {...item} />
-            ),
-          )}
+          {inline.map((item) => (
+            <NavItem key={item.href} {...item} />
+          ))}
+          {overflow.length > 0 ? <NavDropdown label="More" links={overflow} /> : null}
+          {groups.map((group) => (
+            <NavDropdown key={group.label} label={group.label} links={group.links} />
+          ))}
         </nav>
 
+        {/*
+          No public "Sign in" control: this is a read-only league archive and a
+          sign-in prompt only invited confusion. Admin authentication is
+          untouched — /login still works when visited directly, and the admin
+          shortcut below appears once an admin has a session.
+        */}
         <div className="hidden items-center gap-2 lg:flex">
           {isAdmin ? (
             <Button render={<Link href="/admin" />} nativeButton={false} variant="ghost" size="sm">
@@ -126,11 +168,7 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          ) : (
-            <Button render={<Link href="/login" />} nativeButton={false} size="sm">
-              Sign in
-            </Button>
-          )}
+          ) : null}
         </div>
 
         <Sheet open={open} onOpenChange={setOpen}>
@@ -148,7 +186,7 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
             <nav className="flex flex-col gap-5 overflow-y-auto px-4 pb-6">
               {mobileNavGroups.map((group) => (
                 <div key={group.label} className="flex flex-col gap-2">
-                  <p className="text-[13px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">
+                  <p className="text-muted-foreground text-[13px] font-semibold tracking-[0.2em] uppercase">
                     {group.label}
                   </p>
                   {group.links.map((link) => (
@@ -156,42 +194,36 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
                       key={link.href}
                       href={link.href}
                       onClick={() => setOpen(false)}
-                      className="text-base font-medium text-foreground/90 hover:text-primary"
+                      className="text-foreground/90 hover:text-primary text-base font-medium"
                     >
                       {link.label}
                     </Link>
                   ))}
                 </div>
               ))}
-              <div className="mt-2 flex flex-col gap-2 border-t border-border/60 pt-4">
-                {isAdmin ? (
-                  <Link
-                    href="/admin"
-                    onClick={() => setOpen(false)}
-                    className="text-base font-medium text-foreground/90 hover:text-primary"
-                  >
-                    Admin
-                  </Link>
-                ) : null}
-                {user ? (
-                  <form action={logoutAction}>
-                    <button
-                      type="submit"
-                      className="text-base font-medium text-foreground/90 hover:text-primary"
+              {isAdmin || user ? (
+                <div className="border-border/60 mt-2 flex flex-col gap-2 border-t pt-4">
+                  {isAdmin ? (
+                    <Link
+                      href="/admin"
+                      onClick={() => setOpen(false)}
+                      className="text-foreground/90 hover:text-primary text-base font-medium"
                     >
-                      Sign out
-                    </button>
-                  </form>
-                ) : (
-                  <Link
-                    href="/login"
-                    onClick={() => setOpen(false)}
-                    className="text-base font-medium text-foreground/90 hover:text-primary"
-                  >
-                    Sign in
-                  </Link>
-                )}
-              </div>
+                      Admin
+                    </Link>
+                  ) : null}
+                  {user ? (
+                    <form action={logoutAction}>
+                      <button
+                        type="submit"
+                        className="text-foreground/90 hover:text-primary text-base font-medium"
+                      >
+                        Sign out
+                      </button>
+                    </form>
+                  ) : null}
+                </div>
+              ) : null}
             </nav>
           </SheetContent>
         </Sheet>

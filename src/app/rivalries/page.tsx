@@ -129,8 +129,15 @@ export default async function RivalriesPage() {
 
       {official.length > 0 ? (
         <section className="mt-8">
-          <h2 className="font-heading text-xl font-semibold">Official rivalries</h2>
-          <p className="mt-1 text-sm text-muted-foreground">Declared by the commissioner.</p>
+          <div className="flex items-center gap-2">
+            <Swords className="h-5 w-5 text-primary" aria-hidden />
+            <h2 className="font-heading text-2xl font-semibold tracking-wide uppercase">
+              Official rivalries
+            </h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Declared by the commissioner — the grudges the league recognises by name.
+          </p>
           <div className="mt-4 space-y-4">
             {official.map((r) => (
               <RivalryCard key={r.id} r={r} />
@@ -139,18 +146,44 @@ export default async function RivalriesPage() {
         </section>
       ) : null}
 
+      {/*
+        The two sections used to run together, so the unofficial pairings read
+        as more commissioner-declared rivalries. The break is now unmistakable:
+        a full-bleed rule, a labelled divider, a much larger heading and its own
+        tinted panel — all of which hold up at mobile width as well as desktop.
+      */}
       {others.length > 0 ? (
-        <section className="mt-10">
-          <h2 className="font-heading text-xl font-semibold">Other heated pairings</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Ranked by meetings, postseason stakes, and how close the games have been.
-          </p>
-          <div className="mt-4 space-y-4">
-            {others.map((r) => (
-              <RivalryCard key={r.id} r={r} />
-            ))}
-          </div>
-        </section>
+        <>
+          {official.length > 0 ? (
+            <div className="relative mt-16 mb-10" aria-hidden>
+              <div className="absolute inset-0 flex items-center">
+                <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
+              </div>
+              <div className="relative flex justify-center">
+                <span className="bg-background px-4 text-[11px] font-semibold tracking-[0.25em] text-muted-foreground uppercase">
+                  Not official — but still personal
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          <section className="rounded-2xl border border-border/60 bg-card/30 p-4 sm:p-6">
+            <h2 className="font-heading text-2xl font-semibold tracking-wide uppercase sm:text-3xl">
+              Other heated pairings
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+              These are <strong className="text-foreground">not</strong> official rivalries. Nobody
+              declared them — they surfaced from the results: pairings that have met often, met with
+              something on the line, or kept finishing within a handful of points. Ranked by meetings,
+              postseason stakes and how close the games have been.
+            </p>
+            <div className="mt-5 space-y-4">
+              {others.map((r) => (
+                <RivalryCard key={r.id} r={r} />
+              ))}
+            </div>
+          </section>
+        </>
       ) : null}
     </div>
   );

@@ -2,11 +2,10 @@ import { notFound } from "next/navigation";
 import { ManagerLink } from "@/components/shared/manager-link";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TeamPointsBarChart } from "@/components/charts/team-points-bar-chart";
-import { getSeasonHistory } from "@/server/repositories/history-repository";
+import { getSeasonArticle, getSeasonHistory } from "@/server/repositories/history-repository";
 import { Sparkles, Trophy } from "lucide-react";
 
 export const metadata = { title: "Season History" };
@@ -18,7 +17,7 @@ export default async function SeasonHistoryPage({
 }) {
   const { season: seasonParam } = await params;
   const year = Number(seasonParam);
-  const data = await getSeasonHistory(year);
+  const [data, article] = await Promise.all([getSeasonHistory(year), getSeasonArticle(year)]);
   if (!data) notFound();
 
   const { season, playoffMatchups, highestScore, notableTrades } = data;
@@ -226,21 +225,24 @@ export default async function SeasonHistoryPage({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 uppercase">
-              <Sparkles className="h-4 w-4" /> AI Season Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              A generated season narrative will appear here once AI content generation is enabled.
-            </p>
-            <Badge variant="outline" className="mt-3">
-              AI content status: not generated
-            </Badge>
-          </CardContent>
-        </Card>
+        {article ? (
+          <Card className="md:col-span-2">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 uppercase">
+                <Sparkles className="h-4 w-4" /> {article.title}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="max-w-3xl space-y-4">
+                {article.paragraphs.map((paragraph, i) => (
+                  <p key={i} className="text-sm leading-relaxed text-foreground/90">
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

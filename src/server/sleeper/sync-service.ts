@@ -8,6 +8,7 @@
 
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
+import { deriveFinalPlacements } from "./final-placements";
 import { getEnv } from "@/lib/env";
 import {
   SyncType,
@@ -612,6 +613,12 @@ async function coreSyncPlayoffResults(seasonId: string, sleeperLeagueId: string,
   const champMatch = bracket.find((m) => m.p === 1);
   const thirdMatch = bracket.find((m) => m.p === 3);
 
+  // Full 1..N finishing order from both brackets, so every team gets a final
+  // position instead of only the podium (see final-placements.ts).
+  const season = await prisma.season.findUnique({ where: { id: seasonId }, select: { playoffTeams: true } });
+  const losersBracket = await provider.getLosersBracket(sleeperLeagueId).catch(() => []);
+  const placements = deriveFinalPlacements(bracket, losersBracket, season?.playoffTeams ?? 6);
+
   let count = 0;
   await prisma.$transaction(async (tx) => {
     for (const rosterId of playoffRosterIds) {
@@ -619,6 +626,14 @@ async function coreSyncPlayoffResults(seasonId: string, sleeperLeagueId: string,
       if (!fantasyTeamId) continue;
       await tx.fantasyTeam.update({ where: { id: fantasyTeamId }, data: { madePlayoffs: true } });
       count += 1;
+    }
+
+    // Written before the podium updates below so those remain authoritative
+    // for places 1-3 if the two ever disagreed.
+    for (const [rosterId, place] of placements.byRosterId) {
+      const fantasyTeamId = teamByRosterId.get(rosterId);
+      if (!fantasyTeamId) continue;
+      await tx.fantasyTeam.update({ where: { id: fantasyTeamId }, data: { finalRank: place } });
     }
 
     if (champMatch?.w != null && champMatch.l != null) {

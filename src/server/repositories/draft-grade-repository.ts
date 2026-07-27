@@ -8,7 +8,15 @@
 // can call these repeatedly without regenerating (or paying for) existing grades.
 
 import { prisma } from "@/lib/db";
-import { GradeLetter } from "@/generated/prisma/client";
+import { GradeLetter, type Prisma } from "@/generated/prisma/client";
+import {
+  computeDraftQuality,
+  letterFromDraftRank,
+  DRAFT_FACTOR_META,
+  DRAFT_WEIGHTS,
+  type DraftFactor,
+  type DraftFactorKey,
+} from "@/server/stats/draft-quality";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import {
   generateDraftRationale,
@@ -43,31 +51,19 @@ export function gradeLetterToDisplay(grade: GradeLetter | null | undefined): str
 // ---------------------------------------------------------------------------
 
 /**
- * ORIGINAL (draft-day) grade heuristic.
+ * ORIGINAL (draft-day) grade.
  *
- * At draft time the only signal available is the picks themselves — there is
- * no outcome to grade against — so we keep this deliberately light and
- * neutral, as the spec allows. Everyone starts around B+/B:
- *   - No players actually drafted (all slots empty / data gap) -> C.
- *   - Heavy keeper reliance (keepers >= half the rounds, i.e. more of the roster
- *     was inherited than freshly drafted) -> B, a touch below the pack.
- *   - Otherwise -> B+.
- * The AI rationale supplies the color; the letter is intentionally modest until
- * the season revisits it.
+ * This used to be a near-constant: B+ for everyone, B if you leaned on
+ * keepers, which told a reader nothing. The letter now comes from the
+ * draft-quality model in server/stats/draft-quality.ts, which scores the
+ * actual decisions — value against the room, starter quality, roster balance,
+ * positional scarcity, bench depth, capital efficiency, byes and risk — and
+ * nothing about how the season subsequently went.
+ *
+ * See `letterFromDraftRank` for why the letter is assigned by rank within the
+ * season rather than by an absolute score.
  */
-export function originalGradeHeuristic({
-  totalPicks,
-  keepers,
-  rounds,
-}: {
-  totalPicks: number;
-  keepers: number;
-  rounds: number;
-}): GradeLetter {
-  if (totalPicks === 0) return GradeLetter.C;
-  if (rounds > 0 && keepers >= Math.ceil(rounds / 2)) return GradeLetter.B;
-  return GradeLetter.B_PLUS;
-}
+export { letterFromDraftRank } from "@/server/stats/draft-quality";
 
 /**
  * REVISITED (post-season) grade heuristic, derived from actual finish.
@@ -165,16 +161,40 @@ export async function generateDraftGradesForSeason(
   const safeguards = await getContentSafeguards();
 
   // Group picks by manager.
-  const byManager = new Map<string, { managerName: string; picks: typeof draft.picks }>();
+  const byManager = new Map<string, { managerName: string; fantasyTeamId: string; picks: typeof draft.picks }>();
   for (const pick of draft.picks) {
     if (!pick.managerId) continue;
     const entry = byManager.get(pick.managerId) ?? {
       managerName: pick.manager?.displayName ?? "Unknown Manager",
+      fantasyTeamId: pick.fantasyTeamId,
       picks: [] as typeof draft.picks,
     };
     entry.picks.push(pick);
     byManager.set(pick.managerId, entry);
   }
+
+  // Score the whole room at once — "was this a good draft" is only meaningful
+  // relative to the other drafts made from the same player pool.
+  const quality = computeDraftQuality(
+    [...byManager.entries()].map(([managerId, entry]) => ({
+      fantasyTeamId: entry.fantasyTeamId,
+      managerId,
+      managerName: entry.managerName,
+      picks: entry.picks.map((p) => ({
+        overallPickNumber: p.pickNumber,
+        round: p.round,
+        isKeeper: p.isKeeper,
+        position: p.player?.position ?? null,
+        nflTeam: p.player?.nflTeam ?? null,
+        // No historical ADP source is available for this league (see the note
+        // in draft-quality.ts); leaving these null makes the model drop the
+        // factor and say so rather than silently invent a market price.
+        adp: null,
+        byeWeek: null,
+      })),
+    })),
+  );
+  const gradedByManager = new Map(quality.teams.map((t) => [t.managerId, t]));
 
   let created = 0;
   let skipped = 0;
@@ -191,9 +211,15 @@ export async function generateDraftGradesForSeason(
       }
     }
 
+    const scored = gradedByManager.get(managerId);
+    if (!scored) {
+      skipped += 1;
+      continue;
+    }
+
     const totalPicks = picks.filter((p) => p.player).length;
     const keepers = picks.filter((p) => p.isKeeper).length;
-    const grade = originalGradeHeuristic({ totalPicks, keepers, rounds: draft.rounds });
+    const grade = letterFromDraftRank(scored.rank, quality.teams.length) as GradeLetter;
 
     const { text, providerName } = await generateDraftRationale(
       {
@@ -204,25 +230,29 @@ export async function generateDraftGradesForSeason(
         keepers,
         rounds: draft.rounds,
         picks: picks.map(pickLine),
+        draftScore: scored.score,
+        rankInLeague: `${scored.rank} of ${quality.teams.length}`,
+        factorBreakdown: [...scored.factors]
+          .sort((a, b) => b.value - a.value)
+          .map((f) => `${f.label} ${Math.round(f.value)}/100 (${f.raw})`),
+        dataCaveat: quality.adpAvailable ? undefined : quality.notes[0],
       },
-      safeguards
+      safeguards,
     );
+
+    const data = {
+      grade,
+      rationale: text,
+      originalScore: scored.score,
+      originalFactors: scored.factors as unknown as Prisma.InputJsonValue,
+      adpAvailable: quality.adpAvailable,
+      providerName: providerName || "computed",
+    };
 
     await prisma.draftGrade.upsert({
       where: { seasonId_managerId: { seasonId, managerId } },
-      create: {
-        seasonId,
-        managerId,
-        grade,
-        rationale: text,
-        providerName: providerName || "heuristic",
-      },
-      update: {
-        grade,
-        rationale: text,
-        providerName: providerName || "heuristic",
-        generatedAt: new Date(),
-      },
+      create: { seasonId, managerId, ...data },
+      update: { ...data, generatedAt: new Date() },
     });
     created += 1;
   }
@@ -408,6 +438,9 @@ export interface DraftReportCard {
   avatarUrl: string | null;
   grade: GradeLetter | null;
   rationale: string | null;
+  /** 0-100 composite behind the original grade. */
+  score: number | null;
+  factors: DraftFactor[];
   revisitedGrade: GradeLetter | null;
   revisitedRationale: string | null;
 }
@@ -417,6 +450,10 @@ export interface DraftReportCardsView {
   seasonId: string | null;
   status: "UPCOMING" | "IN_PROGRESS" | "COMPLETE" | null;
   cards: DraftReportCard[];
+  /** Weights behind the original grade, for the methodology panel. */
+  weights: { key: string; label: string; description: string; weight: number }[];
+  /** True when average draft position was available for this season. */
+  adpAvailable: boolean;
 }
 
 /**
@@ -444,25 +481,48 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
       }));
 
   if (!season) {
-    return { seasonYear: seasonYear ?? null, seasonId: null, status: null, cards: [] };
+    return {
+      seasonYear: seasonYear ?? null,
+      seasonId: null,
+      status: null,
+      cards: [],
+      weights: [],
+      adpAvailable: false,
+    };
   }
 
   const grades = await prisma.draftGrade.findMany({
     where: { seasonId: season.id },
     include: { manager: { select: { displayName: true, photoUrl: true, avatarUrl: true } } },
-    orderBy: { manager: { displayName: "asc" } },
+    // Best draft first — the point of a report card is the ranking.
+    orderBy: [{ originalScore: "desc" }, { manager: { displayName: "asc" } }],
   });
+
+  const adpAvailable = grades.some((g) => g.adpAvailable);
+  const activeKeys = (Object.keys(DRAFT_WEIGHTS) as DraftFactorKey[]).filter((k) =>
+    k === "valueVsAdp" ? adpAvailable : true,
+  );
+  const weightTotal = activeKeys.reduce((sum, k) => sum + DRAFT_WEIGHTS[k], 0);
 
   return {
     seasonYear: season.year,
     seasonId: season.id,
     status: season.status,
+    adpAvailable,
+    weights: activeKeys.map((key) => ({
+      key,
+      label: DRAFT_FACTOR_META[key].label,
+      description: DRAFT_FACTOR_META[key].description,
+      weight: DRAFT_WEIGHTS[key] / weightTotal,
+    })),
     cards: grades.map((g) => ({
       managerId: g.managerId,
       managerName: g.manager.displayName,
       avatarUrl: g.manager.photoUrl ?? g.manager.avatarUrl,
       grade: g.grade,
       rationale: g.rationale,
+      score: g.originalScore,
+      factors: Array.isArray(g.originalFactors) ? (g.originalFactors as unknown as DraftFactor[]) : [],
       revisitedGrade: g.revisitedGrade,
       revisitedRationale: g.revisitedRationale,
     })),
