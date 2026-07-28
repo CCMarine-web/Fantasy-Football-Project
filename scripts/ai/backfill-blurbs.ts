@@ -177,6 +177,7 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
     select: {
       id: true, isOfficial: true, gamesPlayed: true, managerAWins: true, managerBWins: true, ties: true,
       managerAPoints: true, managerBPoints: true, averageMargin: true, playoffMeetings: true,
+      consolationMeetings: true,
       championshipMeetings: true, closestGameMargin: true, largestBlowoutMargin: true,
       currentStreakManagerId: true, currentStreakCount: true, longestStreakCount: true,
       lastMeetingSeason: true, summaryInputHash: true,
@@ -197,7 +198,11 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
       averageMargin: r.averageMargin,
       closestMargin: r.closestGameMargin,
       biggestMargin: r.largestBlowoutMargin,
+      // Championship bracket only. Toilet-bowl meetings are counted separately
+      // and must never be described as playoff meetings — four summaries did
+      // exactly that before the two were split apart.
       playoffMeetings: r.playoffMeetings,
+      consolationMeetings: r.consolationMeetings,
       titleGameMeetings: r.championshipMeetings,
       // Structured rather than pre-formatted. A previous version supplied the
       // string "Michael Shea x7", and sixteen of the forty-five summaries
@@ -258,6 +263,8 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
       `Never echo the raw formatting of the data: no "Michael Shea x7", no "0 title game meetings", no field names. Say "seven straight" and simply leave out anything that is zero — an absence is only worth a clause if it is genuinely the point.`,
       ``,
       `Every figure you do cite is printed on the same card, so it must match exactly. Do not round a record, do not flip who leads, and do not claim a playoff or title meeting that is not in the facts.`,
+      ``,
+      `"playoffMeetings" counts championship-bracket games only. "consolationMeetings" counts toilet-bowl and placement games, which are postseason games and are NOT playoff games. If playoffMeetings is 0, this pair has NEVER met in the playoffs no matter how many consolation meetings there are — do not write "they have met twice in the postseason" and leave a reader to assume it mattered. A toilet-bowl meeting is fair game as a joke, never as a credential.`,
       ``,
       `Verified head-to-head facts:`,
       JSON.stringify(facts, null, 2),

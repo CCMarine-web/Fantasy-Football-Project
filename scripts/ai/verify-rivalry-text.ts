@@ -41,6 +41,7 @@ function allowedNumbers(r: {
   managerBPoints: number;
   averageMargin: number | null;
   playoffMeetings: number;
+  consolationMeetings: number;
   championshipMeetings: number;
   closestGameMargin: number | null;
   closestGameSeason: number | null;
@@ -102,6 +103,7 @@ async function main() {
       managerBPoints: true,
       averageMargin: true,
       playoffMeetings: true,
+      consolationMeetings: true,
       championshipMeetings: true,
       closestGameMargin: true,
       closestGameSeason: true,
@@ -168,6 +170,29 @@ async function main() {
           problem: "playoff count",
           detail: `text says "${match[0]}" but there have been ${r.playoffMeetings}`,
         });
+      }
+    }
+
+    /*
+     * A pairing whose only postseason meetings were in the toilet bowl has NOT
+     * met in the playoffs, and copy written before the two were separated may
+     * still say it has. Only an affirmative claim counts — "they have never met
+     * in the playoffs" is a legitimate sentence.
+     */
+    if (r.playoffMeetings === 0 && r.consolationMeetings > 0) {
+      for (const sentence of text.split(/(?<=[.!?])\s+/)) {
+        if (!/\b(playoff|postseason)\b/i.test(sentence)) continue;
+        const negated =
+          /\b(no|not|never|neither|nor|yet to|without|haven'?t|hasn'?t|hadn'?t|didn'?t|don'?t|doesn'?t|awaits?|still waiting|consolation|toilet)\b/i.test(
+            sentence,
+          );
+        if (!negated) {
+          findings.push({
+            pair,
+            problem: "consolation described as a playoff",
+            detail: `"${sentence.trim().slice(0, 120)}" — their ${r.consolationMeetings} postseason meeting(s) were all consolation games, not playoff games`,
+          });
+        }
       }
     }
     // A summary may legitimately say they have NEVER met in a title game, so a

@@ -108,6 +108,53 @@ export interface GenerateGradesResult {
  * Generate-once-reuse: skips managers who already have a grade unless `force`.
  * Exported so it can be wired into the weekly pipeline.
  */
+/**
+ * Every player's positional standing in the season BEFORE `seasonYear`, as a
+ * percentile of points per game among players at the same position.
+ *
+ * This is what a draft room could plausibly have known, so it is a fair
+ * measure of whether a pick was a good one — unlike the pick's own number,
+ * which only records what the room decided. Players with fewer than three
+ * recorded games are left out of the pool and get no percentile, because three
+ * weeks is not a rate; rookies get none for the same reason.
+ */
+async function buildPriorPositionalPercentiles(seasonYear: number): Promise<Map<string, number>> {
+  const rows = await prisma.weeklyPlayerScore.findMany({
+    where: {
+      points: { not: null },
+      roster: { fantasyTeam: { season: { year: seasonYear - 1 } } },
+    },
+    select: { playerId: true, points: true, player: { select: { position: true } } },
+  });
+
+  const totals = new Map<string, { position: string; points: number; games: number }>();
+  for (const row of rows) {
+    if (row.points == null) continue;
+    const cur = totals.get(row.playerId) ?? { position: row.player.position, points: 0, games: 0 };
+    cur.points += row.points;
+    cur.games += 1;
+    totals.set(row.playerId, cur);
+  }
+
+  const byPosition = new Map<string, { playerId: string; ppg: number }[]>();
+  for (const [playerId, t] of totals) {
+    if (t.games < 3) continue;
+    const list = byPosition.get(t.position) ?? [];
+    list.push({ playerId, ppg: t.points / t.games });
+    byPosition.set(t.position, list);
+  }
+
+  const out = new Map<string, number>();
+  for (const list of byPosition.values()) {
+    if (list.length < 3) continue;
+    for (const entry of list) {
+      const below = list.filter((x) => x.ppg < entry.ppg).length;
+      out.set(entry.playerId, Math.round((below / list.length) * 100));
+    }
+  }
+  return out;
+}
+
 export async function generateDraftGradesForSeason(
   seasonId: string,
   options: { force?: boolean } = {}
@@ -141,6 +188,14 @@ export async function generateDraftGradesForSeason(
     byManager.set(pick.managerId, entry);
   }
 
+  /*
+   * Each drafted player's standing at his own position going INTO this draft,
+   * as a percentile of prior-season points per game. This is what starter
+   * quality is measured against; see the comment on `priorPositionalPercentile`
+   * in server/stats/draft-quality.ts for why pick number is not used.
+   */
+  const priorPercentile = await buildPriorPositionalPercentiles(seasonYear);
+
   // Score the whole room at once — "was this a good draft" is only meaningful
   // relative to the other drafts made from the same player pool.
   const quality = computeDraftQuality(
@@ -159,6 +214,7 @@ export async function generateDraftGradesForSeason(
         // factor and say so rather than silently invent a market price.
         adp: null,
         byeWeek: null,
+        priorPositionalPercentile: p.playerId ? (priorPercentile.get(p.playerId) ?? null) : null,
       })),
     })),
   );
@@ -461,7 +517,20 @@ export interface DraftReportCard {
   factors: DraftFactor[];
   revisitedGrade: GradeLetter | null;
   revisitedRationale: string | null;
+  /**
+   * How much of this team's draft board could actually be measured. LOW means
+   * the grade rests on inputs the data does not fully support, and the card
+   * says which ones.
+   */
+  confidence: DraftConfidence;
+  /** Plain-English reasons the confidence is not HIGH. */
+  confidenceReasons: string[];
+  /** Picks with no player attached — a blank slot on the board. */
+  unresolvedPicks: number;
+  pickCount: number;
 }
+
+export type DraftConfidence = "HIGH" | "MEDIUM" | "LOW";
 
 export interface DraftReportCardsView {
   seasonYear: number | null;
@@ -476,6 +545,9 @@ export interface DraftReportCardsView {
   revisitWeights: { key: string; label: string; description: string; weight: number }[];
   /** False when the season has no per-player scoring, so no revisited grade exists. */
   revisitAvailable: boolean;
+  /** Season-wide confidence, and what is missing behind it. */
+  confidence: DraftConfidence;
+  confidenceReasons: string[];
 }
 
 /**
@@ -512,6 +584,8 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
       adpAvailable: false,
       revisitWeights: [],
       revisitAvailable: false,
+      confidence: "LOW",
+      confidenceReasons: ["No draft is on record for this season."],
     };
   }
 
@@ -527,6 +601,69 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
     k === "valueVsAdp" ? adpAvailable : true,
   );
   const weightTotal = activeKeys.reduce((sum, k) => sum + DRAFT_WEIGHTS[k], 0);
+
+  /*
+   * How well the recorded data actually supports these grades, per team and
+   * for the season. A grade with a blank pick behind it, or with no prior
+   * production for the players drafted, is worth less than one where every
+   * pick resolved — and the page should say so rather than printing a letter
+   * with the same authority either way.
+   */
+  const picks = await prisma.draftPick.findMany({
+    where: { draft: { seasonId: season.id } },
+    select: { managerId: true, playerId: true },
+  });
+  const priorPercentile = await buildPriorPositionalPercentiles(season.year);
+  const perManager = new Map<string, { total: number; blank: number; rated: number }>();
+  for (const pick of picks) {
+    if (!pick.managerId) continue;
+    const cur = perManager.get(pick.managerId) ?? { total: 0, blank: 0, rated: 0 };
+    cur.total += 1;
+    if (!pick.playerId) cur.blank += 1;
+    else if (priorPercentile.has(pick.playerId)) cur.rated += 1;
+    perManager.set(pick.managerId, cur);
+  }
+
+  const confidenceFor = (
+    managerId: string,
+  ): { confidence: DraftConfidence; reasons: string[]; blank: number; total: number } => {
+    const stats = perManager.get(managerId) ?? { total: 0, blank: 0, rated: 0 };
+    const reasons: string[] = [];
+    if (stats.total === 0) {
+      return { confidence: "LOW", reasons: ["No picks are on record for this manager."], blank: 0, total: 0 };
+    }
+    if (stats.blank > 0) {
+      reasons.push(
+        `${stats.blank} of ${stats.total} picks have no player attached, so those slots could not be graded`,
+      );
+    }
+    const ratedShare = stats.rated / stats.total;
+    if (ratedShare < 0.3) {
+      reasons.push(
+        "almost none of the players drafted have a prior season on record, so starter quality falls back to where they were taken",
+      );
+    } else if (ratedShare < 0.7) {
+      reasons.push(
+        `only ${Math.round(ratedShare * 100)}% of the players drafted have a prior season on record`,
+      );
+    }
+    if (!adpAvailable) {
+      reasons.push("no average draft position is on record for this season");
+    }
+    const confidence: DraftConfidence =
+      stats.blank > 0 || ratedShare < 0.3 ? "LOW" : reasons.length > 0 ? "MEDIUM" : "HIGH";
+    return { confidence, reasons, blank: stats.blank, total: stats.total };
+  };
+
+  const perCardConfidence = new Map(grades.map((g) => [g.managerId, confidenceFor(g.managerId)]));
+  const worst: DraftConfidence = [...perCardConfidence.values()].some((c) => c.confidence === "LOW")
+    ? "LOW"
+    : [...perCardConfidence.values()].some((c) => c.confidence === "MEDIUM")
+      ? "MEDIUM"
+      : "HIGH";
+  const seasonReasons = [
+    ...new Set([...perCardConfidence.values()].flatMap((c) => c.reasons)),
+  ];
 
   return {
     seasonYear: season.year,
@@ -547,17 +684,28 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
       description: DRAFT_FACTOR_META[key].description,
       weight: DRAFT_WEIGHTS[key] / weightTotal,
     })),
-    cards: grades.map((g) => ({
-      managerId: g.managerId,
-      managerName: g.manager.displayName,
-      avatarUrl: g.manager.photoUrl ?? g.manager.avatarUrl,
-      grade: g.grade,
-      rationale: g.rationale,
-      score: g.originalScore,
-      factors: Array.isArray(g.originalFactors) ? (g.originalFactors as unknown as DraftFactor[]) : [],
-      revisitedGrade: g.revisitedGrade,
-      revisitedRationale: g.revisitedRationale,
-    })),
+    confidence: worst,
+    confidenceReasons: seasonReasons,
+    cards: grades.map((g) => {
+      const c = perCardConfidence.get(g.managerId);
+      return {
+        managerId: g.managerId,
+        managerName: g.manager.displayName,
+        avatarUrl: g.manager.photoUrl ?? g.manager.avatarUrl,
+        grade: g.grade,
+        rationale: g.rationale,
+        score: g.originalScore,
+        factors: Array.isArray(g.originalFactors)
+          ? (g.originalFactors as unknown as DraftFactor[])
+          : [],
+        revisitedGrade: g.revisitedGrade,
+        revisitedRationale: g.revisitedRationale,
+        confidence: c?.confidence ?? "LOW",
+        confidenceReasons: c?.reasons ?? [],
+        unresolvedPicks: c?.blank ?? 0,
+        pickCount: c?.total ?? 0,
+      };
+    }),
   };
 }
 

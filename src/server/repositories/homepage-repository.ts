@@ -42,8 +42,10 @@ async function loadHomepageData() {
         where: { season: { year: season.year - 1 } },
         include: { championFantasyTeam: true, championManager: true },
       }),
+      // Completed moves only — a failed waiver claim is not a transaction
+      // anyone made, and the sidebar has no room to explain that.
       prisma.transaction.findMany({
-        where: { seasonId: season.id },
+        where: { seasonId: season.id, status: "COMPLETE" },
         include: { assets: { include: { player: true, fantasyTeam: true } } },
         orderBy: { processedAt: "desc" },
         take: 5,

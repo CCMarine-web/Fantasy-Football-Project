@@ -16,6 +16,13 @@ import { GraduationCap, Info } from "lucide-react";
 
 export const metadata = { title: "Draft Report Cards" };
 
+/** How well the recorded data supports a grade. */
+const CONFIDENCE_LABEL = {
+  HIGH: "High data confidence",
+  MEDIUM: "Medium data confidence",
+  LOW: "Low data confidence",
+} as const;
+
 /** Color family for a grade: A green, B primary/blue, C amber, D/F red. */
 function gradeColorClasses(grade: GradeLetter | null): string {
   if (!grade) return "bg-muted text-muted-foreground";
@@ -104,6 +111,24 @@ export default async function DraftReportCardsPage({
               </p>
             ) : null}
 
+            {/*
+             * What the recorded data does and does not support. A letter grade
+             * carries the same authority however thin the evidence behind it,
+             * so the evidence is stated next to it.
+             */}
+            {view.confidenceReasons.length > 0 ? (
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-[13px] text-muted-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                <span>
+                  <strong className="text-foreground">
+                    {CONFIDENCE_LABEL[view.confidence]} for {view.seasonYear}.
+                  </strong>{" "}
+                  {view.confidenceReasons.join("; ")}. Every team&rsquo;s own confidence is shown on its
+                  card.
+                </span>
+              </div>
+            ) : null}
+
             {/* The second, separate grade. */}
             <div className="mt-5 border-t border-border/40 pt-4">
               <h3 className="font-heading text-base font-semibold">And the revisited grade</h3>
@@ -180,7 +205,27 @@ export default async function DraftReportCardsPage({
                       >
                         {card.managerName}
                       </Link>
+                      {/* How much the data behind this particular grade
+                          supports it — a letter reads as equally authoritative
+                          whether it rests on sixteen resolved picks or nine. */}
+                      <Badge
+                        variant="outline"
+                        className={`ml-auto shrink-0 ${card.confidence === "HIGH" ? "text-field" : card.confidence === "LOW" ? "text-destructive" : "text-muted-foreground"}`}
+                        title={
+                          card.confidenceReasons.length > 0
+                            ? card.confidenceReasons.join("; ")
+                            : `All ${card.pickCount} picks resolved with prior-season production on record.`
+                        }
+                      >
+                        {CONFIDENCE_LABEL[card.confidence]}
+                      </Badge>
                     </div>
+
+                    {card.confidenceReasons.length > 0 ? (
+                      <p className="mb-3 text-xs text-muted-foreground">
+                        {card.confidenceReasons.join("; ")}.
+                      </p>
+                    ) : null}
 
                     {/* Original grade — the headline, always shown. */}
                     <div className="flex flex-col gap-4 lg:flex-row">

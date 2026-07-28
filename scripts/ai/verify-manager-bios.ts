@@ -32,7 +32,7 @@ interface Finding {
 }
 
 const FIELD_NAME_PATTERN =
-  /\b(recentPointsPerGame|careerPointsPerGame|allPlayWinPct|allPlayRecord|winPct|luckLabel|recentTrajectory|statsComplete|bestFinish|worstFinish|playoffAppearances|finalsAppearances|championshipYears|pointsForPerGame|topRivalries|communicationStyle|personalityProfile|leagueVoice|approvedKnowledge|historyNotes|seasonsPlayed|currentTeamName|yearsActive|regularSeasonRank|finalRank|madePlayoffs|isChampion|postseasonRecord)\b/;
+  /\b(recentPointsPerGame|careerPointsPerGame|allPlayWinPct|allPlayRecord|winPct|luckLabel|recentTrajectory|statsComplete|bestFinish|worstFinish|playoffAppearances|finalsAppearances|championshipYears|pointsForPerGame|topRivalries|communicationStyle|personalityProfile|leagueVoice|approvedKnowledge|historyNotes|seasonsPlayed|currentTeamName|yearsActive|regularSeasonRank|finalRank|madePlayoffs|isChampion|postseasonRecord|playoffRecord|consolationRecord|luckScore|luckSummary)\b/;
 
 async function main() {
   const clear = process.argv.includes("--clear-mismatched");
@@ -58,7 +58,11 @@ async function main() {
     for (const era of profile.eraStats) {
       validRecords.add(`${era.wins}-${era.losses}`);
       if (era.ties) validRecords.add(`${era.wins}-${era.losses}-${era.ties}`);
+      // Championship bracket and consolation are shown as separate columns,
+      // so both are quotable — but their SUM is not, because the page never
+      // presents one combined postseason record.
       validRecords.add(`${era.playoffWins}-${era.playoffLosses}`);
+      validRecords.add(`${era.consolationWins}-${era.consolationLosses}`);
     }
     for (const line of played) {
       validRecords.add(`${line.wins}-${line.losses}`);

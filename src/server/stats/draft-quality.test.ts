@@ -59,6 +59,59 @@ function team(
   };
 }
 
+describe("computeDraftQuality — starter quality", () => {
+  it("rates starters by their prior positional standing, not by pick order", () => {
+    const board = snakeBoard(2, 10);
+    // Team 0 picks first all the way through but drafted mediocre players;
+    // team 1 picks later and drafted the best at every position. Judged on
+    // pick order team 0 would win; judged on the players, team 1 must.
+    const t0 = team(
+      "t0",
+      board[0],
+      board[0].map(() => ({ priorPositionalPercentile: 25 })),
+    );
+    const t1 = team(
+      "t1",
+      board[1],
+      board[1].map(() => ({ priorPositionalPercentile: 95 })),
+    );
+    const result = computeDraftQuality([t0, t1]);
+
+    const starter = (id: string) =>
+      result.teams.find((x) => x.fantasyTeamId === id)!.factors.find((f) => f.key === "starterQuality")!;
+    expect(starter("t1").value).toBeGreaterThan(starter("t0").value);
+    expect(starter("t1").raw).toMatch(/percentile/);
+  });
+
+  it("falls back to pick order and warns when no prior season is on record", () => {
+    const board = snakeBoard(2, 10);
+    const result = computeDraftQuality(board.map((picks, i) => team(`t${i}`, picks)));
+    expect(result.notes.join(" ")).toMatch(/falls back to where each starter was taken/i);
+    const starter = result.teams[0].factors.find((f) => f.key === "starterQuality")!;
+    expect(starter.raw).toMatch(/no prior-season data/);
+  });
+
+  it("still charges a team for slots it never filled", () => {
+    const board = snakeBoard(2, 10);
+    // Every pick is a running back, so most starting slots go unfilled even
+    // though each individual player is elite.
+    const allRb = team(
+      "t0",
+      board[0],
+      board[0].map(() => ({ position: "RB", priorPositionalPercentile: 99 })),
+    );
+    const balanced = team(
+      "t1",
+      board[1],
+      board[1].map(() => ({ priorPositionalPercentile: 60 })),
+    );
+    const result = computeDraftQuality([allRb, balanced]);
+    const starter = (id: string) =>
+      result.teams.find((x) => x.fantasyTeamId === id)!.factors.find((f) => f.key === "starterQuality")!;
+    expect(starter("t0").value).toBeLessThan(starter("t1").value);
+  });
+});
+
 describe("computeDraftQuality", () => {
   it("drops the ADP factor and says so when no ADP is on record", () => {
     const board = snakeBoard(3, 6);

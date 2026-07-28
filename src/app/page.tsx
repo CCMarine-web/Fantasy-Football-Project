@@ -18,6 +18,13 @@ import { OffseasonPanel } from "@/components/home/offseason-panel";
 import { getSeasonPhase } from "@/server/repositories/season-phase";
 import { getOffseasonData } from "@/server/repositories/offseason-repository";
 
+const TRANSACTION_LABEL: Record<string, string> = {
+  WAIVER: "Waiver claim",
+  FREE_AGENT: "Free-agent pickup",
+  TRADE: "Trade",
+  COMMISSIONER: "Commissioner action",
+};
+
 export default async function HomePage() {
   const [data, seasonNarrative, champion, powerPreview] = await Promise.all([
     getHomepageData(),
@@ -337,26 +344,40 @@ export default async function HomePage() {
           </section>
 
           <section>
-            <div className="mb-3 flex items-center gap-2">
-              <ArrowRightLeft className="h-4 w-4 text-primary" />
-              <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-                Recent Transactions
-              </h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <ArrowRightLeft className="h-4 w-4 text-primary" />
+                <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+                  Recent Transactions
+                </h2>
+              </div>
+              <Link href="/transactions" className="text-sm text-primary hover:underline">
+                The wire
+              </Link>
             </div>
             <Card>
               <CardContent className="space-y-3">
                 {recentTransactions.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No transactions yet.</p>
+                  <p className="text-sm text-muted-foreground">
+                    {phase?.phase === "IN_SEASON"
+                      ? "No transactions yet this season."
+                      : "The wire is quiet until the season starts."}
+                  </p>
                 ) : (
                   recentTransactions.map((tx) => (
                     <div key={tx.id} className="text-sm">
-                      <Badge variant="outline" className="mb-1 text-[12px] uppercase">
-                        {tx.type.replace("_", " ")}
+                      {/* A readable label, not the database enum. */}
+                      <Badge variant="outline" className="mb-1 text-[12px]">
+                        {TRANSACTION_LABEL[tx.type]}
                       </Badge>
                       <p className="text-muted-foreground">
                         {tx.assets
-                          .map((a) => `${a.direction === "ADD" ? "+" : "−"}${a.player?.firstName ?? ""} ${a.player?.lastName ?? ""}`)
-                          .join(", ")}
+                          .filter((a) => a.player)
+                          .map(
+                            (a) =>
+                              `${a.direction === "ADD" ? "+" : "−"}${a.player!.firstName} ${a.player!.lastName}`,
+                          )
+                          .join(", ") || "no players recorded"}
                       </p>
                     </div>
                   ))

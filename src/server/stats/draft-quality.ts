@@ -57,7 +57,7 @@ export const DRAFT_FACTOR_META: Record<DraftFactorKey, { label: string; descript
   starterQuality: {
     label: "Starter quality",
     description:
-      "Strength of the projected starting lineup, from where each starter was taken in the room.",
+      "How the players filling the starting slots ranked at their own positions the season before the draft. Deliberately not measured by where they were taken — that would make the grade a restatement of the draft order.",
   },
   rosterConstruction: {
     label: "Roster construction",
@@ -99,6 +99,20 @@ export interface DraftPickInput {
   adp?: number | null;
   /** NFL bye week for this player's team that season, if known. */
   byeWeek?: number | null;
+  /**
+   * How this player ranked at his own position on the season BEFORE the draft,
+   * as a percentile: 100 is the best player at the position, 0 the worst.
+   *
+   * This is the measure of starter quality, deliberately in place of where the
+   * player was taken. Draft position records what the room believed on the
+   * night, so grading a draft by it makes the grade a restatement of the draft
+   * order — a manager with the first pick is rewarded for having the first
+   * pick. A player's positional standing going into the draft is something a
+   * room could actually know and be right or wrong about.
+   *
+   * Null for a rookie, or for anyone with no prior season on record.
+   */
+  priorPositionalPercentile?: number | null;
 }
 
 export interface TeamDraftInput {
@@ -230,6 +244,22 @@ export function computeDraftQuality(teams: TeamDraftInput[]): DraftQualityResult
     );
   }
 
+  /*
+   * Starter quality prefers each player's positional standing going into the
+   * draft. Where no player on the board has a prior season on record — the
+   * first year of the archive, for instance — it falls back to pick order, and
+   * the note says so, because that version of the factor really is a partial
+   * restatement of the draft order.
+   */
+  const percentilesAvailable = teams.some((t) =>
+    t.picks.some((p) => p.priorPositionalPercentile != null),
+  );
+  if (!percentilesAvailable) {
+    notes.push(
+      "No prior-season production is on record for the players in this draft, so starter quality falls back to where each starter was taken. That measures what the room believed rather than what the players had done, and this season's grades should be read with that in mind.",
+    );
+  }
+
   const metrics = teams.map((t) => {
     const { starters, bench, byPosition } = splitStarters(t.picks);
 
@@ -239,16 +269,29 @@ export function computeDraftQuality(teams: TeamDraftInput[]): DraftQualityResult
       ? mean(withAdp.map((p) => (p.adp as number) - p.overallPickNumber))
       : 0;
 
-    // Starter quality: value banked in the starting lineup, where a player
-    // taken earlier is worth more.
-    //
-    // Averaged over the slots that MUST be filled, not over the starters a team
-    // happens to have. Averaging over filled starters rewarded failing to fill
-    // slots: an all-RB roster can only start three players, and those three
-    // were its earliest picks, so its "average starter" looked elite. Unfilled
-    // slots now contribute zero, which is what an empty slot is worth.
-    const starterValue = starters.reduce((sum, p) => sum + (totalPicks - p.overallPickNumber), 0);
-    const starterQuality = starterValue / REQUIRED_STARTERS;
+    /*
+     * Starter quality: how good the players filling the starting slots were at
+     * their own positions going into the draft.
+     *
+     * Measured by prior-season positional standing, NOT by where each player
+     * was taken. Grading a draft by pick number makes the grade a restatement
+     * of the draft order — the manager with the first pick wins for having the
+     * first pick. Pick number is only used as a last resort when no player on
+     * the board has a prior season on record, and the notes say so when that
+     * happens.
+     *
+     * Averaged over the slots that MUST be filled, not over the starters a team
+     * happens to have. Averaging over filled starters rewarded failing to fill
+     * slots: an all-RB roster can only start three players, and those three
+     * were its earliest picks, so its "average starter" looked elite. Unfilled
+     * slots contribute zero, which is what an empty slot is worth.
+     */
+    const rated = starters.filter((p) => p.priorPositionalPercentile != null);
+    const starterQuality = percentilesAvailable
+      ? rated.reduce((sum, p) => sum + (p.priorPositionalPercentile as number), 0) /
+        REQUIRED_STARTERS
+      : starters.reduce((sum, p) => sum + (totalPicks - p.overallPickNumber), 0) /
+        REQUIRED_STARTERS;
     const starterCost = starters.length
       ? mean(starters.map((p) => p.overallPickNumber))
       : totalPicks;
@@ -363,7 +406,9 @@ export function computeDraftQuality(teams: TeamDraftInput[]): DraftQualityResult
 
     const raws: Record<DraftFactorKey, string> = {
       valueVsAdp: m.adpCount ? `${m.adpBeats}/${m.adpCount} beat ADP` : "no ADP on record",
-      starterQuality: `avg starter pick ${round(m.starterCost)}`,
+      starterQuality: percentilesAvailable
+        ? `starters averaged the ${Math.round(m.starterQuality)}th percentile at their positions`
+        : `avg starter pick ${round(m.starterCost)} (no prior-season data)`,
       rosterConstruction: `${Math.round(m.completeness * 100)}% lineup filled`,
       positionalScarcity: `${round(m.scarcity)} scarcity index`,
       benchUpside: `${m.bench.length} bench picks`,

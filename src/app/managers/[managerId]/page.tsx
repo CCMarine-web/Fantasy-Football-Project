@@ -157,11 +157,20 @@ export default async function ManagerProfilePage({
           Swipe the table sideways to see every column →
         </p>
         <div className="overflow-x-auto rounded-lg border border-border/60">
-          <table className="w-full min-w-[52rem] text-sm">
+          <table className="w-full min-w-[56rem] text-sm">
             <caption className="sr-only">Career, ESPN-era and Sleeper-era statistics</caption>
             <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
               <tr>
-                <th scope="col" className="px-3 py-2 text-left">Era</th>
+                {/* Sticky first column: this table is twelve columns wide and
+                    genuinely has to scroll on a phone, and without an anchor a
+                    reader scrolling right loses track of which era's row they
+                    are reading. */}
+                <th
+                  scope="col"
+                  className="sticky left-0 z-10 bg-card px-3 py-2 text-left"
+                >
+                  Era
+                </th>
                 <th scope="col" className="px-3 py-2 text-left">Years</th>
                 <th scope="col" className="px-3 py-2 text-right">Seasons</th>
                 <th scope="col" className="px-3 py-2 text-right" title="Regular-season record">Record</th>
@@ -194,7 +203,17 @@ export default async function ManagerProfilePage({
             <tbody className="divide-y divide-border/60">
               {eraStats.map((era) => (
                 <tr key={era.key} className={era.key === "CAREER" ? "bg-card/30 font-semibold" : undefined}>
-                  <th scope="row" className="px-3 py-2 text-left font-medium">{era.label}</th>
+                  {/* Opaque, not the row's translucent tint — a sticky cell
+                      with a see-through background shows the scrolled columns
+                      sliding underneath it. */}
+                  <th
+                    scope="row"
+                    className={`sticky left-0 z-10 px-3 py-2 text-left font-medium ${
+                      era.key === "CAREER" ? "bg-card" : "bg-background"
+                    }`}
+                  >
+                    {era.label}
+                  </th>
                   <td className="px-3 py-2 text-muted-foreground">{era.years}</td>
                   <td className="px-3 py-2 text-right font-mono">{era.seasonsPlayed}</td>
                   <td className="px-3 py-2 text-right font-mono">
