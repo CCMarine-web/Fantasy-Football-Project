@@ -12,7 +12,7 @@ import {
   getOrCreateManagerPerformanceSummary,
 } from "@/server/repositories/manager-repository";
 import { getManagerAwardTally } from "@/server/repositories/weekly-awards-repository";
-import { Quote, Sparkles, TrendingUp } from "lucide-react";
+import { Sparkles, TrendingUp } from "lucide-react";
 
 export const metadata = { title: "Manager Profile" };
 
@@ -427,8 +427,13 @@ export default async function ManagerProfilePage({
 
       <Separator className="my-8" />
 
-      {/* AI scouting report + quotes */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      {/*
+        The "Famous Quotes" card has been removed. It was a permanent empty
+        state promising quotes from the group-chat archive, which is admin-only
+        and deliberately never published — so it advertised something that was
+        never going to appear.
+      */}
+      <div className="grid grid-cols-1 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 uppercase">
@@ -451,19 +456,6 @@ export default async function ManagerProfilePage({
                 appear here once this manager has enough history.
               </p>
             )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 uppercase">
-              <Quote className="h-4 w-4" /> Famous Quotes
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Quotes pulled from approved group-chat history will appear here once chat-lore import is
-              complete for this manager.
-            </p>
           </CardContent>
         </Card>
       </div>

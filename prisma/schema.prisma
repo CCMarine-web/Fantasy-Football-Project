@@ -1452,3 +1452,38 @@ model ManagerRelationship {
   @@unique([managerAId, managerBId])
   @@index([managerBId])
 }
+
+// ---------------------------------------------------------------------------
+// Public shoutbox
+// ---------------------------------------------------------------------------
+
+/// A message on the PUBLIC chat page — the open shoutbox anyone with the link
+/// can post to without an account.
+///
+/// This is emphatically NOT the imported private group-chat archive. That data
+/// lives in ChatMessage / ChatImport, is admin-only, and is never surfaced,
+/// searched or mixed in here. The two share nothing but the word "chat".
+///
+/// Everything a visitor supplies is untrusted: `displayName` and `body` are
+/// length-capped and trimmed on write, and rendered as text (never HTML) on
+/// read. `authorHash` is a salted digest used only for rate limiting — the raw
+/// IP is never stored, so the table holds no personal technical data.
+model PublicChatMessage {
+  id          String   @id @default(cuid())
+  /// Self-entered, unverified. Capped and sanitised on write.
+  displayName String
+  body        String
+  /// Salted, truncated digest of the poster's network address. One-way; used
+  /// solely to rate-limit and to let an admin block a spam source. Never shown.
+  authorHash  String
+  /// Soft delete so moderation is reversible and auditable.
+  hiddenAt    DateTime?
+  hiddenBy    String?
+  /// Why it was hidden (blocked word, spam, admin action).
+  hiddenReason String?
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([authorHash, createdAt])
+  @@index([hiddenAt, createdAt])
+}

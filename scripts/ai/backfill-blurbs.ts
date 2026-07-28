@@ -180,8 +180,8 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
       championshipMeetings: true, closestGameMargin: true, largestBlowoutMargin: true,
       currentStreakManagerId: true, currentStreakCount: true, longestStreakCount: true,
       lastMeetingSeason: true, summaryInputHash: true,
-      managerA: { select: { id: true, displayName: true, commProfile: { select: { styleSummary: true } } } },
-      managerB: { select: { id: true, displayName: true, commProfile: { select: { styleSummary: true } } } },
+      managerA: { select: { id: true, displayName: true, commProfile: { select: { styleSummary: true, isMock: true } } } },
+      managerB: { select: { id: true, displayName: true, commProfile: { select: { styleSummary: true, isMock: true } } } },
     },
   });
   console.log(`[rivalry] ${rivalries.length} pairing(s)`);
@@ -199,25 +199,77 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
       biggestMargin: r.largestBlowoutMargin,
       playoffMeetings: r.playoffMeetings,
       titleGameMeetings: r.championshipMeetings,
-      currentStreak: r.currentStreakManagerId === r.managerA.id
-        ? `${r.managerA.displayName} x${r.currentStreakCount}`
-        : r.currentStreakManagerId === r.managerB.id
-          ? `${r.managerB.displayName} x${r.currentStreakCount}`
-          : "none",
+      // Structured rather than pre-formatted. A previous version supplied the
+      // string "Michael Shea x7", and sixteen of the forty-five summaries
+      // simply pasted that token into the prose. Giving the writer a name and a
+      // number leaves it no shorthand to copy.
+      currentStreakHolder:
+        r.currentStreakManagerId === r.managerA.id
+          ? r.managerA.displayName
+          : r.currentStreakManagerId === r.managerB.id
+            ? r.managerB.displayName
+            : null,
+      currentStreakConsecutiveWins: r.currentStreakCount || null,
       lastMeetingSeason: r.lastMeetingSeason,
     };
     const styles = [
-      r.managerA.commProfile?.styleSummary ? `${r.managerA.displayName}: ${r.managerA.commProfile.styleSummary}` : null,
-      r.managerB.commProfile?.styleSummary ? `${r.managerB.displayName}: ${r.managerB.commProfile.styleSummary}` : null,
-    ].filter(Boolean).join("\n");
+      r.managerA.commProfile?.styleSummary && !r.managerA.commProfile.isMock
+        ? `${r.managerA.displayName}: ${r.managerA.commProfile.styleSummary}`
+        : null,
+      r.managerB.commProfile?.styleSummary && !r.managerB.commProfile.isMock
+        ? `${r.managerB.displayName}: ${r.managerB.commProfile.styleSummary}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
 
-    const inputHash = hashInputs(facts);
+    // The already-consolidated relationship summary for this exact pair, if one
+    // was distilled. Pairs are stored canonically (managerAId < managerBId), so
+    // both orderings are checked. This is tone/context research only — never
+    // quoted, and the raw archive is not touched.
+    const relationship = await prisma.managerRelationship.findFirst({
+      where: {
+        OR: [
+          { managerAId: r.managerA.id, managerBId: r.managerB.id },
+          { managerAId: r.managerB.id, managerBId: r.managerA.id },
+        ],
+        isMock: false,
+      },
+      select: { summary: true, relationshipType: true },
+    });
+
+    // Regenerating whenever the relationship context changes too, not just the
+    // numbers — otherwise a richer packet would be silently skipped.
+    const contextFingerprint = hashInputs({ styles, relationship: relationship?.summary ?? null });
+
+    const inputHash = hashInputs({ facts, context: contextFingerprint });
     if (r.summaryInputHash === inputHash) {
       console.log(`  skip (unchanged): ${r.managerA.displayName} vs ${r.managerB.displayName}`);
       continue;
     }
 
-    const prompt = `Write 2-3 sentences about this head-to-head rivalry for the league's Rivalries page.\n\nVerified head-to-head facts:\n${JSON.stringify(facts, null, 2)}${styles ? `\n\nHow each manager comes across in league chat (tone guidance only — do not quote or reference chat):\n${styles}` : ""}`;
+    const prompt = [
+      `Write 2-3 sentences about this head-to-head rivalry for the league's Rivalries page.`,
+      ``,
+      `Write like someone who has watched every one of these games, not like a stats API.`,
+      ``,
+      `Pick the two or three numbers that actually tell the story and build sentences around them. Do NOT walk the list reciting every field — a sentence like "an average margin of 23.16 with a closest margin of 1.28 and a biggest margin of 54.38" is a data dump, not writing.`,
+      ``,
+      `Never echo the raw formatting of the data: no "Michael Shea x7", no "0 title game meetings", no field names. Say "seven straight" and simply leave out anything that is zero — an absence is only worth a clause if it is genuinely the point.`,
+      ``,
+      `Every figure you do cite is printed on the same card, so it must match exactly. Do not round a record, do not flip who leads, and do not claim a playoff or title meeting that is not in the facts.`,
+      ``,
+      `Verified head-to-head facts:`,
+      JSON.stringify(facts, null, 2),
+      styles
+        ? `\nHow each manager comes across (tone guidance only — never quote it, never mention a chat):\n${styles}`
+        : ``,
+      relationship
+        ? `\nWhat this pairing is actually like (${relationship.relationshipType.toLowerCase()}; tone and angle only — never quote it, never mention a chat):\n${relationship.summary}`
+        : ``,
+    ]
+      .filter(Boolean)
+      .join("\n");
     const out = await write(ctx, prompt, 1200);
     if (!out) {
       console.log(`  [dry/mock] ${r.managerA.displayName} vs ${r.managerB.displayName}`);

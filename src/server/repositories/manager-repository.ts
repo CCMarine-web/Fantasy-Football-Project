@@ -754,7 +754,17 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
   if (!manager) return null;
 
   const games = await buildManagerGameLog(managerId);
-  const summary = careerSummary(games);
+  /*
+   * REGULAR-SEASON record, to match what the manager page actually displays.
+   *
+   * An all-games summary here produced bios that contradicted the table beside
+   * them: Logan Javier's read "career record sits at 62-84" while the career
+   * row on the same page showed 50-76, because the row is regular season and
+   * the packet was counting playoff and consolation games too. The two must be
+   * the same number, and the page's is the one a reader can check.
+   */
+  const summary = careerSummary(games, "regularSeason");
+  const postseason = careerSummary(games, "playoffs");
   const finishes = await buildSeasonFinishes(managerId);
   const champs = await prisma.championship.count({ where: { championManagerId: managerId } });
   const finals = await prisma.championship.count({
@@ -873,18 +883,62 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
   }
   if (allPicks > 0) tendencies.push(`${allPicks} total draft picks on record.`);
 
-  // Head-to-head history against the most-played opponents.
-  const topRivalries = (detailed?.headToHead ?? []).slice(0, 4).map((h) => ({
+  // Head-to-head against EVERY opponent, not just the top few.
+  //
+  // The relationship summaries handed to the writer are prose and contain their
+  // own numbers, which are not the verified head-to-head. Supplying only four
+  // records left the model reaching into that prose for the rest — one bio
+  // reported a 0-5 head-to-head that appears nowhere in the data. Giving it the
+  // full verified set removes the temptation.
+  const topRivalries = (detailed?.headToHead ?? []).map((h) => ({
     opponent: h.opponentName,
     record: `${h.wins}-${h.losses}${h.ties ? `-${h.ties}` : ""}`,
     note: `${h.wins + h.losses + h.ties} meetings, ${h.pointsForAvg} pts/gm scored`,
   }));
 
-  // Private, admin-only communication profile — tone guidance only.
-  const commProfile = await prisma.managerCommunicationProfile.findUnique({
-    where: { managerId },
-    select: { styleSummary: true, isMock: true },
-  });
+  // Private, admin-only context used purely as tone guidance. These are the
+  // ALREADY-CONSOLIDATED profiles; the raw chat archive is never re-read.
+  const [commProfile, leagueProfile, relationshipRows] = await Promise.all([
+    prisma.managerCommunicationProfile.findUnique({
+      where: { managerId },
+      select: { styleSummary: true, profile: true, isMock: true },
+    }),
+    prisma.leagueProfile.findFirst({
+      select: { humorStyle: true, communicationStyle: true, dynamics: true, traditions: true, isMock: true },
+    }),
+    prisma.managerRelationship.findMany({
+      where: { OR: [{ managerAId: managerId }, { managerBId: managerId }] },
+      orderBy: { intensity: "desc" },
+      take: 4,
+      select: {
+        summary: true,
+        relationshipType: true,
+        isMock: true,
+        managerA: { select: { id: true, displayName: true } },
+        managerB: { select: { id: true, displayName: true } },
+      },
+    }),
+  ]);
+
+  const leagueVoice =
+    leagueProfile && !leagueProfile.isMock
+      ? [
+          leagueProfile.humorStyle,
+          leagueProfile.communicationStyle,
+          leagueProfile.dynamics,
+          leagueProfile.traditions,
+        ]
+          .filter((part): part is string => !!part && part.trim().length > 0)
+          .join("\n\n")
+      : null;
+
+  const relationships = relationshipRows
+    .filter((r) => !r.isMock)
+    .map((r) => ({
+      withManager: r.managerA.id === managerId ? r.managerB.displayName : r.managerA.displayName,
+      type: r.relationshipType,
+      summary: r.summary,
+    }));
 
   const unavailable: string[] = [];
   if (txSeasons.length === 0) {
@@ -908,6 +962,7 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
     seasonsPlayed: played.length,
     careerRecord: `${summary.record.wins}-${summary.record.losses}${summary.record.ties ? `-${summary.record.ties}` : ""}`,
     winPct: Number(summary.winningPercentage.toFixed(3)),
+    postseasonRecord: `${postseason.record.wins}-${postseason.record.losses}`,
     championships: champs,
     finalsAppearances: finals,
     playoffAppearances: playoffAppearances(finishes),
@@ -932,6 +987,9 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
     tendencies,
     // Mock profiles are placeholder text and would mislead the writer.
     communicationStyle: commProfile && !commProfile.isMock ? commProfile.styleSummary : null,
+    personalityProfile: commProfile && !commProfile.isMock ? commProfile.profile : null,
+    leagueVoice,
+    relationships,
     unavailable,
   };
 }

@@ -17,6 +17,13 @@ import {
   type DraftFactor,
   type DraftFactorKey,
 } from "@/server/stats/draft-quality";
+import {
+  computeDraftReturns,
+  RETURN_FACTOR_META,
+  RETURN_WEIGHTS,
+  type ReturnFactorKey,
+  type TeamReturnInput,
+} from "@/server/stats/draft-returns";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import {
   generateDraftRationale,
@@ -65,52 +72,13 @@ export function gradeLetterToDisplay(grade: GradeLetter | null | undefined): str
  */
 export { letterFromDraftRank } from "@/server/stats/draft-quality";
 
-/**
- * REVISITED (post-season) grade heuristic, derived from actual finish.
- *
- * Mapping (N = teams in the season, r = finalRank, 1 = best):
- *   - Champion .............................. A+
- *   - Runner-up (r = 2) ..................... A
- *   - Made playoffs & top third (r <= ceil(N/3)) .. A-
- *   - Made playoffs, outside top third ..... B+
- *   - Missed playoffs, upper-middle (r <= ceil(N/2)) .. B
- *   - Missed playoffs, lower-middle ........ C+
- *   - Bottom third (r >= floor(2N/3)+1), not last two .. C
- *   - Bottom third, second-to-last .......... D
- *   - Last (r = N) .......................... F
- * finalRank/teamCount missing degrades gracefully (unknown finish treated as last).
+/*
+ * The REVISITED grade no longer derives from final standings. A
+ * `letterFromFinish` helper used to map champion -> A+ and last place -> F,
+ * which graded the season rather than the draft; it has been deleted so it
+ * cannot be wired back in. See `revisitDraftGradesForSeason` and
+ * server/stats/draft-returns.ts.
  */
-export function letterFromFinish({
-  isChampion,
-  madePlayoffs,
-  finalRank,
-  teamCount,
-}: {
-  isChampion: boolean;
-  madePlayoffs: boolean;
-  finalRank: number | null | undefined;
-  teamCount: number;
-}): GradeLetter {
-  if (isChampion) return GradeLetter.A_PLUS;
-
-  const N = teamCount > 0 ? teamCount : 12;
-  const r = finalRank && finalRank > 0 ? finalRank : N;
-
-  if (r === 1) return GradeLetter.A_PLUS; // champion flag missing but finished first
-  if (r === 2) return GradeLetter.A;
-
-  const topThird = Math.max(1, Math.ceil(N / 3));
-  const bottomThirdStart = Math.floor((2 * N) / 3) + 1;
-
-  if (madePlayoffs && r <= topThird) return GradeLetter.A_MINUS;
-  if (madePlayoffs) return GradeLetter.B_PLUS;
-
-  if (r === N) return GradeLetter.F;
-  if (r >= bottomThirdStart) return r >= N - 1 ? GradeLetter.D : GradeLetter.C;
-
-  if (r <= Math.ceil(N / 2)) return GradeLetter.B;
-  return GradeLetter.C_PLUS;
-}
 
 // ---------------------------------------------------------------------------
 // Generation
@@ -264,12 +232,26 @@ export interface RevisitGradesResult {
   seasonId: string;
   revisited: number;
   skipped: number;
+  /** Stale standings-derived grades removed because the season can't support one. */
+  cleared?: number;
+  /** Why no revisited grade could be issued for this season. */
+  unavailableReason?: string;
 }
 
 /**
- * Recompute REVISITED grades from actual finish, for COMPLETE seasons only.
- * Skips grades already revisited unless `force`. Exported so it can be wired
- * into the weekly pipeline (it becomes a no-op until the season completes).
+ * Recomputes REVISITED grades for COMPLETE seasons from what the drafted
+ * players actually produced.
+ *
+ * This used to grade final standings — champion A+, last place F — which
+ * measured the season, not the draft in hindsight. It now uses the draft-return
+ * model (server/stats/draft-returns.ts): per-game production of each selection
+ * against the slot it was taken at. Wins, playoff berths and championships are
+ * not inputs, and per-game measurement means an injury-shortened season does
+ * not retroactively fail a good pick.
+ *
+ * Seasons without per-player weekly scoring (the whole ESPN era) get NO
+ * revisited grade — any existing one is cleared, because a stale
+ * standings-derived letter is worse than an honest absence.
  */
 export async function revisitDraftGradesForSeason(
   seasonId: string,
@@ -284,71 +266,107 @@ export async function revisitDraftGradesForSeason(
     return { seasonId, revisited: 0, skipped: 0 };
   }
 
-  const [grades, teams] = await Promise.all([
+  const [grades, picks, playerTotals] = await Promise.all([
     prisma.draftGrade.findMany({
       where: { seasonId },
       include: { manager: { select: { displayName: true } } },
     }),
-    prisma.fantasyTeam.findMany({
-      where: { seasonId },
+    prisma.draftPick.findMany({
+      where: { draft: { seasonId } },
       select: {
+        round: true,
+        pickNumber: true,
+        isKeeper: true,
         managerId: true,
-        teamName: true,
-        wins: true,
-        losses: true,
-        ties: true,
-        pointsFor: true,
-        regularSeasonRank: true,
-        finalRank: true,
-        madePlayoffs: true,
-        isChampion: true,
+        fantasyTeamId: true,
+        player: { select: { id: true, firstName: true, lastName: true, position: true } },
+        manager: { select: { displayName: true } },
       },
+      orderBy: { pickNumber: "asc" },
+    }),
+    // Season-long production per player, from the weeks actually scored.
+    prisma.weeklyPlayerScore.groupBy({
+      by: ["playerId"],
+      where: { roster: { fantasyTeam: { seasonId } }, points: { not: null } },
+      _sum: { points: true },
+      _count: { _all: true },
     }),
   ]);
 
-  const teamCount = teams.length;
-  const teamByManager = new Map(teams.map((t) => [t.managerId, t]));
+  const production = new Map(playerTotals.map((row) => [row.playerId, { total: row._sum.points ?? 0, games: row._count._all }]));
+
+  const byManager = new Map<string, TeamReturnInput>();
+  for (const pick of picks) {
+    if (!pick.managerId) continue;
+    const entry =
+      byManager.get(pick.managerId) ??
+      ({
+        fantasyTeamId: pick.fantasyTeamId,
+        managerId: pick.managerId,
+        managerName: pick.manager?.displayName ?? "Unknown Manager",
+        picks: [],
+      } satisfies TeamReturnInput);
+    const stats = pick.player ? production.get(pick.player.id) : undefined;
+    entry.picks.push({
+      overallPickNumber: pick.pickNumber,
+      round: pick.round,
+      isKeeper: pick.isKeeper,
+      playerId: pick.player?.id ?? null,
+      playerName: pick.player ? `${pick.player.firstName} ${pick.player.lastName}` : "(no player on record)",
+      totalPoints: stats?.total ?? null,
+      gamesPlayed: stats?.games ?? 0,
+    });
+    byManager.set(pick.managerId, entry);
+  }
+
+  const returns = computeDraftReturns([...byManager.values()]);
   const safeguards = await getContentSafeguards();
 
   let revisited = 0;
   let skipped = 0;
+
+  if (!returns.available) {
+    // Clear any grade left over from the old standings-based rule.
+    const { count } = await prisma.draftGrade.updateMany({
+      where: { seasonId, OR: [{ revisitedGrade: { not: null } }, { revisitedRationale: { not: null } }] },
+      data: { revisitedGrade: null, revisitedRationale: null, revisitedAt: null },
+    });
+    return { seasonId, revisited: 0, skipped: grades.length, cleared: count, unavailableReason: returns.notes[0] };
+  }
+
+  const returnByManager = new Map(returns.teams.map((t) => [t.managerId, t]));
 
   for (const grade of grades) {
     if (grade.revisitedAt && !options.force) {
       skipped += 1;
       continue;
     }
-    const team = teamByManager.get(grade.managerId);
-    if (!team) {
+    const outcome = returnByManager.get(grade.managerId);
+    if (!outcome) {
       skipped += 1;
       continue;
     }
 
-    const revisitedGrade = letterFromFinish({
-      isChampion: team.isChampion,
-      madePlayoffs: team.madePlayoffs,
-      finalRank: team.finalRank,
-      teamCount,
-    });
-
-    const record = `${team.wins}-${team.losses}${team.ties ? `-${team.ties}` : ""}`;
+    const revisitedGrade = letterFromDraftRank(outcome.rank, returns.teams.length) as GradeLetter;
 
     const { text, providerName } = await generateDraftRevisitRationale(
       {
         seasonYear: season.year,
         managerName: grade.manager.displayName,
-        teamName: team.teamName,
         originalGrade: gradeLetterToDisplay(grade.grade),
         originalRationale: grade.rationale ?? undefined,
         revisitedGrade: gradeLetterToDisplay(revisitedGrade),
-        finish: {
-          record,
-          pointsFor: team.pointsFor,
-          regularSeasonRank: team.regularSeasonRank,
-          finalRank: team.finalRank,
-          madePlayoffs: team.madePlayoffs,
-          isChampion: team.isChampion,
-        },
+        returnScore: outcome.score,
+        returnRank: `${outcome.rank} of ${returns.teams.length}`,
+        factorBreakdown: [...outcome.factors]
+          .sort((a, b) => b.value - a.value)
+          .map((f) => `${f.label} ${Math.round(f.value)}/100 (${f.raw})`),
+        bestPicks: outcome.bestPicks.map(
+          (p) => `R${p.round} pick ${p.pickNumber} ${p.playerName}: ${p.pointsPerGame} pts/gm, ${p.valueDelta >= 0 ? "+" : ""}${p.valueDelta} slots vs where he went`,
+        ),
+        worstPicks: outcome.worstPicks.map(
+          (p) => `R${p.round} pick ${p.pickNumber} ${p.playerName}: ${p.pointsPerGame} pts/gm across ${p.gamesPlayed} game(s), ${p.valueDelta >= 0 ? "+" : ""}${p.valueDelta} slots`,
+        ),
       },
       safeguards
     );
@@ -359,7 +377,7 @@ export async function revisitDraftGradesForSeason(
         revisitedGrade,
         revisitedRationale: text,
         revisitedAt: new Date(),
-        providerName: providerName || grade.providerName || "heuristic",
+        providerName: providerName || grade.providerName || "computed",
       },
     });
     revisited += 1;
@@ -454,6 +472,10 @@ export interface DraftReportCardsView {
   weights: { key: string; label: string; description: string; weight: number }[];
   /** True when average draft position was available for this season. */
   adpAvailable: boolean;
+  /** Weights behind the revisited grade. */
+  revisitWeights: { key: string; label: string; description: string; weight: number }[];
+  /** False when the season has no per-player scoring, so no revisited grade exists. */
+  revisitAvailable: boolean;
 }
 
 /**
@@ -488,6 +510,8 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
       cards: [],
       weights: [],
       adpAvailable: false,
+      revisitWeights: [],
+      revisitAvailable: false,
     };
   }
 
@@ -509,6 +533,14 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
     seasonId: season.id,
     status: season.status,
     adpAvailable,
+    // A revisited grade exists only where per-player weekly scoring does.
+    revisitAvailable: grades.some((g) => g.revisitedGrade != null),
+    revisitWeights: (Object.keys(RETURN_WEIGHTS) as ReturnFactorKey[]).map((key) => ({
+      key,
+      label: RETURN_FACTOR_META[key].label,
+      description: RETURN_FACTOR_META[key].description,
+      weight: RETURN_WEIGHTS[key],
+    })),
     weights: activeKeys.map((key) => ({
       key,
       label: DRAFT_FACTOR_META[key].label,

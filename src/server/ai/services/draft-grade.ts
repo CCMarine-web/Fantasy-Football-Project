@@ -35,24 +35,30 @@ export interface DraftRationaleInput {
   dataCaveat?: string;
 }
 
-/** Structured facts the revisited (post-season) rationale is written from. */
+/**
+ * Structured facts the revisited rationale is written from.
+ *
+ * Note what is NOT here: record, playoff berth, final placing, championship.
+ * The revisited grade measures what the drafted players produced, so the writer
+ * is not given season outcomes it could mistake for the reason for the grade.
+ */
 export interface DraftRevisitInput {
   seasonYear: number;
   managerName: string;
-  teamName?: string;
   /** Original draft-day letter, e.g. "B+". */
   originalGrade: string;
   originalRationale?: string;
-  /** Newly derived post-season letter, e.g. "A-". */
+  /** Newly derived hindsight letter, e.g. "A-". */
   revisitedGrade: string;
-  finish: {
-    record: string;
-    pointsFor?: number;
-    regularSeasonRank?: number | null;
-    finalRank?: number | null;
-    madePlayoffs: boolean;
-    isChampion: boolean;
-  };
+  /** 0-100 draft-return composite, and where it placed in the room. */
+  returnScore: number;
+  returnRank: string;
+  /** Measured return factors, strongest first. */
+  factorBreakdown: string[];
+  /** The selections that most beat their slot. */
+  bestPicks: string[];
+  /** The selections that most fell short, with games played for context. */
+  worstPicks: string[];
 }
 
 /** Plain text + which provider produced it — no DB writes here. */
@@ -73,11 +79,16 @@ Write plain prose, not bullet points or JSON, and do not restate the pick list m
 
 const REVISIT_SYSTEM_PROMPT = `You are the draft analyst for "The Rat Trap", revisiting a draft grade now that the season is over.
 
-You are given the original draft-day grade and the manager's ACTUAL finish, plus the paper's new "revisited" letter. Write 3-5 sentences contrasting the draft-day take with how the season played out — vindication, regression, or a slow-motion disaster.
+WHAT THIS GRADE MEASURES
+Only what the DRAFTED PLAYERS went on to produce, per game, against the slot each was taken at. It is not a grade for the season. Wins, losses, playoff berths, final placings and championships are NOT inputs and are not in your packet — never claim or imply the grade reflects them, and never mention a title or a finish as the reason for it.
 
-Be explicit that this is hindsight and does not replace the original grade. A good draft that ran into injuries or bad luck was still a good draft; a poor draft rescued by waivers and trades was still a poor draft. Say so where the facts support it.
+WHAT TO WRITE
+3-5 sentences contrasting the draft-day read with what the picks actually returned. Name the specific selections in the packet: the ones that beat their slot, the ones that did not. Say plainly that this is hindsight and does not replace the original grade.
 
-Justify the revisited grade you were given; do not announce a different letter. Write plain prose, not bullet points or JSON.`;
+FAIRNESS
+Production is measured per game, so a player who was excellent before getting hurt still counts as an excellent pick — if a pick's games-played figure is low, treat that as bad luck rather than a bad decision, and say so. Equally, a manager who rescued a weak draft through waivers or trades gets no credit here, because none of those players are in this measure.
+
+Justify the revisited letter you were given; do not announce a different one. Write plain prose, not bullet points or JSON.`;
 
 export async function generateDraftRationale(
   input: DraftRationaleInput,

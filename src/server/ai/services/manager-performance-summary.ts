@@ -42,8 +42,11 @@ export interface ManagerPerfPacket {
   managerName: string;
   yearsActive: string; // e.g. "2017–2025"
   seasonsPlayed: number;
+  /** REGULAR-SEASON record — the same figure the manager page displays. */
   careerRecord: string;
   winPct: number;
+  /** Postseason record, kept separate so the two are never conflated. */
+  postseasonRecord: string;
   championships: number;
   finalsAppearances: number;
   playoffAppearances: number;
@@ -81,6 +84,19 @@ export interface ManagerPerfPacket {
   tendencies: string[];
   /** Private, approved communication profile — tone guidance only. */
   communicationStyle: string | null;
+  /**
+   * The fuller consolidated personality profile distilled from the archive:
+   * tone, humour, recurring themes, how they argue. Tone guidance ONLY — never
+   * quoted, never surfaced.
+   */
+  personalityProfile: string | null;
+  /** The league's own voice: shared humour, traditions, group dynamics. */
+  leagueVoice: string | null;
+  /**
+   * Consolidated relationship summaries with the managers this person has the
+   * most history with. Again tone and context only.
+   */
+  relationships: { withManager: string; type: string; summary: string }[];
   /** Explicit list of what the packet does NOT contain, to curb speculation. */
   unavailable: string[];
 }
@@ -100,13 +116,21 @@ WHAT TO COVER
 Work through the manager's whole career, but choose an angle and follow it rather than marching through a checklist. Somewhere across the piece you should touch: how good they have actually been; the difference between their ESPN years and their Sleeper years; championships and playoff record, or the lack of them; their best and worst seasons by name and year; how their scoring compares to the league and to their own past; where they are trending now; their draft, waiver and trade habits where the packet supports a claim; who they have history with; and how they come across in the league.
 
 VOICE
-Every manager must read differently. Vary your opening — do NOT begin every profile with the manager's name and a career record. Lead with whatever is genuinely most interesting about this particular manager: a title drought, a monster scoring year, a collapse, a rivalry, a reputation. The league's tone is sharp and funny; be willing to needle, but stay fair and never cruel.
+Write as someone who has been in this league for years, not as an outside analyst summarising a spreadsheet.
+
+Every manager must read differently. Vary your opening — do NOT begin every profile with the manager's name and a career record, and do not reuse a structure across managers. Lead with whatever is genuinely most interesting about THIS person: a title drought, a monster scoring year, a collapse, a rivalry, a reputation, a habit.
+
+"personalityProfile", "communicationStyle", "leagueVoice" and "relationships" describe how this person actually comes across and how the league talks. Let them shape the voice, the jokes and what you choose to needle — that is what makes the piece sound like it came from inside the league rather than from a stats page.
+
+Avoid the tells of generated copy: no "in conclusion", no "when it comes to", no "the numbers don't lie", no "a tale of two halves", no rhetorical question openers, no closing line that restates the opening. Prefer concrete detail to adjectives.
 
 HARD RULES
 - Use ONLY the facts in the packet. Never invent a stat, a championship, a trade, a quote or an event.
 - Numbers you cite must match the packet exactly. If the packet says 55-71, do not write "roughly .500".
+- "careerRecord" and every era record are REGULAR SEASON. They are the figures printed in the table beside this profile, so a reader can check them. Never add postseason games into a career or era record — "postseasonRecord" is separate and must be described as such. The era records must also sum to the career record; if they do not appear to, cite the packet's figures rather than your own arithmetic.
 - The packet's "unavailable" list names things that are genuinely not on record. Do not speculate about them and do not imply they are known.
-- "communicationStyle" is private research about how this person talks. Use it to shape TONE only. Never quote it, never quote a chat message, and never say anything that reveals the group chat exists.
+- "personalityProfile", "communicationStyle", "leagueVoice" and "relationships" are PRIVATE research distilled from material the public never sees. Use them to shape TONE, angle and the target of a joke. Never quote them, never quote or paraphrase a chat message, never attribute a specific saying to anyone, and never reveal or imply that a group chat exists or was analysed. A reader must not be able to tell these inputs were used.
+- Those four fields are PROSE and any numbers inside them are unverified. Ignore every figure they contain. Each statistic you cite must come from a numeric field of this packet — "careerRecord", the "eras" rows, the "seasons" rows, "topRivalries", "allPlayRecord" and so on. If you want to state a head-to-head record, take it from "topRivalries", never from a relationship summary.
 - If statsComplete is false, do not present the record as the manager's complete history.
 - Write for a reader, not a debugger. Never print a raw field name from the packet — no "recentPointsPerGame", "winPct", "allPlayRecord". Say "10.7 points a game above his career rate", "a .524 win rate", "his all-play record". If a value has no natural English phrasing, leave it out.
 - Respect the safeguards.`;

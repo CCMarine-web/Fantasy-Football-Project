@@ -103,6 +103,47 @@ export default async function DraftReportCardsPage({
                 the draft board itself.
               </p>
             ) : null}
+
+            {/* The second, separate grade. */}
+            <div className="mt-5 border-t border-border/40 pt-4">
+              <h3 className="font-heading text-base font-semibold">And the revisited grade</h3>
+              {view.revisitAvailable ? (
+                <>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    A separate, clearly-labelled hindsight grade measuring only what the drafted
+                    players went on to produce — per game, against the slot each was taken at. It
+                    never replaces the grade above. Wins, playoff berths and championships are{" "}
+                    <strong className="text-foreground">not</strong> inputs, so winning the league
+                    cannot rescue a bad draft and a title-less season cannot sink a good one.
+                  </p>
+                  <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {view.revisitWeights.map((w) => (
+                      <div key={w.key} className="flex gap-2">
+                        <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
+                          {Math.round(w.weight * 100)}%
+                        </dt>
+                        <dd className="text-sm text-muted-foreground">
+                          <span className="font-medium text-foreground">{w.label}</span> — {w.description}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="mt-2 flex items-start gap-2 text-[13px] text-muted-foreground">
+                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                    Production is measured per game played, so a pick whose season was cut short by
+                    injury is judged on how good the player was rather than how long he lasted.
+                  </p>
+                </>
+              ) : (
+                <p className="mt-1 flex items-start gap-2 text-sm text-muted-foreground">
+                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                  Not available for this season. A hindsight grade needs per-player weekly scoring,
+                  and ESPN does not expose that for its archived seasons. Rather than fall back to
+                  final standings — which would grade the season instead of the draft — no revisited
+                  grade is issued.
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -184,7 +225,7 @@ export default async function DraftReportCardsPage({
                         <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                           Revisited in hindsight
                           <span className="ml-1 font-normal normal-case">
-                            — how it actually played out. Does not replace the grade above.
+                            — what the picks actually produced. Does not replace the grade above.
                           </span>
                         </p>
                         <div className="flex items-start gap-3">

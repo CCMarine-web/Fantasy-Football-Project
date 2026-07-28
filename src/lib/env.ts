@@ -31,6 +31,11 @@ const envSchema = z.object({
   // Shared secret for the weekly cron endpoint. When set, /api/cron/weekly
   // requires `Authorization: Bearer <CRON_SECRET>` (Vercel Cron sends this).
   CRON_SECRET: z.string().optional().default(""),
+  // Extra blocked words for the PUBLIC chat page, comma-separated. Added to the
+  // built-in list (slurs + spam shapes) so moderation can be tightened without
+  // a deploy. Ordinary profanity is deliberately allowed — see
+  // server/chat/public-chat.ts.
+  CHAT_BLOCKED_WORDS: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -179,7 +179,11 @@ async function main() {
         const negated =
           /\b(no|not|never|neither|nor|yet to|without|haven'?t|hasn'?t|hadn'?t|didn'?t|don'?t|doesn'?t|awaits?|still waiting)\b/i.test(
             sentence,
-          );
+          ) ||
+          // "0 title game meetings" / "met 0 times in a title game" states the
+          // absence numerically rather than with a negative word.
+          /\b(0|zero)\s+(times?\s+in\s+a\s+)?(title|championship)/i.test(sentence) ||
+          /\b(title|championship)\s*(game)?\s*(meetings?|appearances?)\s*[:=]?\s*(0|zero)\b/i.test(sentence);
         if (!negated) {
           findings.push({
             pair,
