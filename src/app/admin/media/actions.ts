@@ -58,6 +58,50 @@ export async function changeCategoryAction(formData: FormData): Promise<void> {
 }
 
 /**
+ * Attach a PUNISHMENT photograph to a season's last-place punishment.
+ *
+ * Punishment photographs arrive with filenames like IMG_1364.jpg — no year, no
+ * name, nothing an importer can safely infer — so they land here PENDING and a
+ * human supplies the year, the manager and the description. Doing so approves
+ * and publishes the asset, because attaching it is the deliberate act of
+ * putting it on the public Hall of Shame.
+ */
+export async function assignPunishmentPhotoAction(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const year = Number(formData.get("year"));
+  const managerId = String(formData.get("managerId") ?? "").trim();
+  const description = String(formData.get("description") ?? "").trim();
+  if (!id || !Number.isInteger(year) || year < 2000 || year > 2100) return;
+
+  const asset = await prisma.mediaAsset.findUnique({ where: { id }, select: { url: true } });
+  if (!asset) return;
+
+  const season = await prisma.season.findFirst({ where: { year }, select: { id: true } });
+  const data = {
+    managerId: managerId || null,
+    description: description || `${year} last-place punishment.`,
+    photoUrl: asset.url,
+    seasonId: season?.id ?? null,
+  };
+  await prisma.$transaction([
+    prisma.punishment.upsert({ where: { year }, update: data, create: { year, ...data } }),
+    prisma.mediaAsset.update({
+      where: { id },
+      data: {
+        category: "PUNISHMENT",
+        managerId: managerId || null,
+        approvalStatus: "APPROVED",
+        isPublished: true,
+        notes: `${year} last-place punishment.`,
+      },
+    }),
+  ]);
+  revalidatePath("/admin/media");
+  revalidatePath("/hall-of-shame");
+}
+
+/**
  * Set a PROFILE media asset as its linked manager's photo. Also approves +
  * publishes the asset (a chosen profile photo is, by definition, public).
  */

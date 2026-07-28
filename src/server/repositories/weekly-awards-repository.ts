@@ -26,7 +26,9 @@ export const WEEKLY_AWARD_LABELS: Record<WeeklyAwardType, string> = {
  */
 export async function computeWeeklyAwards(seasonId: string, week: number): Promise<number> {
   const teams = await prisma.matchupTeam.findMany({
-    where: { matchup: { seasonId, week, isPlayoff: false }, score: { not: null } },
+    // Unverified scores (abandoned teams, unplayed weeks) cannot win or lose
+    // an award. See scripts/import/audit-suspect-scores.ts.
+    where: { matchup: { seasonId, week, isPlayoff: false }, score: { not: null }, verifiedScore: true },
     include: { fantasyTeam: { select: { id: true, managerId: true, manager: { select: { displayName: true } } } } },
   });
   if (teams.length === 0) return 0;

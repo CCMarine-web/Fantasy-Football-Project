@@ -343,8 +343,15 @@ model MatchupTeam {
   projectedScore Float?
   benchPoints    Float?
   isWinner       Boolean?
+  /// False when the score is on record but could not be verified as a real
+  /// result of a real contest — an unplayed week, an abandoned team, a missing
+  /// platform score, or an import artefact. The score is kept either way; this
+  /// only decides whether it is eligible for records and the Hall of Shame.
+  /// See scripts/import/audit-suspect-scores.ts.
+  verifiedScore  Boolean     @default(true)
   createdAt      DateTime    @default(now())
 
+  @@index([verifiedScore])
   @@unique([matchupId, fantasyTeamId])
   @@index([fantasyTeamId])
 }
@@ -632,6 +639,9 @@ model Rivalry {
   longestStreakCount      Int      @default(0)
   /// Meetings that decided a championship (final-round playoff matchups).
   championshipMeetings    Int      @default(0)
+  /// Meetings in the toilet bowl or a placement game below it. Postseason,
+  /// but never counted or described as playoff meetings.
+  consolationMeetings     Int      @default(0)
   /// Most recent result.
   lastMeetingWinnerId     String?
   lastMeetingSeason       Int?
@@ -668,6 +678,8 @@ model RivalryMeeting {
   winnerId      String?
   isPlayoff     Boolean  @default(false)
   isChampionship Boolean @default(false)
+  /// Which postseason bracket the meeting belonged to, when it was one.
+  bracketType   BracketType?
   /// Which system the underlying result came from.
   dataSource    SeasonDataSource @default(SLEEPER)
 
@@ -1304,6 +1316,10 @@ enum MediaCategory {
   LOGIN
   BACKGROUND
   EVENT
+  /// Last-place punishment photographs. They arrive with nothing in the
+  /// filename identifying a season or a manager, so they stay PENDING until an
+  /// admin assigns both — the Hall of Shame only renders approved ones.
+  PUNISHMENT
   UNCERTAIN
 }
 

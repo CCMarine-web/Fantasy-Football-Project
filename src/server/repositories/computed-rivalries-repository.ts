@@ -19,6 +19,7 @@ export interface RivalryMeetingView {
   winnerId: string | null;
   isPlayoff: boolean;
   isChampionship: boolean;
+  bracketType: "WINNERS" | "CONSOLATION" | null;
 }
 
 export interface RivalryView {
@@ -39,7 +40,10 @@ export interface RivalryView {
   managerAAvg: number | null;
   managerBAvg: number | null;
   averageMargin: number | null;
+  /** Championship-bracket meetings only. */
   playoffMeetings: number;
+  /** Toilet-bowl and placement meetings — postseason, but not playoff games. */
+  consolationMeetings: number;
   championshipMeetings: number;
   closestGameMargin: number | null;
   closestGameSeason: number | null;
@@ -72,6 +76,7 @@ const SELECT = {
   managerBPoints: true,
   averageMargin: true,
   playoffMeetings: true,
+  consolationMeetings: true,
   championshipMeetings: true,
   closestGameMargin: true,
   closestGameSeason: true,
@@ -123,6 +128,7 @@ function toView(r: RivalryRow, meetings: RivalryMeetingView[] = []): RivalryView
     managerBAvg: games ? Number((r.managerBPoints / games).toFixed(1)) : null,
     averageMargin: r.averageMargin,
     playoffMeetings: r.playoffMeetings,
+    consolationMeetings: r.consolationMeetings,
     championshipMeetings: r.championshipMeetings,
     closestGameMargin: r.closestGameMargin,
     closestGameSeason: r.closestGameSeason,
@@ -170,6 +176,7 @@ export async function getRivalryDetail(id: string): Promise<RivalryView | null> 
       winnerId: true,
       isPlayoff: true,
       isChampionship: true,
+      bracketType: true,
     },
   });
   return toView(row, meetings);

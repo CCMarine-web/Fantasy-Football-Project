@@ -25,6 +25,12 @@ export interface HallOfShame {
   toiletBowl: ToiletBowlEntry[];
   benchYearsCovered: number[]; // seasons that have player-level data for bench calc
   allYears: number[];
+  /**
+   * Scores left out because they could not be verified as real contest results.
+   * Surfaced so the page can say so rather than silently dropping them.
+   * See scripts/import/audit-suspect-scores.ts.
+   */
+  excludedScores: number;
 }
 
 interface Mt {
@@ -45,8 +51,14 @@ interface Mt {
  * flagged in `benchYearsCovered`, and the entry notes the coverage.
  */
 export async function getHallOfShame(): Promise<HallOfShame> {
+  /*
+   * Unverified scores are excluded here for the same reason as in the records:
+   * a manager who stopped setting a lineup posted three 0.0s, and putting those
+   * at the top of the Hall of Shame mistakes an abandoned team for a bad week.
+   * See scripts/import/audit-suspect-scores.ts.
+   */
   const rows = await prisma.matchupTeam.findMany({
-    where: { score: { not: null } },
+    where: { score: { not: null }, verifiedScore: true },
     include: {
       fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } },
       matchup: {
@@ -179,10 +191,15 @@ export async function getHallOfShame(): Promise<HallOfShame> {
     .map((t) => ({ year: t.season.year, managerId: t.manager.id, managerName: t.manager.displayName, teamName: t.teamName, record: `${t.wins}-${t.losses}${t.ties ? `-${t.ties}` : ""}`, pointsFor: t.pointsFor }))
     .sort((a, b) => b.year - a.year);
 
+  const excludedScores = await prisma.matchupTeam.count({
+    where: { verifiedScore: false, score: { not: null } },
+  });
+
   return {
     entries,
     toiletBowl,
     benchYearsCovered: [...benchYears].sort((a, b) => a - b),
     allYears: [...allYearsSet].sort((a, b) => a - b),
+    excludedScores,
   };
 }

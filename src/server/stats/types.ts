@@ -6,11 +6,23 @@
 // in the schema, restated here so this package stays free of Prisma imports.
 export type GameDataSource = "SLEEPER" | "ESPN" | "MANUAL";
 
+// Which postseason bracket a game belonged to. Mirrors the BracketType enum in
+// the schema. `null`/absent means the game is either a regular-season game or a
+// postseason game whose bracket could not be established — never a guess.
+export type GameBracket = "WINNERS" | "CONSOLATION";
+
 // A single game from one manager's point of view.
 export interface GameResult {
   week: number;
   season: number;
   isPlayoff: boolean;
+  /**
+   * Set for postseason games. WINNERS is the championship bracket — the games
+   * that decide the title. CONSOLATION is the toilet bowl and the placement
+   * games below it, which decide nothing about the title and must not be
+   * counted as playoff wins.
+   */
+  bracket?: GameBracket | null;
   pointsFor: number;
   pointsAgainst: number;
   opponentId: string;
@@ -82,5 +94,22 @@ export interface EloRating {
   rating: number;
 }
 
-// Options controlling a career-stats query: restrict to regular season, playoffs, or both (default).
-export type SeasonSegment = "all" | "regularSeason" | "playoffs";
+/**
+ * Which slice of a game log a career statistic covers.
+ *
+ *   all                  every game played, regular season and postseason
+ *   regularSeason        regular season only — no postseason of any kind
+ *   playoffs             every postseason game, both brackets
+ *   championshipBracket  postseason games that decide the title
+ *   consolation          the toilet bowl and other placement games
+ *
+ * `playoffs` is retained for callers that genuinely want all postseason games,
+ * but nothing user-facing should label it "playoff record": a toilet-bowl game
+ * is a postseason game and is not a playoff game.
+ */
+export type SeasonSegment =
+  | "all"
+  | "regularSeason"
+  | "playoffs"
+  | "championshipBracket"
+  | "consolation";

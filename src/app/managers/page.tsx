@@ -5,6 +5,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { Badge } from "@/components/ui/badge";
 import { getStatsCoverage, listManagerRows } from "@/server/repositories/manager-repository";
+import { getCareerLuck } from "@/server/repositories/luck-repository";
+import { LuckScoreBadge } from "@/components/managers/luck-score";
+import { LUCK_CLOSE_GAME_MARGIN, LUCK_WEIGHTS } from "@/server/stats/luck";
 import { Trophy, Users, ChevronRight, Info } from "lucide-react";
 import { BRAND } from "@/lib/branding";
 
@@ -18,7 +21,11 @@ export default async function ManagersPage({
   const { status } = await searchParams;
   const tab: "active" | "retired" = status === "retired" ? "retired" : "active";
 
-  const [all, coverage] = await Promise.all([listManagerRows(), getStatsCoverage()]);
+  const [all, coverage, luckByManager] = await Promise.all([
+    listManagerRows(),
+    getStatsCoverage(),
+    getCareerLuck(),
+  ]);
   const active = all.filter((m) => m.isActive);
   const retired = all.filter((m) => !m.isActive);
   const managers = tab === "retired" ? retired : active;
@@ -46,6 +53,54 @@ export default async function ManagersPage({
           </p>
         </div>
       ) : null}
+
+      {/*
+       * What each record on this page counts. Three different postseason
+       * records used to be presented as one "career record", so a manager who
+       * went 2-0 in a toilet bowl read as having won two playoff games.
+       */}
+      <details className="mt-4 rounded-md border border-border/60 bg-card/30 px-4 py-3 text-sm">
+        <summary className="cursor-pointer font-medium">
+          How records and the Luck Score are defined
+        </summary>
+        <dl className="mt-3 space-y-2 text-sm text-muted-foreground">
+          <div>
+            <dt className="inline font-medium text-foreground">Regular season (reg.) — </dt>
+            <dd className="inline">
+              the scheduled weeks before the postseason. Nothing else is counted, so this is the
+              record that appears in the season-by-season tables and in the written profiles.
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-medium text-foreground">Playoffs — </dt>
+            <dd className="inline">
+              championship-bracket games only: the games that decide the title. A manager with no
+              playoff berths has no playoff record, not an 0-0 one.
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-medium text-foreground">Consolation (consol.) — </dt>
+            <dd className="inline">
+              the toilet bowl and the placement games below it. These are postseason games and the
+              site never calls them playoff games.
+            </dd>
+          </div>
+          <div>
+            <dt className="inline font-medium text-foreground">Luck Score — </dt>
+            <dd className="inline">
+              0 to 100 with 50 neutral, measuring how much the schedule helped rather than how good
+              a manager is. Wins against all-play expectation{" "}
+              {(LUCK_WEIGHTS.winsVsExpected * 100).toFixed(0)}%, opponent scoring{" "}
+              {(LUCK_WEIGHTS.opponentScoring * 100).toFixed(0)}%, record in games under{" "}
+              {LUCK_CLOSE_GAME_MARGIN} points {(LUCK_WEIGHTS.closeGames * 100).toFixed(0)}%, schedule
+              strength {(LUCK_WEIGHTS.scheduleStrength * 100).toFixed(0)}%, championship-bracket draw{" "}
+              {(LUCK_WEIGHTS.postseasonDraw * 100).toFixed(0)}%. Computed from recorded scores; a
+              manager with too few games shows &ldquo;not enough games&rdquo; rather than
+              &ldquo;neutral&rdquo;. Full breakdown is on each manager&rsquo;s page.
+            </dd>
+          </div>
+        </dl>
+      </details>
 
       {/* Active / Retired tabs. Retired managers are those no longer in the
           league — they keep their full history and are never merged into an
@@ -104,15 +159,35 @@ export default async function ManagersPage({
                       </div>
                     </div>
 
-                    {/* Stats */}
+                    {/* Stats. Every record here is labelled with the games it
+                        covers — a career record, a championship-bracket record
+                        and a consolation record are three different facts. */}
                     <div className="flex flex-1 flex-wrap items-center gap-2">
-                      <Badge variant="secondary" title="Career record">
+                      <Badge variant="secondary" title="Career regular-season record">
                         {m.careerWins}-{m.careerLosses}
-                        {m.careerTies ? `-${m.careerTies}` : ""}
+                        {m.careerTies ? `-${m.careerTies}` : ""} reg.
                       </Badge>
-                      <Badge variant="outline" title="Win %" className="font-mono">
+                      <Badge variant="outline" title="Regular-season win %" className="font-mono">
                         {(m.winningPercentage * 100).toFixed(0)}%
                       </Badge>
+                      {m.playoffWins + m.playoffLosses > 0 ? (
+                        <Badge
+                          variant="outline"
+                          title="Championship-bracket record — the games that decide the title"
+                          className="font-mono"
+                        >
+                          {m.playoffWins}-{m.playoffLosses} playoffs
+                        </Badge>
+                      ) : null}
+                      {m.consolationWins + m.consolationLosses > 0 ? (
+                        <Badge
+                          variant="outline"
+                          title="Toilet-bowl and placement games — postseason, but not playoff games"
+                          className="font-mono text-muted-foreground"
+                        >
+                          {m.consolationWins}-{m.consolationLosses} consol.
+                        </Badge>
+                      ) : null}
                       {m.championships > 0 ? (
                         <Badge className="gap-1 bg-gold text-gold-foreground">
                           <Trophy className="h-3 w-3" />
@@ -127,10 +202,13 @@ export default async function ManagersPage({
                           Best: {m.bestFinish === 1 ? "🏆 1st" : `#${m.bestFinish}`}
                         </Badge>
                       ) : null}
-                      <Badge variant="outline" title="Current season" className="font-mono">
+                      <Badge variant="outline" title="Current season, regular season" className="font-mono">
                         {m.currentWins}-{m.currentLosses}
                         {m.currentTies ? `-${m.currentTies}` : ""} now
                       </Badge>
+                      {luckByManager.get(m.managerId) ? (
+                        <LuckScoreBadge luck={luckByManager.get(m.managerId)!} />
+                      ) : null}
                     </div>
 
                     <ChevronRight className="hidden h-5 w-5 shrink-0 text-muted-foreground sm:block" />

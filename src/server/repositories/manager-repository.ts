@@ -10,6 +10,7 @@ import {
   playoffAppearances,
 } from "@/server/stats";
 import type { GameDataSource, GameResult, SeasonFinish } from "@/server/stats/types";
+import { getManagerLuck } from "@/server/repositories/luck-repository";
 import type { ManagerSummary } from "@/types/view-models";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import { generateScoutingReport } from "@/server/ai/services/scouting-report";
@@ -42,6 +43,7 @@ export async function buildManagerGameLog(managerId: string): Promise<GameResult
       week: mt.matchup.week,
       season: mt.matchup.season.year,
       isPlayoff: mt.matchup.isPlayoff,
+      bracket: mt.matchup.bracketType,
       pointsFor: mt.score,
       pointsAgainst: opponent.score,
       opponentId: opponent.fantasyTeam.managerId,
@@ -161,9 +163,22 @@ export interface ManagerEraStats {
   losses: number;
   ties: number;
   winningPercentage: number;
-  /** Postseason games, including consolation-bracket games, kept separate. */
+  /**
+   * Championship-bracket record — the games that decide the title, and the only
+   * ones the site calls a playoff record. Consolation is reported separately
+   * below, because going 2-0 in a toilet bowl is not a playoff run.
+   */
   playoffWins: number;
   playoffLosses: number;
+  /** Toilet-bowl and placement games: postseason, but not for the title. */
+  consolationWins: number;
+  consolationLosses: number;
+  /**
+   * Postseason games whose bracket is not recorded, so they are in neither
+   * split above. Non-zero means the two splits do not sum to the postseason
+   * total, and the page says so rather than quietly dropping them.
+   */
+  unclassifiedPostseasonGames: number;
   pointsFor: number;
   pointsAgainst: number;
   /** Regular-season points per game — the only fair way to compare unequal eras. */
@@ -198,6 +213,17 @@ function buildEraStats(games: GameResult[], seasons: EraSeasonFacts[]): ManagerE
   const build = (key: ManagerEraStats["key"], label: string, scopedGames: GameResult[], scopedSeasons: EraSeasonFacts[]): ManagerEraStats => {
     const regular = careerSummary(scopedGames, "regularSeason");
     const postseason = careerSummary(scopedGames, "playoffs");
+    const title = careerSummary(scopedGames, "championshipBracket");
+    const consolation = careerSummary(scopedGames, "consolation");
+    const postseasonGames =
+      postseason.record.wins + postseason.record.losses + postseason.record.ties;
+    const classified =
+      title.record.wins +
+      title.record.losses +
+      title.record.ties +
+      consolation.record.wins +
+      consolation.record.losses +
+      consolation.record.ties;
     // High/low single-game marks read across every game played, postseason
     // included — a career-best score is a career-best score.
     const allGames = careerSummary(scopedGames);
@@ -215,8 +241,11 @@ function buildEraStats(games: GameResult[], seasons: EraSeasonFacts[]): ManagerE
       losses: regular.record.losses,
       ties: regular.record.ties,
       winningPercentage: Number(regular.winningPercentage.toFixed(3)),
-      playoffWins: postseason.record.wins,
-      playoffLosses: postseason.record.losses,
+      playoffWins: title.record.wins,
+      playoffLosses: title.record.losses,
+      consolationWins: consolation.record.wins,
+      consolationLosses: consolation.record.losses,
+      unclassifiedPostseasonGames: postseasonGames - classified,
       pointsFor: Number(regular.totalPointsFor.toFixed(1)),
       pointsAgainst: Number(regular.totalPointsAgainst.toFixed(1)),
       pointsForPerGame: gameCount ? Number((regular.totalPointsFor / gameCount).toFixed(1)) : null,
@@ -283,6 +312,13 @@ export async function getManagerProfileDetailed(managerId: string) {
   }
 
   const games = await buildManagerGameLog(managerId);
+  /*
+   * Two summaries, deliberately. `regular` is the record the page quotes and
+   * the one every other surface agrees with. `summary` spans every game played
+   * and is used only for career highs and lows, where a postseason score is
+   * still a real score.
+   */
+  const regular = careerSummary(games, "regularSeason");
   const summary = careerSummary(games);
   const finishes = await buildSeasonFinishes(managerId);
 
@@ -312,8 +348,13 @@ export async function getManagerProfileDetailed(managerId: string) {
   const bestSeason = [...playedSeasons].sort((a, b) => winPct(b) - winPct(a) || b.pointsFor - a.pointsFor)[0] ?? null;
   const worstSeason = [...playedSeasons].sort((a, b) => winPct(a) - winPct(b) || a.pointsFor - b.pointsFor)[0] ?? null;
 
-  // Margins, close games, blowouts (regular + playoff decided games).
-  const decided = games.filter((g) => g.result !== "T");
+  /*
+   * Margins, close games and blowouts read the REGULAR SEASON only. Mixing in
+   * postseason games meant a manager's close-game record moved when they
+   * played a toilet-bowl game, and the Luck Score — which uses the same
+   * close-game split — has to be measured over a schedule nobody chose.
+   */
+  const decided = games.filter((g) => !g.isPlayoff && g.result !== "T");
   const wins = decided.filter((g) => g.result === "W");
   const losses = decided.filter((g) => g.result === "L");
   const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
@@ -337,6 +378,10 @@ export async function getManagerProfileDetailed(managerId: string) {
   const numTeamsSeen = new Set<number>();
   const finishCounts = new Map<number, number>(); // finish position -> count
   for (const g of games) {
+    // Regular season only: in a postseason week most of the league is no
+    // longer playing for anything, so ranking a title-game score against six
+    // dead teams' scores says nothing.
+    if (g.isPlayoff) continue;
     const key = weekKey(g.season, g.week);
     const scores = scoresByWeek.get(key);
     if (!scores) continue;
@@ -356,10 +401,6 @@ export async function getManagerProfileDetailed(managerId: string) {
   }
   const allPlayGames = apW + apL + apT;
   const allPlayWinPct = allPlayGames ? (apW + 0.5 * apT) / allPlayGames : 0;
-  // Luck = actual win% vs all-play win%. If you win more than your all-play
-  // rate suggests, you've been lucky (favorable schedule); less, unlucky.
-  const luckDelta = summary.winningPercentage - allPlayWinPct;
-  const luckLabel = luckDelta > 0.03 ? "lucky" : luckDelta < -0.03 ? "unlucky" : "neutral";
   const maxFinishSlots = Math.max(1, ...numTeamsSeen);
   const finishDistribution = Array.from({ length: maxFinishSlots }, (_, i) => ({
     finish: i + 1,
@@ -414,12 +455,19 @@ export async function getManagerProfileDetailed(managerId: string) {
     }),
   );
 
+  // The Luck Score, computed from recorded scores; see server/stats/luck.ts.
+  const luck = await getManagerLuck(managerId);
+
   return {
     manager,
     seasonLines,
     eraStats,
+    luck,
     stats: {
       ...summary,
+      /** Regular-season record — the one the tables on the page show. */
+      regularSeasonRecord: regular.record,
+      regularSeasonWinPct: Number(regular.winningPercentage.toFixed(3)),
       championships: champs,
       playoffAppearances: playoffAppearances(finishes),
       finalsAppearances: finalsAppearances(finishes),
@@ -430,7 +478,6 @@ export async function getManagerProfileDetailed(managerId: string) {
       closeRecord,
       blowoutRecord,
       allPlay: { wins: apW, losses: apL, ties: apT, winPct: Number(allPlayWinPct.toFixed(3)) },
-      luck: { delta: Number(luckDelta.toFixed(3)), label: luckLabel },
     },
     bestSeason,
     worstSeason,
@@ -550,10 +597,22 @@ export interface ManagerRow {
   currentTeamName: string;
   yearsActive: string;
   seasonsPlayed: number;
+  /**
+   * REGULAR SEASON only, to match the manager profile, the season-by-season
+   * rows and the scouting reports. This list used to show an all-games record
+   * while every other surface showed regular season, so the same manager read
+   * 64-82 here and 55-71 one click away.
+   */
   careerWins: number;
   careerLosses: number;
   careerTies: number;
   winningPercentage: number;
+  /** Championship bracket only — the games that decide the title. */
+  playoffWins: number;
+  playoffLosses: number;
+  /** Toilet bowl and placement games, which decide nothing about the title. */
+  consolationWins: number;
+  consolationLosses: number;
   championships: number;
   finalsAppearances: number;
   currentWins: number;
@@ -619,7 +678,9 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
   const rows: ManagerRow[] = [];
   for (const m of managers) {
     const games = gameLogs.get(m.id) ?? [];
-    const summary = careerSummary(games);
+    const summary = careerSummary(games, "regularSeason");
+    const title = careerSummary(games, "championshipBracket");
+    const consolation = careerSummary(games, "consolation");
     const champs = champCount.get(m.id) ?? 0;
     const finals = finalsCount.get(m.id) ?? 0;
 
@@ -640,6 +701,10 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
       careerLosses: summary.record.losses,
       careerTies: summary.record.ties,
       winningPercentage: Number(summary.winningPercentage.toFixed(3)),
+      playoffWins: title.record.wins,
+      playoffLosses: title.record.losses,
+      consolationWins: consolation.record.wins,
+      consolationLosses: consolation.record.losses,
       championships: champs,
       finalsAppearances: finals,
       currentWins: current?.wins ?? 0,
@@ -736,6 +801,7 @@ async function buildAllManagerGameLogs(): Promise<Map<string, GameResult[]>> {
       week: mt.matchup.week,
       season: mt.matchup.season.year,
       isPlayoff: mt.matchup.isPlayoff,
+      bracket: mt.matchup.bracketType,
       pointsFor: mt.score,
       pointsAgainst: opponent.score,
       opponentId: opponent.fantasyTeam.managerId ?? "",
@@ -764,7 +830,9 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
    * the same number, and the page's is the one a reader can check.
    */
   const summary = careerSummary(games, "regularSeason");
-  const postseason = careerSummary(games, "playoffs");
+  // Split, because the writer must never call a toilet-bowl win a playoff win.
+  const titleBracket = careerSummary(games, "championshipBracket");
+  const consolation = careerSummary(games, "consolation");
   const finishes = await buildSeasonFinishes(managerId);
   const champs = await prisma.championship.count({ where: { championManagerId: managerId } });
   const finals = await prisma.championship.count({
@@ -962,7 +1030,14 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
     seasonsPlayed: played.length,
     careerRecord: `${summary.record.wins}-${summary.record.losses}${summary.record.ties ? `-${summary.record.ties}` : ""}`,
     winPct: Number(summary.winningPercentage.toFixed(3)),
-    postseasonRecord: `${postseason.record.wins}-${postseason.record.losses}`,
+    playoffRecord:
+      titleBracket.record.wins + titleBracket.record.losses > 0
+        ? `${titleBracket.record.wins}-${titleBracket.record.losses}`
+        : "no championship-bracket games played",
+    consolationRecord:
+      consolation.record.wins + consolation.record.losses > 0
+        ? `${consolation.record.wins}-${consolation.record.losses}`
+        : "no consolation games played",
     championships: champs,
     finalsAppearances: finals,
     playoffAppearances: playoffAppearances(finishes),
@@ -982,7 +1057,12 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
     recentTrajectory: trajectory,
     allPlayRecord: detailed ? `${detailed.stats.allPlay.wins}-${detailed.stats.allPlay.losses}` : "—",
     allPlayWinPct: detailed?.stats.allPlay.winPct ?? 0,
-    luckLabel: detailed?.stats.luck.label ?? "unknown",
+    luckScore: detailed?.luck.career?.score ?? null,
+    luckSummary: detailed?.luck.career
+      ? detailed.luck.career.score == null
+        ? "too few games to measure schedule luck"
+        : `${detailed.luck.career.label} (${detailed.luck.career.score}/100, where 50 is neutral)`
+      : "too few games to measure schedule luck",
     topRivalries,
     tendencies,
     // Mock profiles are placeholder text and would mislead the writer.

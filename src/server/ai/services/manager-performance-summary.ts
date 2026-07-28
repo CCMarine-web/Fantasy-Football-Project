@@ -45,8 +45,16 @@ export interface ManagerPerfPacket {
   /** REGULAR-SEASON record — the same figure the manager page displays. */
   careerRecord: string;
   winPct: number;
-  /** Postseason record, kept separate so the two are never conflated. */
-  postseasonRecord: string;
+  /**
+   * Championship-bracket record — the games that decide the title, and the
+   * ONLY thing the site calls a playoff record.
+   */
+  playoffRecord: string;
+  /**
+   * Toilet-bowl and placement games. Postseason, but not playoff games, and
+   * never to be described as such.
+   */
+  consolationRecord: string;
   championships: number;
   finalsAppearances: number;
   playoffAppearances: number;
@@ -76,8 +84,13 @@ export interface ManagerPerfPacket {
   /** All-play record — results with schedule luck removed. */
   allPlayRecord: string;
   allPlayWinPct: number;
-  /** Positive = won more than the scoring deserved. */
-  luckLabel: string;
+  /**
+   * Luck Score out of 100, 50 neutral: how much the schedule helped. Null when
+   * too few games have been played to measure it.
+   */
+  luckScore: number | null;
+  /** One sentence naming the band, e.g. "Slightly unlucky (43/100)". */
+  luckSummary: string;
   /** Head-to-head records against the managers played most. */
   topRivalries: { opponent: string; record: string; note: string }[];
   /** Draft/waiver/trade behaviour, only where the data supports a claim. */
@@ -127,12 +140,14 @@ Avoid the tells of generated copy: no "in conclusion", no "when it comes to", no
 HARD RULES
 - Use ONLY the facts in the packet. Never invent a stat, a championship, a trade, a quote or an event.
 - Numbers you cite must match the packet exactly. If the packet says 55-71, do not write "roughly .500".
-- "careerRecord" and every era record are REGULAR SEASON. They are the figures printed in the table beside this profile, so a reader can check them. Never add postseason games into a career or era record — "postseasonRecord" is separate and must be described as such. The era records must also sum to the career record; if they do not appear to, cite the packet's figures rather than your own arithmetic.
+- "careerRecord" and every era record are REGULAR SEASON. They are the figures printed in the table beside this profile, so a reader can check them. Never add postseason games into a career or era record. The era records must also sum to the career record; if they do not appear to, cite the packet's figures rather than your own arithmetic.
+- The postseason is split in two and the split matters. The playoff record covers championship-bracket games only — the games that decide the title. The consolation record covers the toilet bowl and the placement games below it. NEVER describe a consolation game as a playoff game, never add the two together, and never call a good consolation record a playoff run. Going 2-0 in a toilet bowl is not a playoff record; if anything it is worth a joke.
+- The Luck Score runs 0 to 100 with 50 neutral and measures how much the SCHEDULE helped, not how good the manager is. Above 50 the record flatters the scoring; below 50 it understates it. A high score is not a compliment and a low one is not an insult. If the score is null, there are too few games to say — do not describe that manager as having neutral or average luck.
 - The packet's "unavailable" list names things that are genuinely not on record. Do not speculate about them and do not imply they are known.
 - "personalityProfile", "communicationStyle", "leagueVoice" and "relationships" are PRIVATE research distilled from material the public never sees. Use them to shape TONE, angle and the target of a joke. Never quote them, never quote or paraphrase a chat message, never attribute a specific saying to anyone, and never reveal or imply that a group chat exists or was analysed. A reader must not be able to tell these inputs were used.
 - Those four fields are PROSE and any numbers inside them are unverified. Ignore every figure they contain. Each statistic you cite must come from a numeric field of this packet — "careerRecord", the "eras" rows, the "seasons" rows, "topRivalries", "allPlayRecord" and so on. If you want to state a head-to-head record, take it from "topRivalries", never from a relationship summary.
 - If statsComplete is false, do not present the record as the manager's complete history.
-- Write for a reader, not a debugger. Never print a raw field name from the packet — no "recentPointsPerGame", "winPct", "allPlayRecord". Say "10.7 points a game above his career rate", "a .524 win rate", "his all-play record". If a value has no natural English phrasing, leave it out.
+- Write for a reader, not a debugger. Never print a raw field name from the packet — no "recentPointsPerGame", "winPct", "allPlayRecord", "luckScore", "playoffRecord". Say "10.7 points a game above his career rate", "a .524 win rate", "his all-play record". If a value has no natural English phrasing, leave it out.
 - Respect the safeguards.`;
 
 /**
@@ -141,7 +156,7 @@ HARD RULES
  * arithmetic, but it reads like a leaked variable because it is one.
  */
 const PACKET_KEY_PATTERN =
-  /\b(recentPointsPerGame|careerPointsPerGame|allPlayWinPct|allPlayRecord|winPct|luckLabel|recentTrajectory|statsComplete|bestFinish|worstFinish|playoffAppearances|finalsAppearances|championshipYears|pointsForPerGame|topRivalries|communicationStyle|approvedKnowledge|historyNotes|seasonsPlayed|currentTeamName|yearsActive|regularSeasonRank|finalRank|madePlayoffs|isChampion|pointsFor|pointsAgainst)\b/;
+  /\b(recentPointsPerGame|careerPointsPerGame|allPlayWinPct|allPlayRecord|winPct|luckLabel|luckScore|luckSummary|playoffRecord|consolationRecord|postseasonRecord|recentTrajectory|statsComplete|bestFinish|worstFinish|playoffAppearances|finalsAppearances|championshipYears|pointsForPerGame|topRivalries|communicationStyle|approvedKnowledge|historyNotes|seasonsPlayed|currentTeamName|yearsActive|regularSeasonRank|finalRank|madePlayoffs|isChampion|pointsFor|pointsAgainst)\b/;
 
 /** True when the draft leaked packet identifiers into the copy. */
 export function leaksPacketFieldNames(text: string): boolean {

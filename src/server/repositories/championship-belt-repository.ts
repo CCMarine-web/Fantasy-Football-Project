@@ -18,6 +18,13 @@ export interface CurrentChampion {
   managerName: string;
   /** Uploaded photo if present, else the Sleeper avatar, else null. */
   photoUrl: string | null;
+  /**
+   * A published, approved photograph of this manager with the trophy, if one
+   * has been uploaded. Used as the hero image on the belt — their ordinary
+   * portrait stays in use everywhere else. Null when no such photo exists, in
+   * which case the belt falls back to the portrait.
+   */
+  trophyPhotoUrl: string | null;
   teamName: string;
   wins: number;
   losses: number;
@@ -102,6 +109,22 @@ export async function getCurrentChampion(): Promise<CurrentChampion | null> {
     },
   });
 
+  /*
+   * The trophy photograph is looked up rather than hardcoded, so a new champion
+   * only needs their picture approved in the admin media queue — no code change
+   * and no risk of last year's winner's photo outliving their reign.
+   */
+  const trophyPhoto = await prisma.mediaAsset.findFirst({
+    where: {
+      managerId: champ.championManager.id,
+      category: "CHAMPIONSHIP",
+      approvalStatus: "APPROVED",
+      isPublished: true,
+    },
+    orderBy: { createdAt: "desc" },
+    select: { url: true },
+  });
+
   const playoffRun: PlayoffGameResult[] = playoffMatchups.map((m) => {
     const mine = m.teams.find((t) => t.fantasyTeamId === teamId);
     const opp = m.teams.find((t) => t.fantasyTeamId !== teamId);
@@ -124,6 +147,7 @@ export async function getCurrentChampion(): Promise<CurrentChampion | null> {
     managerId: champ.championManager.id,
     managerName: champ.championManager.displayName,
     photoUrl: champ.championManager.photoUrl ?? champ.championManager.avatarUrl ?? null,
+    trophyPhotoUrl: trophyPhoto?.url ?? null,
     teamName: champ.championFantasyTeam.teamName,
     wins: champ.championFantasyTeam.wins,
     losses: champ.championFantasyTeam.losses,

@@ -1,5 +1,8 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { BRAND } from "@/lib/branding";
+import { LuckScoreBadge, LuckScorePanel } from "@/components/managers/luck-score";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -14,7 +17,43 @@ import {
 import { getManagerAwardTally } from "@/server/repositories/weekly-awards-repository";
 import { Sparkles, TrendingUp } from "lucide-react";
 
-export const metadata = { title: "Manager Profile" };
+/**
+ * Manager-specific page metadata. A shared "Manager Profile" title made every
+ * one of these pages indistinguishable in a browser tab, a bookmark list and a
+ * search result.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ managerId: string }>;
+}): Promise<Metadata> {
+  const { managerId } = await params;
+  const profile = await getManagerProfileDetailed(managerId);
+  if (!profile) return { title: "Manager Profile" };
+
+  const { manager, stats, eraStats, seasonLines } = profile;
+  const career = eraStats.find((e) => e.key === "CAREER");
+  const played = seasonLines.filter((l) => l.wins + l.losses + l.ties > 0);
+  const years = played.map((l) => l.year).sort((a, b) => a - b);
+  const span = years.length
+    ? years[0] === years[years.length - 1]
+      ? `${years[0]}`
+      : `${years[0]}–${years[years.length - 1]}`
+    : null;
+
+  const facts = [
+    span ? `${span}` : null,
+    career ? `${career.wins}-${career.losses}${career.ties ? `-${career.ties}` : ""} in the regular season` : null,
+    stats.championships > 0
+      ? `${stats.championships} championship${stats.championships === 1 ? "" : "s"}`
+      : "no titles yet",
+  ].filter(Boolean);
+
+  return {
+    title: `${manager.displayName} — Manager Profile`,
+    description: `${manager.displayName} in ${BRAND.longName}: ${facts.join(", ")}. Career and season-by-season statistics, head-to-head records, Luck Score, and a full written profile.`,
+  };
+}
 
 function StatTile({ label, value, sub }: { label: string; value: string | number; sub?: string }) {
   return (
@@ -25,12 +64,6 @@ function StatTile({ label, value, sub }: { label: string; value: string | number
     </div>
   );
 }
-
-const LUCK_STYLES: Record<string, string> = {
-  lucky: "bg-field/15 text-field border-field/40",
-  unlucky: "bg-destructive/15 text-destructive border-destructive/40",
-  neutral: "bg-muted text-muted-foreground border-border/60",
-};
 
 export default async function ManagerProfilePage({
   params,
@@ -46,7 +79,8 @@ export default async function ManagerProfilePage({
   ]);
   if (!profile) notFound();
 
-  const { manager, stats, seasonLines, eraStats, bestSeason, worstSeason, finishDistribution, headToHead } = profile;
+  const { manager, stats, seasonLines, eraStats, luck, bestSeason, worstSeason, finishDistribution, headToHead } =
+    profile;
   const currentTeam = manager.fantasyTeams[manager.fantasyTeams.length - 1];
   const photo = manager.photoUrl ?? manager.avatarUrl;
   const teamCount = finishDistribution.length || 10;
@@ -88,11 +122,7 @@ export default async function ManagerProfilePage({
               <Badge variant="secondary">{stats.finalsAppearances} Finals</Badge>
             ) : null}
             {!manager.isActive ? <Badge variant="outline">Retired</Badge> : null}
-            <Badge className={`border ${LUCK_STYLES[stats.luck.label]}`}>
-              {stats.luck.label === "neutral"
-                ? "Neutral luck"
-                : `${stats.luck.label === "lucky" ? "Lucky" : "Unlucky"} (${stats.luck.delta > 0 ? "+" : ""}${(stats.luck.delta * 100).toFixed(0)}%)`}
-            </Badge>
+            {luck.career ? <LuckScoreBadge luck={luck.career} prefix="Career" /> : null}
             {manager.noRoast ? <Badge variant="outline">No-Roast</Badge> : null}
           </div>
         </div>
@@ -103,12 +133,22 @@ export default async function ManagerProfilePage({
       {/* Career / era breakdown — the headline table. */}
       <section>
         <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Career Statistics</h2>
-        <p className="mt-1 mb-4 text-sm text-muted-foreground">
+        <p className="mt-1 mb-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
           The league ran on ESPN through 2022 and on Sleeper from 2023. Both eras are counted in the
-          career totals. Records are regular season, so they match the season-by-season table below;
-          postseason games are listed separately, and points per game is the fair comparison between
-          eras of different lengths.
+          career totals. <strong className="text-foreground">Record</strong> is the regular season
+          only, so it matches the season-by-season table below.{" "}
+          <strong className="text-foreground">Playoffs</strong> counts championship-bracket games —
+          the ones that decide the title — and nothing else.{" "}
+          <strong className="text-foreground">Consol.</strong> is the toilet bowl and the placement
+          games below it, which are postseason games but not playoff games. Points per game is the
+          fair comparison between eras of different lengths.
         </p>
+        {eraStats.some((e) => e.unclassifiedPostseasonGames > 0) ? (
+          <p className="mb-3 text-xs text-muted-foreground">
+            Some postseason games have no bracket recorded and appear in neither column, so the two
+            do not sum to every game played after the regular season.
+          </p>
+        ) : null}
         {/* Eleven columns cannot fit a phone, and dropping any of them would
             defeat the point of the table, so this one genuinely scrolls. The
             note below is the affordance — without it a phone user sees a
@@ -126,8 +166,19 @@ export default async function ManagerProfilePage({
                 <th scope="col" className="px-3 py-2 text-right">Seasons</th>
                 <th scope="col" className="px-3 py-2 text-right" title="Regular-season record">Record</th>
                 <th scope="col" className="px-3 py-2 text-right">Win%</th>
-                <th scope="col" className="px-3 py-2 text-right" title="Postseason record, consolation-bracket games included">
-                  Postseason
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-right"
+                  title="Championship-bracket record — the games that decide the title. Consolation games are counted in the next column, not here."
+                >
+                  Playoffs
+                </th>
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-right"
+                  title="Toilet-bowl and placement games. Postseason, but nothing to do with the title."
+                >
+                  Consol.
                 </th>
                 <th scope="col" className="px-3 py-2 text-right">PF/G</th>
                 <th scope="col" className="px-3 py-2 text-right">PA/G</th>
@@ -154,6 +205,11 @@ export default async function ManagerProfilePage({
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                     {era.playoffWins + era.playoffLosses > 0 ? `${era.playoffWins}-${era.playoffLosses}` : "—"}
                   </td>
+                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">
+                    {era.consolationWins + era.consolationLosses > 0
+                      ? `${era.consolationWins}-${era.consolationLosses}`
+                      : "—"}
+                  </td>
                   <td className="px-3 py-2 text-right font-mono">{era.pointsForPerGame?.toFixed(1) ?? "—"}</td>
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                     {era.pointsAgainstPerGame?.toFixed(1) ?? "—"}
@@ -168,9 +224,21 @@ export default async function ManagerProfilePage({
         </div>
       </section>
 
+      {/* Luck Score — deterministic, computed from recorded scores. */}
+      {luck.career ? (
+        <section className="mt-8">
+          <LuckScorePanel career={luck.career} season={luck.season} seasonYear={luck.seasonYear} />
+        </section>
+      ) : null}
+
       {/* Career headline stats */}
       <section className="mt-8">
         <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Career Highs &amp; Splits</h2>
+        <p className="mt-1 mb-4 text-sm text-muted-foreground">
+          All-play, margins, close games and blowouts are regular season only. Highs, lows and points
+          totals count every game played, postseason included — a career-best score is a career-best
+          score wherever it happened.
+        </p>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <StatTile
             label="All-Play Record"
@@ -405,6 +473,13 @@ export default async function ManagerProfilePage({
           </div>
         ) : null}
 
+        {/*
+         * The commissioner's hand-written notes, if any. The "No biography yet"
+         * empty state that used to sit here was shown even when the written
+         * career profile above filled the whole section, so the page said it
+         * had no biography directly underneath several hundred words of one.
+         * It now appears only when there is genuinely nothing.
+         */}
         {hasBiography ? (
           <div className="space-y-3 rounded-lg border border-border/60 bg-card/30 p-4">
             {manager.bio ? <p className="text-sm leading-relaxed text-foreground/90">{manager.bio}</p> : null}
@@ -420,9 +495,9 @@ export default async function ManagerProfilePage({
               </p>
             ) : null}
           </div>
-        ) : (
+        ) : profileParagraphs.length === 0 ? (
           <EmptyState title="No biography yet" description="A commissioner can add one from the admin manager editor." />
-        )}
+        ) : null}
       </section>
 
       <Separator className="my-8" />

@@ -617,7 +617,12 @@ async function coreSyncPlayoffResults(seasonId: string, sleeperLeagueId: string,
   // position instead of only the podium (see final-placements.ts).
   const season = await prisma.season.findUnique({ where: { id: seasonId }, select: { playoffTeams: true } });
   const losersBracket = await provider.getLosersBracket(sleeperLeagueId).catch(() => []);
-  const placements = deriveFinalPlacements(bracket, losersBracket, season?.playoffTeams ?? 6);
+  const placements = deriveFinalPlacements(
+    bracket,
+    losersBracket,
+    season?.playoffTeams ?? 6,
+    teams.length,
+  );
 
   let count = 0;
   await prisma.$transaction(async (tx) => {

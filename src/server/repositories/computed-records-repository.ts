@@ -32,8 +32,16 @@ interface Mt {
  * where/against-whom context. Returns [] when there are no scored games.
  */
 export async function getComputedRecords(): Promise<RecordEntry[]> {
+  /*
+   * `verifiedScore` excludes scores that are on record but are not results of a
+   * real contest — an abandoned team's run of zeros, an unplayed week, a score
+   * the platform never reported. Without this filter the all-time lowest score
+   * was 0.0 three weeks running from one manager who had stopped setting a
+   * lineup, which is a fact about a spreadsheet rather than about football.
+   * See scripts/import/audit-suspect-scores.ts.
+   */
   const rows = await prisma.matchupTeam.findMany({
-    where: { score: { not: null } },
+    where: { score: { not: null }, verifiedScore: true },
     include: {
       fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } },
       matchup: {

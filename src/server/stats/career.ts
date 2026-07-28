@@ -5,10 +5,24 @@ function sortChronologically(games: GameResult[]): GameResult[] {
   return [...games].sort((a, b) => a.season - b.season || a.week - b.week);
 }
 
-// Restricts a game log to regular-season games, playoff games, or all games ("all" is the default segment).
+/**
+ * Restricts a game log to one slice of the season; see `SeasonSegment`.
+ *
+ * A postseason game with no bracket recorded is counted in `playoffs` — it was
+ * definitely played after the regular season — but in NEITHER
+ * `championshipBracket` nor `consolation`, because which one it belongs to is
+ * unknown. Splitting the two therefore never invents a title-bracket win, and
+ * the two splits are allowed not to sum to `playoffs`.
+ */
 export function filterBySegment(games: GameResult[], segment: SeasonSegment = "all"): GameResult[] {
   if (segment === "regularSeason") return games.filter((g) => !g.isPlayoff);
   if (segment === "playoffs") return games.filter((g) => g.isPlayoff);
+  if (segment === "championshipBracket") {
+    return games.filter((g) => g.isPlayoff && g.bracket === "WINNERS");
+  }
+  if (segment === "consolation") {
+    return games.filter((g) => g.isPlayoff && g.bracket === "CONSOLATION");
+  }
   return games;
 }
 

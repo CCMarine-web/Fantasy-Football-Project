@@ -103,6 +103,12 @@ interface Meeting {
   week: number;
   isPlayoff: boolean;
   isChampionship: boolean;
+  /**
+   * Which postseason bracket. A consolation meeting is a postseason meeting
+   * and is NOT a playoff meeting — counting it as one turned toilet-bowl games
+   * into "playoff history" in the rivalry write-ups.
+   */
+  bracketType: "WINNERS" | "CONSOLATION" | null;
   dataSource: "SLEEPER" | "ESPN" | "MANUAL";
   /** managerId -> score */
   scores: Record<string, number>;
@@ -123,6 +129,8 @@ async function collectMeetings(): Promise<Map<string, Meeting[]>> {
           id: true,
           week: true,
           isPlayoff: true,
+          bracketType: true,
+          roundName: true,
           season: { select: { year: true, dataSource: true } },
           teams: { select: { score: true, fantasyTeam: { select: { managerId: true } } } },
         },
@@ -161,11 +169,20 @@ async function collectMeetings(): Promise<Map<string, Meeting[]>> {
 
     const year = m.season.year;
     const champion = championByYear.get(year);
+    /*
+     * Prefer the bracket's own designation. The old heuristic — last playoff
+     * week, champion involved — also matched the third-place game and any
+     * consolation game played that week, so a toilet-bowl meeting could be
+     * recorded as a championship meeting.
+     */
     const isTitleGame =
-      m.isPlayoff &&
-      m.week === finalPlayoffWeek.get(year) &&
-      champion != null &&
-      (champion === a || champion === b);
+      m.bracketType === "WINNERS" && m.roundName === "Championship"
+        ? true
+        : m.bracketType == null &&
+          m.isPlayoff &&
+          m.week === finalPlayoffWeek.get(year) &&
+          champion != null &&
+          (champion === a || champion === b);
 
     const key = pairKey(a, b);
     const list = byPair.get(key) ?? [];
@@ -174,6 +191,7 @@ async function collectMeetings(): Promise<Map<string, Meeting[]>> {
       week: m.week,
       isPlayoff: m.isPlayoff,
       isChampionship: isTitleGame,
+      bracketType: m.bracketType,
       dataSource: m.season.dataSource as Meeting["dataSource"],
       scores: { [a]: t1.score, [b]: t2.score },
     });
@@ -196,7 +214,10 @@ interface Computed {
   managerAPoints: number;
   managerBPoints: number;
   averageMargin: number | null;
+  /** Championship-bracket meetings only. */
   playoffMeetings: number;
+  /** Toilet-bowl and placement meetings, counted separately. */
+  consolationMeetings: number;
   championshipMeetings: number;
   closestGameMargin: number | null;
   closestGameSeason: number | null;
@@ -222,6 +243,7 @@ function computePair(aId: string, bId: string, meetings: Meeting[]): Computed {
   let bPoints = 0;
   let marginSum = 0;
   let playoffMeetings = 0;
+  let consolationMeetings = 0;
   let championshipMeetings = 0;
 
   let closest: { margin: number; season: number } | null = null;
@@ -243,7 +265,10 @@ function computePair(aId: string, bId: string, meetings: Meeting[]): Computed {
     bPoints += bScore;
     const margin = Math.abs(aScore - bScore);
     marginSum += margin;
-    if (m.isPlayoff) playoffMeetings++;
+    // Championship bracket only. A postseason meeting with no bracket on
+    // record counts as neither, rather than being assumed to be a playoff game.
+    if (m.isPlayoff && m.bracketType === "WINNERS") playoffMeetings++;
+    if (m.isPlayoff && m.bracketType === "CONSOLATION") consolationMeetings++;
     if (m.isChampionship) championshipMeetings++;
 
     const winnerId = aScore > bScore ? aId : bScore > aScore ? bId : null;
@@ -293,6 +318,7 @@ function computePair(aId: string, bId: string, meetings: Meeting[]): Computed {
     managerBPoints: Number(bPoints.toFixed(2)),
     averageMargin: avgMargin == null ? null : Number(avgMargin.toFixed(2)),
     playoffMeetings,
+    consolationMeetings,
     championshipMeetings,
     closestGameMargin: closest ? Number(closest.margin.toFixed(2)) : null,
     closestGameSeason: closest?.season ?? null,
@@ -408,6 +434,7 @@ async function main() {
       managerBPoints: c.managerBPoints,
       averageMargin: c.averageMargin,
       playoffMeetings: c.playoffMeetings,
+      consolationMeetings: c.consolationMeetings,
       championshipMeetings: c.championshipMeetings,
       closestGameMargin: c.closestGameMargin,
       closestGameSeason: c.closestGameSeason,
@@ -446,6 +473,7 @@ async function main() {
           winnerId: m.scores[aId] > m.scores[bId] ? aId : m.scores[bId] > m.scores[aId] ? bId : null,
           isPlayoff: m.isPlayoff,
           isChampionship: m.isChampionship,
+          bracketType: m.bracketType,
           dataSource: m.dataSource,
         })),
       });

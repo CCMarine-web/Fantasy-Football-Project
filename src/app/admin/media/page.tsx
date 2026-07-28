@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { auth } from "@/auth";
+import { prisma } from "@/lib/db";
 import { MediaCategory } from "@/generated/prisma/client";
 import { listMediaAssets, type MediaAssetView } from "@/server/repositories/admin-review-repository";
 import {
@@ -11,6 +12,7 @@ import {
   togglePublishMediaAction,
   changeCategoryAction,
   setAsManagerPhotoAction,
+  assignPunishmentPhotoAction,
 } from "./actions";
 
 export const metadata = { title: "Review Media" };
@@ -33,7 +35,14 @@ export default async function AdminMediaPage() {
     throw new Error("Admins only");
   }
 
-  const assets = await listMediaAssets();
+  const [assets, managers] = await Promise.all([
+    listMediaAssets(),
+    prisma.manager.findMany({
+      where: { deletedAt: null },
+      select: { id: true, displayName: true },
+      orderBy: { displayName: "asc" },
+    }),
+  ]);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -69,7 +78,7 @@ export default async function AdminMediaPage() {
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                   {groupAssets.map((asset) => (
-                    <MediaCard key={asset.id} asset={asset} />
+                    <MediaCard key={asset.id} asset={asset} managers={managers} />
                   ))}
                 </div>
               )}
@@ -81,7 +90,13 @@ export default async function AdminMediaPage() {
   );
 }
 
-function MediaCard({ asset }: { asset: MediaAssetView }) {
+function MediaCard({
+  asset,
+  managers,
+}: {
+  asset: MediaAssetView;
+  managers: { id: string; displayName: string }[];
+}) {
   return (
     <Card className="gap-0">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -129,6 +144,54 @@ function MediaCard({ asset }: { asset: MediaAssetView }) {
             Set category
           </button>
         </form>
+
+        {/*
+         * Punishment photographs carry no year or name in their filenames, so
+         * the importer refuses to guess and leaves them here. Filling this in
+         * is what puts the photo on the public Hall of Shame.
+         */}
+        {asset.category === "PUNISHMENT" ? (
+          <form action={assignPunishmentPhotoAction} className="space-y-2 rounded-md border border-border/60 p-2">
+            <input type="hidden" name="id" value={asset.id} />
+            <p className="text-xs font-medium">Attach to a season&apos;s punishment</p>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                name="year"
+                required
+                min={2000}
+                max={2100}
+                placeholder="Year"
+                aria-label="Punishment year"
+                className="h-8 w-20 rounded-md border border-input bg-background px-2 text-xs"
+              />
+              <select
+                name="managerId"
+                aria-label="Manager punished"
+                defaultValue={asset.managerId ?? ""}
+                className="h-8 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs"
+              >
+                <option value="">Manager (optional)</option>
+                {managers.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.displayName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <input
+              type="text"
+              name="description"
+              maxLength={300}
+              placeholder="What the punishment was"
+              aria-label="Punishment description"
+              className="h-8 w-full rounded-md border border-input bg-background px-2 text-xs"
+            />
+            <button type="submit" className="text-xs font-medium text-primary hover:underline">
+              Attach, approve &amp; publish (public!)
+            </button>
+          </form>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-3 pt-1">
           {asset.approvalStatus !== "APPROVED" ? (

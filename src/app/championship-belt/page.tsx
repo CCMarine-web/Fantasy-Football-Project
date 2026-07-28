@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Crown, Trophy, Quote, Flame, Pencil } from "lucide-react";
 import { auth } from "@/auth";
@@ -13,6 +14,7 @@ import {
   getCurrentChampion,
   getChampionLineage,
 } from "@/server/repositories/championship-belt-repository";
+import { getLastSeasonNarrative } from "@/server/repositories/season-narrative-repository";
 
 export const metadata = { title: "Championship Belt" };
 
@@ -21,13 +23,21 @@ function recordLine(w: number, l: number, t: number): string {
 }
 
 export default async function ChampionshipBeltPage() {
-  const [champion, lineage, session] = await Promise.all([
+  const [champion, lineage, session, narrative] = await Promise.all([
     getCurrentChampion(),
     getChampionLineage(),
     auth(),
+    getLastSeasonNarrative(),
   ]);
   const isAdmin = session?.user?.role === "ADMIN";
   const shame = LEAGUE_CONFIG.shameCounter;
+
+  // Stands in for a missing victory speech. Mock copy is never shown — an
+  // unapproved placeholder is worse than no panel at all.
+  const titleRecap =
+    narrative && !narrative.isMock && narrative.seasonYear === champion?.year
+      ? narrative.text.replace(/\s+/g, " ").trim()
+      : null;
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -52,11 +62,23 @@ export default async function ChampionshipBeltPage() {
             <Card className="ring-primary/30">
               <CardContent className="flex flex-col gap-6 sm:flex-row sm:items-start">
                 <div className="flex shrink-0 flex-col items-center gap-2">
-                  <TeamAvatar
-                    name={champion.managerName}
-                    imageUrl={champion.photoUrl}
-                    className="h-28 w-28 ring-2 ring-primary/50"
-                  />
+                  {champion.trophyPhotoUrl ? (
+                    <Image
+                      src={champion.trophyPhotoUrl}
+                      alt={`${champion.managerName} holding the ${champion.year} championship trophy`}
+                      width={1179}
+                      height={1348}
+                      priority
+                      sizes="(max-width: 640px) 45vw, 208px"
+                      className="h-44 w-36 rounded-xl object-cover object-top ring-2 ring-primary/50 sm:h-52 sm:w-44"
+                    />
+                  ) : (
+                    <TeamAvatar
+                      name={champion.managerName}
+                      imageUrl={champion.photoUrl}
+                      className="h-28 w-28 ring-2 ring-primary/50"
+                    />
+                  )}
                   <Badge className="gap-1">
                     <Crown className="h-3 w-3" /> {champion.year} Champion
                   </Badge>
@@ -113,32 +135,43 @@ export default async function ChampionshipBeltPage() {
                     </p>
                   )}
 
-                  {/* Victory speech */}
-                  <div className="mt-5 rounded-lg border border-border/60 bg-card/40 p-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <p className="flex items-center gap-2 font-heading text-xs font-semibold tracking-wide uppercase">
-                        <Quote className="h-4 w-4 text-primary" /> Victory Speech
-                      </p>
-                      {isAdmin ? (
-                        <Link
-                          href="/championship-belt/edit"
-                          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
-                        >
-                          <Pencil className="h-3 w-3" /> Edit
-                        </Link>
-                      ) : null}
+                  {/*
+                   * Victory speech, or — when none has been recorded — the
+                   * approved write-up of the title season. The panel is only
+                   * rendered when it has something to say; an empty box reading
+                   * "no victory speech recorded yet" is noise to a reader and
+                   * was removed. Admins still see it so they can add one.
+                   */}
+                  {champion.victorySpeech || titleRecap || isAdmin ? (
+                    <div className="mt-5 rounded-lg border border-border/60 bg-card/40 p-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="flex items-center gap-2 font-heading text-xs font-semibold tracking-wide uppercase">
+                          <Quote className="h-4 w-4 text-primary" />
+                          {champion.victorySpeech ? "Victory Speech" : `The ${champion.year} Title`}
+                        </p>
+                        {isAdmin ? (
+                          <Link
+                            href="/championship-belt/edit"
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                          >
+                            <Pencil className="h-3 w-3" />
+                            {champion.victorySpeech ? "Edit" : "Add victory speech"}
+                          </Link>
+                        ) : null}
+                      </div>
+                      {champion.victorySpeech ? (
+                        <p className="text-sm whitespace-pre-line text-foreground/90 italic">
+                          “{champion.victorySpeech}”
+                        </p>
+                      ) : titleRecap ? (
+                        <p className="text-sm leading-relaxed text-foreground/90">{titleRecap}</p>
+                      ) : (
+                        <p className="text-sm text-muted-foreground italic">
+                          Nothing recorded for this title yet — visible to admins only.
+                        </p>
+                      )}
                     </div>
-                    {champion.victorySpeech ? (
-                      <p className="text-sm whitespace-pre-line text-foreground/90 italic">
-                        “{champion.victorySpeech}”
-                      </p>
-                    ) : (
-                      <p className="text-sm text-muted-foreground italic">
-                        No victory speech recorded yet.
-                        {isAdmin ? " Add one from the edit page." : ""}
-                      </p>
-                    )}
-                  </div>
+                  ) : null}
                 </div>
               </CardContent>
             </Card>

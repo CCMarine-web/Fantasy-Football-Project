@@ -147,12 +147,26 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
             <ul className="space-y-2">
               {playoffMeetings.map((m) => (
                 <li key={`${m.seasonYear}-${m.week}`} className="flex flex-wrap items-center gap-2 text-sm">
+                  {/* Three distinct things, three distinct labels. A toilet-bowl
+                      game used to be badged "Playoff" like a semifinal. */}
                   {m.isChampionship ? (
                     <Badge className="bg-gold text-gold-foreground">
                       <Trophy className="h-3 w-3" /> Title game
                     </Badge>
-                  ) : (
+                  ) : m.bracketType === "CONSOLATION" ? (
+                    <Badge
+                      variant="outline"
+                      className="text-muted-foreground"
+                      title="Toilet bowl or placement game — postseason, but not a playoff game"
+                    >
+                      Consolation
+                    </Badge>
+                  ) : m.bracketType === "WINNERS" ? (
                     <Badge variant="outline">Playoff</Badge>
+                  ) : (
+                    <Badge variant="outline" className="border-dashed text-muted-foreground" title="Postseason game with no bracket on record">
+                      Postseason
+                    </Badge>
                   )}
                   <span className="font-mono tabular-nums">
                     {m.seasonYear} wk {m.week}: {m.managerAScore.toFixed(1)} – {m.managerBScore.toFixed(1)}

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Crown, Trophy } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -25,11 +26,25 @@ export function ChampionshipBeltFeature({
       <CardContent className="p-0">
         <div className="flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-center">
           <div className="flex items-center gap-4 lg:flex-col lg:items-center lg:text-center">
-            <TeamAvatar
-              name={champion.managerName}
-              imageUrl={champion.photoUrl}
-              className="h-24 w-24 border-2 border-gold/60 shadow-lg lg:h-32 lg:w-32"
-            />
+            {/* The trophy photograph is the belt's hero when one exists; the
+                round portrait is the fallback so the layout never collapses. */}
+            {champion.trophyPhotoUrl ? (
+              <Image
+                src={champion.trophyPhotoUrl}
+                alt={`${champion.managerName} holding the ${champion.year} championship trophy`}
+                width={1179}
+                height={1348}
+                priority
+                sizes="(max-width: 1024px) 40vw, 224px"
+                className="h-32 w-28 shrink-0 rounded-xl border-2 border-gold/60 object-cover object-top shadow-lg sm:h-40 sm:w-36 lg:h-56 lg:w-48"
+              />
+            ) : (
+              <TeamAvatar
+                name={champion.managerName}
+                imageUrl={champion.photoUrl}
+                className="h-24 w-24 border-2 border-gold/60 shadow-lg lg:h-32 lg:w-32"
+              />
+            )}
             <div className="lg:mt-2">
               <p className="flex items-center gap-1.5 text-xs font-semibold tracking-[0.2em] text-gold uppercase">
                 <Crown className="h-4 w-4" /> Reigning Champion

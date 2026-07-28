@@ -57,7 +57,8 @@ async function main() {
       continue;
     }
 
-    const placements = deriveFinalPlacements(winners, losers, season.playoffTeams);
+    const teamCount = await prisma.fantasyTeam.count({ where: { seasonId: season.id } });
+    const placements = deriveFinalPlacements(winners, losers, season.playoffTeams, teamCount);
     if (placements.problem) {
       console.log(`  ${season.year}: SKIPPED — ${placements.problem}`);
       continue;

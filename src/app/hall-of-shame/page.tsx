@@ -1,4 +1,7 @@
+import Image from "next/image";
 import Link from "next/link";
+import { auth } from "@/auth";
+import { prisma } from "@/lib/db";
 import { ManagerLink } from "@/components/shared/manager-link";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -11,7 +14,13 @@ import { Skull, Toilet } from "lucide-react";
 export const metadata = { title: "Hall of Shame" };
 
 export default async function HallOfShamePage() {
-  const [shame, punishments] = await Promise.all([getHallOfShame(), listPunishments()]);
+  const [shame, punishments, session, pendingPunishmentPhotos] = await Promise.all([
+    getHallOfShame(),
+    listPunishments(),
+    auth(),
+    prisma.mediaAsset.count({ where: { category: "PUNISHMENT", approvalStatus: "PENDING" } }),
+  ]);
+  const isAdmin = session?.user?.role === "ADMIN";
   const benchCovered = shame.benchYearsCovered;
   const benchGap = shame.allYears.filter((y) => !benchCovered.includes(y));
 
@@ -22,6 +31,15 @@ export default async function HallOfShamePage() {
         title="Hall of Shame"
         description="The inverse of the record books — the lows, the blowouts, the toilet bowls, and the punishments that followed."
       />
+
+      {shame.excludedScores > 0 ? (
+        <p className="mt-6 rounded-md border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          {shame.excludedScores} recorded score{shame.excludedScores === 1 ? " is" : "s are"} left out
+          of these records — weeks where a team was abandoned rather than beaten, or where the
+          platform never reported a score. They are kept on the season pages but a 0.0 from a team
+          that stopped setting a lineup is not the lowest score in league history.
+        </p>
+      ) : null}
 
       <section className="mt-8">
         {shame.entries.length === 0 ? (
@@ -93,31 +111,58 @@ export default async function HallOfShamePage() {
         )}
       </section>
 
-      {/* Punishments */}
+      {/*
+       * Punishments. The "Edit" link used to be rendered for everybody, which
+       * pointed the public at an admin route they could not open; it is now
+       * admin-only. Photographs lead the card rather than sitting in a 80px
+       * thumbnail, because the photograph IS the punishment record.
+       */}
       <section className="mt-10">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
             Last-Place Punishments
           </h2>
-          <Link href="/admin/punishments" className="text-sm text-primary hover:underline">
-            Edit
-          </Link>
+          {isAdmin ? (
+            <Link href="/admin/punishments" className="text-sm text-primary hover:underline">
+              Edit
+            </Link>
+          ) : null}
         </div>
+
+        {isAdmin && pendingPunishmentPhotos > 0 ? (
+          <p className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs">
+            {pendingPunishmentPhotos} punishment photograph
+            {pendingPunishmentPhotos === 1 ? "" : "s"} imported but not yet attached to a season.
+            Their filenames name no year or manager, so they were not guessed at —{" "}
+            <Link href="/admin/media" className="font-medium text-primary hover:underline">
+              assign them in Review Media
+            </Link>
+            . Admins only; nothing is public until attached.
+          </p>
+        ) : null}
+
         {punishments.length === 0 ? (
           <EmptyState
             icon={Skull}
             title="No punishments recorded yet"
-            description="Admins can record each year's last-place punishment (with a photo) from the admin tools."
+            description="Each season's last-place punishment appears here once it has been recorded with a year, a manager, and a photograph."
           />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {punishments.map((p) => (
-              <Card key={p.id}>
+              <Card key={p.id} className="overflow-hidden pt-0">
+                {p.photoUrl ? (
+                  <Image
+                    src={p.photoUrl}
+                    alt={`${p.managerName ? `${p.managerName}'s ` : ""}${p.year} last-place punishment: ${p.description}`}
+                    width={1400}
+                    height={1050}
+                    sizes="(max-width: 640px) 100vw, 50vw"
+                    className="max-h-96 w-full bg-muted object-contain"
+                  />
+                ) : null}
                 <CardContent className="flex gap-4">
-                  {p.photoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.photoUrl} alt={`${p.year} punishment`} className="h-20 w-20 shrink-0 rounded-md object-cover" />
-                  ) : (
+                  {p.photoUrl ? null : (
                     <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md bg-muted">
                       <Skull className="h-8 w-8 text-muted-foreground" />
                     </div>
