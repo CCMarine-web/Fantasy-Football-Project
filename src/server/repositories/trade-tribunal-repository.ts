@@ -1,66 +1,83 @@
 import { prisma } from "@/lib/db";
 import { getBlurbs } from "@/server/ai/blurb-cache";
+import {
+  buildPositionContext,
+  consolidationCredit,
+  valuateTrade,
+  valuePlayer,
+  TRADE_VALUE_CONSTANTS,
+  type Lopsidedness,
+  type PlayerWindow,
+  type PositionContext,
+  type TradeConfidence,
+  type ValuedPlayer,
+  type ValuedSide,
+} from "@/server/stats/trade-value";
 
-/** One trade, ready to render on the Trade Tribunal page. */
+/**
+ * The Trade Tribunal: what each trade was actually worth, and how one-sided it
+ * turned out to be.
+ *
+ * The valuation itself lives in server/stats/trade-value.ts and is pure and
+ * tested. This file's job is to assemble its inputs from recorded scores:
+ * every player's production after the trade, and the replacement level and
+ * scarcity at each position in that same window.
+ *
+ * The previous version compared the two sides on raw rest-of-season points,
+ * which cannot settle a trade — a mid-range quarterback outscores an elite
+ * tight end and is worth far less, because the next quarterback off waivers
+ * also outscores that tight end.
+ */
+
 export interface TradeTribunalSide {
   managerId: string;
   managerName: string;
   /** Display strings for acquired players, e.g. "Josh Allen (QB)". */
   acquired: string[];
-  /** Rest-of-season points the acquired players produced; null when unavailable. */
-  hindsightPoints: number | null;
+  /** Per-player breakdown behind this side's value. */
+  players: ValuedPlayer[];
+  /** Picks and FAAB, which have no market price on record. */
+  unpricedAssets: string[];
+  /** Position-normalised value of everything this side received. */
+  value: number;
+  consolidationCredit: number;
 }
 
 export interface TradeTribunalView {
   transactionId: string;
   seasonYear: number;
   week: number | null;
-  hindsightAvailable: boolean;
   sides: TradeTribunalSide[];
-  /** |A − B| of the two sides' hindsight points; null when unavailable. */
+  /** Difference in normalised value between the two sides. */
   differential: number | null;
+  /** That difference as a share of the average side's value. */
+  relativeDifferential: number | null;
+  lopsidedness: Lopsidedness | null;
+  winnerManagerId: string | null;
+  winnerName: string | null;
+  confidence: TradeConfidence;
+  /** Inputs the valuation could not obtain. */
+  missingInputs: string[];
   /** Persisted verdict, or null when none has been generated yet. */
   verdict: string | null;
-  /** Deterministic summary of who won the trade — input for verdict writing. */
+  /** Deterministic summary of the outcome — the input a verdict is written from. */
   hindsightSummary: string;
   notable: boolean;
   notes: string | null;
 }
 
-interface WorkingSide {
+interface AcquiredAsset {
   managerId: string;
   managerName: string;
-  acquired: string[];
-  /** playerIds this side acquired, used for hindsight scoring. */
-  playerIds: string[];
-  hindsightPoints: number | null;
+  player: { id: string; firstName: string; lastName: string; position: string } | null;
+  unpricedLabel: string | null;
 }
 
-function formatPlayer(p: { firstName: string; lastName: string; position: string }): string {
-  return `${p.firstName} ${p.lastName} (${p.position})`;
-}
-
-/**
- * Pulls every TRADE transaction across synced seasons, scores each side by the
- * rest-of-season production of the players it acquired, and attaches an AI
- * "tribunal verdict". Sorted so the most lopsided fleeces (largest hindsight
- * differential) rank first; the page labels the top ones as fleeces.
- *
- * Hindsight formula (per side): sum of `WeeklyPlayerScore.points` for each
- * acquired player, over that trade's season, for every week >= the trade week
- * (across any roster — i.e. remaining-season production). A side's total is the
- * sum over its acquired players. The differential is |sideA − sideB|.
- *
- * Graceful gap handling: a season with zero WeeklyPlayerScore rows is flagged
- * `hindsightAvailable = false`; scoring is skipped, points are null, and the
- * verdict is told there is insufficient evidence. The trade still renders with
- * its participants and assets.
- */
 export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
   const trades = await prisma.transaction.findMany({
     where: { type: "TRADE" },
     include: {
-      season: { select: { id: true, year: true } },
+      season: { select: { id: true, year: true, playoffStartWeek: true, regularSeasonWeeks: true } },
       trade: { select: { isNotable: true, notes: true } },
       assets: {
         include: {
@@ -76,137 +93,268 @@ export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
 
   if (trades.length === 0) return [];
 
-  // Which seasons have any player-level scoring at all? Check once per season.
   const seasonIds = [...new Set(trades.map((t) => t.season.id))];
-  const seasonHasScores = new Map<string, boolean>();
-  await Promise.all(
-    seasonIds.map(async (seasonId) => {
-      // Rows with a null `points` record roster membership only (ESPN era), so
-      // they must not count as "this season has scoring data" — otherwise the
-      // hindsight verdict would be computed from an empty sum and read as 0.0
-      // production for every player involved.
-      const count = await prisma.weeklyPlayerScore.count({
-        where: { roster: { fantasyTeam: { seasonId } }, points: { not: null } },
-      });
-      seasonHasScores.set(seasonId, count > 0);
-    }),
-  );
 
-  // One query for every cached verdict, instead of one model call per trade.
+  /*
+   * Every recorded weekly score in the seasons that contain a trade, keyed by
+   * player and week. This is the raw material for both a player's own window
+   * and the league-wide replacement level it is measured against — the two
+   * have to come from the same pool or the comparison means nothing.
+   */
+  const scores = await prisma.weeklyPlayerScore.findMany({
+    where: {
+      points: { not: null },
+      roster: { fantasyTeam: { seasonId: { in: seasonIds } } },
+    },
+    select: {
+      points: true,
+      playerId: true,
+      player: { select: { position: true } },
+      roster: { select: { week: true, fantasyTeam: { select: { seasonId: true } } } },
+    },
+  });
+
+  const teamCounts = new Map<string, number>();
+  for (const seasonId of seasonIds) {
+    teamCounts.set(seasonId, await prisma.fantasyTeam.count({ where: { seasonId } }));
+  }
+
+  interface ScoreRow {
+    playerId: string;
+    position: string;
+    week: number;
+    points: number;
+  }
+  const bySeason = new Map<string, ScoreRow[]>();
+  for (const row of scores) {
+    if (row.points == null) continue;
+    const seasonId = row.roster.fantasyTeam.seasonId;
+    const list = bySeason.get(seasonId) ?? [];
+    list.push({
+      playerId: row.playerId,
+      position: row.player.position,
+      week: row.roster.week,
+      points: row.points,
+    });
+    bySeason.set(seasonId, list);
+  }
+
   const cached = await getBlurbs(
     "TRADE_VERDICT",
     trades.map((t) => ({ subjectKey: t.id, inputHash: "" })),
   );
   const verdictByTransaction = new Map([...cached].map(([k, v]) => [k, v.text]));
 
-  const views = await Promise.all(
-    trades.map(async (t): Promise<TradeTribunalView> => {
-      const hindsightAvailable = seasonHasScores.get(t.season.id) ?? false;
-      // Trade week drives the "rest of season" window; unknown week => count all.
-      const fromWeek = t.week ?? 0;
+  const views: TradeTribunalView[] = trades.map((t) => {
+    const seasonRows = bySeason.get(t.season.id) ?? [];
+    const fromWeek = t.week ?? 0;
+    const playoffStart = t.season.playoffStartWeek ?? (t.season.regularSeasonWeeks ?? 14) + 1;
+    const lastWeek = seasonRows.length > 0 ? Math.max(...seasonRows.map((r) => r.week)) : fromWeek;
+    const weeksRemaining = Math.max(0, lastWeek - fromWeek + 1);
 
-      // Group ADD assets by the receiving manager (ADD = received/acquired).
-      const bySide = new Map<string, WorkingSide>();
-      for (const asset of t.assets) {
-        if (asset.direction !== "ADD") continue;
-        const managerId = asset.fantasyTeam.managerId;
-        let side = bySide.get(managerId);
-        if (!side) {
-          side = {
-            managerId,
-            managerName: asset.fantasyTeam.manager.displayName,
-            acquired: [],
-            playerIds: [],
-            hindsightPoints: null,
-          };
-          bySide.set(managerId, side);
-        }
-        if (asset.assetType === "PLAYER" && asset.player) {
-          side.acquired.push(formatPlayer(asset.player));
-          side.playerIds.push(asset.player.id);
-        } else if (asset.assetType === "DRAFT_PICK") {
-          side.acquired.push(asset.draftPickDescription ?? "a draft pick");
-        } else if (asset.assetType === "FAAB") {
-          side.acquired.push(`$${asset.faabAmount ?? 0} FAAB`);
-        }
+    // ── Post-trade window, per player, across the whole league ─────────────
+    const windowRows = seasonRows.filter((r) => r.week >= fromWeek);
+    const perPlayer = new Map<string, { position: string; points: number; games: number; playoffPoints: number; playoffGames: number }>();
+    for (const row of windowRows) {
+      const cur =
+        perPlayer.get(row.playerId) ??
+        { position: row.position, points: 0, games: 0, playoffPoints: 0, playoffGames: 0 };
+      cur.points += row.points;
+      cur.games += 1;
+      if (row.week >= playoffStart) {
+        cur.playoffPoints += row.points;
+        cur.playoffGames += 1;
       }
+      perPlayer.set(row.playerId, cur);
+    }
 
-      const workingSides = [...bySide.values()];
+    // ── Replacement level and scarcity, per position, in the same window ───
+    const ppgByPosition = new Map<string, number[]>();
+    for (const [, p] of perPlayer) {
+      // Two games is not a rate; including one-week wonders would drag the
+      // replacement line around according to who happened to be picked up.
+      if (p.games < 3) continue;
+      const list = ppgByPosition.get(p.position) ?? [];
+      list.push(p.points / p.games);
+      ppgByPosition.set(p.position, list);
+    }
+    const contexts = new Map<string, PositionContext>();
+    for (const [position, ppgs] of ppgByPosition) {
+      contexts.set(position, buildPositionContext(position, ppgs, teamCounts.get(t.season.id) ?? 10));
+    }
 
-      // Hindsight scoring: rest-of-season production of each acquired player.
-      if (hindsightAvailable) {
-        await Promise.all(
-          workingSides.map(async (side) => {
-            if (side.playerIds.length === 0) {
-              side.hindsightPoints = 0;
-              return;
-            }
-            const agg = await prisma.weeklyPlayerScore.aggregate({
-              _sum: { points: true },
-              where: {
-                playerId: { in: side.playerIds },
-                roster: {
-                  week: { gte: fromWeek },
-                  fantasyTeam: { seasonId: t.season.id },
-                },
-              },
-            });
-            side.hindsightPoints = Number((agg._sum.points ?? 0).toFixed(1));
-          }),
+    const percentileFor = (position: string, ppg: number): number | null => {
+      const pool = ppgByPosition.get(position);
+      if (!pool || pool.length < 3) return null;
+      const below = pool.filter((x) => x < ppg).length;
+      return Math.round((below / pool.length) * 100);
+    };
+
+    // ── Who received what ─────────────────────────────────────────────────
+    const acquiredByManager = new Map<string, AcquiredAsset[]>();
+    const sentByManager = new Map<string, number>();
+    for (const asset of t.assets) {
+      const managerId = asset.fantasyTeam.managerId;
+      const managerName = asset.fantasyTeam.manager.displayName;
+      if (asset.direction !== "ADD") {
+        if (asset.assetType === "PLAYER") {
+          sentByManager.set(managerId, (sentByManager.get(managerId) ?? 0) + 1);
+        }
+        continue;
+      }
+      const list = acquiredByManager.get(managerId) ?? [];
+      if (asset.assetType === "PLAYER" && asset.player) {
+        list.push({ managerId, managerName, player: asset.player, unpricedLabel: null });
+      } else if (asset.assetType === "DRAFT_PICK") {
+        list.push({
+          managerId,
+          managerName,
+          player: null,
+          unpricedLabel: asset.draftPickDescription ?? "a draft pick",
+        });
+      } else if (asset.assetType === "FAAB") {
+        list.push({ managerId, managerName, player: null, unpricedLabel: `$${asset.faabAmount ?? 0} FAAB` });
+      }
+      acquiredByManager.set(managerId, list);
+    }
+
+    const missingInputs = new Set<string>();
+    if (seasonRows.length === 0) {
+      missingInputs.add(
+        `no player-level scoring is on record for ${t.season.year}, so nothing in this trade can be valued`,
+      );
+    }
+
+    let playerCount = 0;
+    let confidentPlayers = 0;
+
+    const valuedSides: ValuedSide[] = [...acquiredByManager.entries()].map(([managerId, assets]) => {
+      const managerName = assets[0]?.managerName ?? "Unknown";
+      const players: ValuedPlayer[] = [];
+      const unpricedAssets: string[] = [];
+
+      for (const asset of assets) {
+        if (!asset.player) {
+          if (asset.unpricedLabel) {
+            unpricedAssets.push(asset.unpricedLabel);
+            missingInputs.add(
+              `${asset.unpricedLabel} has no market price on record, so it is named but not valued`,
+            );
+          }
+          continue;
+        }
+        playerCount += 1;
+        const stats = perPlayer.get(asset.player.id);
+        const w: PlayerWindow = {
+          playerId: asset.player.id,
+          name: `${asset.player.firstName} ${asset.player.lastName}`,
+          position: asset.player.position,
+          gamesPlayed: stats?.games ?? 0,
+          points: stats?.points ?? 0,
+          playoffPoints: stats?.playoffPoints ?? 0,
+          playoffGames: stats?.playoffGames ?? 0,
+          weeksRemaining,
+        };
+        if (w.gamesPlayed >= TRADE_VALUE_CONSTANTS.CONFIDENT_GAMES) confidentPlayers += 1;
+        const ppg = w.gamesPlayed > 0 ? w.points / w.gamesPlayed : 0;
+        players.push(
+          valuePlayer(
+            w,
+            contexts.get(asset.player.position),
+            w.gamesPlayed > 0 ? percentileFor(asset.player.position, ppg) : null,
+          ),
         );
       }
 
-      let differential: number | null = null;
-      if (hindsightAvailable && workingSides.length === 2) {
-        const [a, b] = workingSides;
-        differential = Number(Math.abs((a.hindsightPoints ?? 0) - (b.hindsightPoints ?? 0)).toFixed(1));
-      }
+      const credit = consolidationCredit(players.length, sentByManager.get(managerId) ?? 0);
+      const value = Number(
+        (players.reduce((sum, p) => sum + p.value, 0) + credit).toFixed(1),
+      );
+      return { managerId, managerName, players, unpricedAssets, value, consolidationCredit: credit };
+    });
 
-      // Build the hindsight summary for the verdict prompt.
-      let hindsightSummary = "insufficient evidence";
-      if (hindsightAvailable && workingSides.length === 2) {
-        const [a, b] = workingSides;
-        const aPts = a.hindsightPoints ?? 0;
-        const bPts = b.hindsightPoints ?? 0;
-        if (aPts === bPts) {
-          hindsightSummary = `both hauls produced ${aPts.toFixed(1)} points rest-of-season — a dead heat`;
-        } else {
-          const winner = aPts > bPts ? a : b;
-          const loser = aPts > bPts ? b : a;
-          hindsightSummary = `${winner.managerName}'s haul outscored ${loser.managerName}'s by ${Math.abs(aPts - bPts).toFixed(1)} points rest-of-season`;
-        }
-      }
+    const valuation = valuateTrade(valuedSides, {
+      missingInputs: [...missingInputs],
+      playerCount,
+      confidentPlayers,
+    });
 
-      // Verdicts are READ from the cache — never generated during a render.
-      // scripts/ai/backfill-blurbs.ts writes them; a missing one renders as
-      // null and the page simply omits the verdict line.
-      const verdict = verdictByTransaction.get(t.id) ?? null;
+    const nameById = new Map(valuedSides.map((s) => [s.managerId, s.managerName]));
+    const winnerName = valuation.winnerManagerId
+      ? (nameById.get(valuation.winnerManagerId) ?? null)
+      : null;
 
-      return {
-        transactionId: t.id,
-        seasonYear: t.season.year,
-        week: t.week,
-        hindsightAvailable,
-        sides: workingSides.map((s) => ({
-          managerId: s.managerId,
-          managerName: s.managerName,
-          acquired: s.acquired,
-          hindsightPoints: s.hindsightPoints,
-        })),
-        differential,
-        verdict,
-        hindsightSummary,
-        notable: t.trade?.isNotable ?? false,
-        notes: t.trade?.notes ?? null,
-      };
-    }),
-  );
+    // Deterministic prose summary, used as the input a verdict is written from
+    // and shown when no verdict exists.
+    let hindsightSummary: string;
+    if (valuation.lopsidedness == null) {
+      hindsightSummary =
+        valuation.confidence === "NONE"
+          ? "nothing in this trade could be valued from the recorded data"
+          : "this trade involved more than two managers, so it is reported rather than graded";
+    } else if (valuation.lopsidedness === "EVEN_DEAL") {
+      hindsightSummary = `both sides came out within ${valuation.differential?.toFixed(0) ?? "0"} points of value above replacement — an even deal`;
+    } else {
+      const loser = valuedSides.find((s) => s.managerId !== valuation.winnerManagerId);
+      hindsightSummary = `${winnerName} came out ${valuation.differential?.toFixed(0)} points of value above replacement ahead of ${loser?.managerName ?? "the other side"}, once each player is measured against what was freely available at his position`;
+    }
 
-  // Biggest fleeces first: largest differential ranks first; unavailable last.
-  return views.sort((a, b) => {
-    if (a.differential == null && b.differential == null) return 0;
-    if (a.differential == null) return 1;
-    if (b.differential == null) return -1;
-    return b.differential - a.differential;
+    return {
+      transactionId: t.id,
+      seasonYear: t.season.year,
+      week: t.week,
+      sides: valuedSides.map((s) => ({
+        managerId: s.managerId,
+        managerName: s.managerName,
+        acquired: [
+          ...s.players.map((p) => `${p.name} (${p.position})`),
+          ...s.unpricedAssets,
+        ],
+        players: s.players,
+        unpricedAssets: s.unpricedAssets,
+        value: s.value,
+        consolidationCredit: s.consolidationCredit,
+      })),
+      differential: valuation.differential,
+      relativeDifferential: valuation.relativeDifferential,
+      lopsidedness: valuation.lopsidedness,
+      winnerManagerId: valuation.winnerManagerId,
+      winnerName,
+      confidence: valuation.confidence,
+      missingInputs: valuation.missingInputs,
+      verdict: verdictByTransaction.get(t.id) ?? null,
+      hindsightSummary,
+      notable: t.trade?.isNotable ?? false,
+      notes: t.trade?.notes ?? null,
+    };
   });
+
+  // Most lopsided first; ungradeable trades last.
+  const order: Record<Lopsidedness, number> = {
+    HIGHWAY_ROBBERY: 0,
+    FLEECED: 1,
+    CLEAR_WINNER: 2,
+    SLIGHT_EDGE: 3,
+    EVEN_DEAL: 4,
+  };
+  return views.sort((a, b) => {
+    const ao = a.lopsidedness ? order[a.lopsidedness] : 5;
+    const bo = b.lopsidedness ? order[b.lopsidedness] : 5;
+    return ao - bo || (b.differential ?? 0) - (a.differential ?? 0) || b.seasonYear - a.seasonYear;
+  });
+}
+
+/**
+ * Trades a reader should see by default: anything from a Clear Winner upward.
+ * Even deals and slight edges are real records and stay available behind the
+ * archive toggle, but a page of "these two teams both did fine" is not a
+ * tribunal.
+ */
+export function isHeadlineTrade(view: TradeTribunalView): boolean {
+  return (
+    view.lopsidedness === "HIGHWAY_ROBBERY" ||
+    view.lopsidedness === "FLEECED" ||
+    view.lopsidedness === "CLEAR_WINNER" ||
+    view.notable
+  );
 }

@@ -297,16 +297,50 @@ async function backfillTrades(ctx: Ctx, limit: number | null) {
   console.log(`[trade] ${list.length} trade(s)`);
 
   for (const t of list) {
+    /*
+     * The verdict is written from position-relative value, not raw points. The
+     * facts below deliberately do not include a points total for either side —
+     * quoting one invites "he got 400 points and gave up 300", which is the
+     * comparison the valuation exists to replace.
+     */
     const facts = {
       season: t.seasonYear,
       week: t.week,
-      sides: t.sides.map((s) => ({ manager: s.managerName, acquired: s.acquired, restOfSeasonPoints: s.hindsightPoints })),
+      sides: t.sides.map((s) => ({
+        manager: s.managerName,
+        acquired: s.acquired,
+        valueAboveReplacement: s.value,
+        players: s.players.map((p) => ({
+          name: p.name,
+          position: p.position,
+          pointsPerGameAboveReplacement: p.ppgAboveReplacement,
+          positionalPercentile: p.positionalPercentile,
+          shareOfRemainingWeeksPlayed: p.availability,
+          issue: p.note,
+        })),
+        assetsWithNoMarketPrice: s.unpricedAssets,
+      })),
       differential: t.differential,
-      hindsight: t.hindsightSummary,
-      hindsightAvailable: t.hindsightAvailable,
+      verdictBand: t.lopsidedness,
+      confidence: t.confidence,
+      summary: t.hindsightSummary,
+      inputsUnavailable: t.missingInputs,
     };
     const inputHash = hashInputs(facts);
-    const prompt = `Write ONE sentence (max 34 words) delivering a verdict on this trade for the league's Trade Tribunal. If hindsightAvailable is false, say the evidence is thin rather than guessing a winner.\n\nVerified facts:\n${JSON.stringify(facts, null, 2)}`;
+    const prompt = [
+      "Write ONE sentence (max 34 words) delivering a verdict on this trade for the league's Trade Tribunal.",
+      "",
+      "Rules:",
+      '- The verdict band in "verdictBand" is the judgement. Do not contradict it or invent a different winner.',
+      '- If confidence is "NONE" or "LOW", say the evidence is thin rather than pronouncing.',
+      "- Value is measured against what was freely available at each player's own position. Never compare the two sides on raw points, and never say one player outscored another as though that settled it.",
+      '- Anything in "inputsUnavailable" is genuinely unknown. Do not speculate about it.',
+      '- Write for a reader, not an analyst. No abbreviations or jargon — never "VOR", "VORP", "value above replacement", "differential", or a raw field name. Say it plainly: "got the better of", "came out well ahead", "barely moved the needle".',
+      "- Do not open with \"Verdict:\", \"Trade Tribunal:\", or the band name in capitals. Just write the sentence.",
+      "",
+      "Verified facts:",
+      JSON.stringify(facts, null, 2),
+    ].join("\n");
     const out = await write(ctx, prompt, 900);
     if (!out) {
       console.log(`  [dry/mock] ${t.seasonYear} wk ${t.week}`);

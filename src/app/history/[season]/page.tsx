@@ -6,6 +6,8 @@ import { Separator } from "@/components/ui/separator";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TeamPointsBarChart } from "@/components/charts/team-points-bar-chart";
 import { getSeasonArticle, getSeasonHistory } from "@/server/repositories/history-repository";
+import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
+import { LOPSIDEDNESS_LABEL } from "@/server/stats/trade-value";
 import { Sparkles, Trophy } from "lucide-react";
 
 export const metadata = { title: "Season History" };
@@ -17,10 +19,17 @@ export default async function SeasonHistoryPage({
 }) {
   const { season: seasonParam } = await params;
   const year = Number(seasonParam);
-  const [data, article] = await Promise.all([getSeasonHistory(year), getSeasonArticle(year)]);
+  const [data, article, allTrades] = await Promise.all([
+    getSeasonHistory(year),
+    getSeasonArticle(year),
+    getTradeTribunal(),
+  ]);
   if (!data) notFound();
 
-  const { season, playoffMatchups, highestScore, notableTrades } = data;
+  const { season, playoffMatchups, highestScore } = data;
+  // Trades for this season, most one-sided first (the Tribunal already sorts).
+  const seasonTrades = allTrades.filter((t) => t.seasonYear === year);
+  const biggestTrade = seasonTrades[0] ?? null;
   const draft = season.drafts[0];
 
   const pointsChartData = season.fantasyTeams.map((t) => ({
@@ -204,22 +213,41 @@ export default async function SeasonHistoryPage({
           </CardContent>
         </Card>
 
+        {/*
+         * Trades came from the `isNotable` flag, which nothing ever set, so a
+         * season with six verified trades — two of them outright fleecings —
+         * reported "no notable trades flagged for this season yet". It now
+         * reads the Tribunal's own verdicts, which are computed from results.
+         */}
         <Card>
           <CardHeader>
-            <CardTitle className="uppercase">Biggest Trade</CardTitle>
+            <CardTitle className="uppercase">Trades</CardTitle>
           </CardHeader>
           <CardContent>
-            {notableTrades.length === 0 ? (
+            {seasonTrades.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No notable trades flagged for this season yet.
+                No trades are on record for this season.
+                {season.dataSource === "ESPN"
+                  ? " ESPN does not retain transaction history for archived seasons, so this is a gap in the data rather than a quiet year."
+                  : ""}
               </p>
             ) : (
-              <div className="space-y-2">
-                {notableTrades.map((trade) => (
-                  <p key={trade.id} className="text-sm text-muted-foreground">
-                    {trade.notes}
+              <div className="space-y-3">
+                <p className="text-sm">
+                  <strong className="font-mono">{seasonTrades.length}</strong> trade
+                  {seasonTrades.length === 1 ? "" : "s"} on record
+                  {biggestTrade?.lopsidedness && biggestTrade.lopsidedness !== "EVEN_DEAL"
+                    ? `, the most one-sided judged ${LOPSIDEDNESS_LABEL[biggestTrade.lopsidedness].toLowerCase()}.`
+                    : ", none of them one-sided."}
+                </p>
+                {biggestTrade && biggestTrade.lopsidedness !== "EVEN_DEAL" ? (
+                  <p className="text-sm text-muted-foreground">
+                    Week {biggestTrade.week}: {biggestTrade.hindsightSummary}.
                   </p>
-                ))}
+                ) : null}
+                <Link href="/trade-tribunal" className="inline-block text-sm text-primary hover:underline">
+                  Every verdict in the Trade Tribunal →
+                </Link>
               </div>
             )}
           </CardContent>
