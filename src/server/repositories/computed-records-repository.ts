@@ -54,6 +54,7 @@ export async function getComputedRecords(): Promise<RecordEntry[]> {
             select: {
               fantasyTeamId: true,
               score: true,
+              verifiedScore: true,
               fantasyTeam: { select: { manager: { select: { displayName: true } } } },
             },
           },
@@ -67,6 +68,10 @@ export async function getComputedRecords(): Promise<RecordEntry[]> {
     if (r.score == null) continue;
     const opp = r.matchup.teams.find((t) => t.fantasyTeamId !== r.fantasyTeamId);
     if (!opp || opp.score == null) continue;
+    // A game against a team that did not field a lineup is not a contest
+    // either way round. Filtering only this side left the OPPONENT's row in,
+    // so the all-time biggest blowout read "167.4-0.0".
+    if (!opp.verifiedScore) continue;
     games.push({
       fantasyTeamId: r.fantasyTeamId,
       managerId: r.fantasyTeam.managerId,

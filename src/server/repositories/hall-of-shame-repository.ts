@@ -65,7 +65,7 @@ export async function getHallOfShame(): Promise<HallOfShame> {
         select: {
           week: true,
           season: { select: { year: true } },
-          teams: { select: { fantasyTeamId: true, score: true, fantasyTeam: { select: { manager: { select: { displayName: true } } } } } },
+          teams: { select: { fantasyTeamId: true, score: true, verifiedScore: true, fantasyTeam: { select: { manager: { select: { displayName: true } } } } } },
         },
       },
     },
@@ -77,6 +77,10 @@ export async function getHallOfShame(): Promise<HallOfShame> {
     if (r.score == null) continue;
     const opp = r.matchup.teams.find((t) => t.fantasyTeamId !== r.fantasyTeamId);
     if (!opp || opp.score == null) continue;
+    // The other side has to be a real contest too. Filtering only this side
+    // left the opponent's row in, so beating a team that never set a lineup
+    // would still stand as the worst blowout loss in league history.
+    if (!opp.verifiedScore) continue;
     allYearsSet.add(r.matchup.season.year);
     games.push({
       managerId: r.fantasyTeam.managerId,

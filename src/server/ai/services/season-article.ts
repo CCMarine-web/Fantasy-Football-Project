@@ -51,6 +51,12 @@ export interface SeasonArticleFacts {
   rivalryGames: string[];
   /** Draft headline for the season, if a draft is on record. */
   draftNote: string | null;
+  /**
+   * Trades made that season, with the Tribunal's verdict on each. Empty when
+   * none are on record — which for an ESPN season means the platform does not
+   * retain them, not that nobody traded.
+   */
+  trades: string[];
   /** The commissioner's own recap fragments, in order, labels already stripped. */
   commissionerFragments: string[];
   /** Things genuinely not on record for this season. */
@@ -82,6 +88,16 @@ HOW TO HANDLE THE FRAGMENTS
 
 WEAVING IN THE RECORD
 Fold the verified facts into the narrative where they support or complete the commissioner's account — who actually won, who led the regular season, the scoring extremes, how the playoffs went. Do not append them as a separate block of statistics. Numbers you cite must match the packet exactly.
+
+TRADES
+"trades" lists every trade on record for the season with the Tribunal's verdict on it. If there are any, at least one belongs in the article — a season in which someone was fleeced is not a season without notable trades. Use the verdict as given; do not re-judge a trade or invent a winner. If the list is empty, say nothing about trading at all unless "unavailable" explains why there is no record.
+
+Write these as sentences. Never paste an entry verbatim: a line reading "Week 10: Blake Mire got Terry McLaurin (WR) and Khalil Shakir (WR); Michael Barkemeyer got Amon-Ra St. Brown (WR). Tribunal verdict: Highway Robbery." is a data dump with a label on it, not writing. Say who got fleeced and why it mattered.
+
+POSTSEASON LANGUAGE
+Round names in "playoffResults" are the brackets' own. A game named as consolation, a toilet bowl or a placement game is NOT a playoff game and never decides third place — the third-place game is in the championship bracket. Do not promote a consolation result into the playoff narrative, and do not call the championship bracket's third-place game a consolation final.
+
+"bestWeek", "closestGame" and "biggestBlowout" are season-wide and each names its own week. Do not fold them into a sentence about the playoffs unless the week they name is one of the weeks in "playoffResults" — a one-point thriller in week 8 is not a playoff thriller.
 
 HARD RULES
 - Invent nothing. No events, no quotations, no trades, no controversies, no drama that is not in the source.

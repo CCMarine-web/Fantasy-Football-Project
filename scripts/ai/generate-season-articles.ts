@@ -1,5 +1,7 @@
 import "../lib/load-env";
 import { prisma } from "@/lib/db";
+import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
+import { LOPSIDEDNESS_LABEL } from "@/server/stats/trade-value";
 import { isAIConfigured } from "@/lib/env";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import {
@@ -195,6 +197,22 @@ async function buildFacts(seasonId: string, year: number): Promise<SeasonArticle
         .join("; ")}`
     : null;
 
+  /*
+   * Trades, with the Tribunal's verdict on each. Without these the 2025
+   * retrospective was written as though the season had none, while the
+   * Tribunal was calling two of them outright fleecings a click away.
+   */
+  const tribunal = await getTradeTribunal();
+  const trades = tribunal
+    .filter((t) => t.seasonYear === year)
+    .map((t) => {
+      const band = t.lopsidedness ? LOPSIDEDNESS_LABEL[t.lopsidedness] : "not graded";
+      const sides = t.sides
+        .map((s) => `${s.managerName} got ${s.acquired.join(" and ")}`)
+        .join("; ");
+      return `Week ${t.week ?? "?"}: ${sides}. Tribunal verdict: ${band}. ${t.hindsightSummary}.`;
+    });
+
   const unavailable: string[] = [];
   if (season.dataSource === "ESPN") {
     unavailable.push(
@@ -235,6 +253,7 @@ async function buildFacts(seasonId: string, year: number): Promise<SeasonArticle
     biggestBlowout: blowout,
     rivalryGames,
     draftNote,
+    trades,
     commissionerFragments: [],
     unavailable,
   };

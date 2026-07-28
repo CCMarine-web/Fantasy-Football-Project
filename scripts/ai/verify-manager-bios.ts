@@ -101,6 +101,17 @@ async function main() {
     // 2. Championship count must not be overstated.
     const titles = profile.stats.championships;
     for (const match of text.matchAll(/\b(\d{1,2})\s+(championships?|titles?|rings?)\b/gi)) {
+      const index = match.index ?? 0;
+      /*
+       * Two shapes look like a count and are not. "a 5-2 championship-bracket
+       * record" puts a digit immediately before the word, and "2018's 10-4
+       * title run" does the same — both were being reported as claims of two
+       * and four championships.
+       */
+      if (/\d\s*[-–]\s*$/.test(text.slice(Math.max(0, index - 6), index))) continue;
+      if (/^\s*(run|game|shot|tilt|bout|bracket|round)\b/i.test(text.slice(index + match[0].length))) {
+        continue;
+      }
       if (Number(match[1]) > titles) {
         findings.push({
           manager: name,
