@@ -85,7 +85,13 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
     }),
     prisma.draftPick.findMany({
       where: { draft: { seasonId } },
-      select: { fantasyTeamId: true, pickNumber: true },
+      select: {
+        fantasyTeamId: true,
+        pickNumber: true,
+        isKeeper: true,
+        playerId: true,
+        player: { select: { id: true, position: true } },
+      },
     }),
   ]);
 
@@ -160,10 +166,160 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
     return Math.sqrt(xs.reduce((s, v) => s + (v - m) ** 2, 0) / xs.length);
   };
 
+  /*
+   * Career all-play rate per manager: how often they would have beaten a
+   * randomly chosen opponent in a randomly chosen prior week. It is the
+   * schedule-free way to say how good a manager has been, which is a different
+   * question from how much they scored — a high scorer in a weak era and a
+   * modest scorer in a strong one look identical on points per game.
+   */
+  const priorWeekly = await prisma.matchupTeam.findMany({
+    where: {
+      score: { not: null },
+      verifiedScore: true,
+      matchup: { isPlayoff: false, season: { year: { lt: seasonYear } } },
+    },
+    select: {
+      score: true,
+      fantasyTeam: { select: { managerId: true } },
+      matchup: { select: { week: true, season: { select: { year: true } } } },
+    },
+  });
+  const weeklyBuckets = new Map<string, { managerId: string; points: number }[]>();
+  for (const row of priorWeekly) {
+    if (row.score == null || !row.fantasyTeam.managerId) continue;
+    const key = `${row.matchup.season.year}-${row.matchup.week}`;
+    const list = weeklyBuckets.get(key) ?? [];
+    list.push({ managerId: row.fantasyTeam.managerId, points: row.score });
+    weeklyBuckets.set(key, list);
+  }
+  const allPlayTally = new Map<string, { w: number; l: number; t: number }>();
+  for (const bucket of weeklyBuckets.values()) {
+    for (const a of bucket) {
+      const rec = allPlayTally.get(a.managerId) ?? { w: 0, l: 0, t: 0 };
+      for (const b of bucket) {
+        if (b.managerId === a.managerId) continue;
+        if (a.points > b.points) rec.w += 1;
+        else if (a.points < b.points) rec.l += 1;
+        else rec.t += 1;
+      }
+      allPlayTally.set(a.managerId, rec);
+    }
+  }
+  const allPlayRate = new Map<string, number>();
+  for (const [managerId, rec] of allPlayTally) {
+    const games = rec.w + rec.l + rec.t;
+    if (games > 0) allPlayRate.set(managerId, (rec.w + 0.5 * rec.t) / games);
+  }
+
+  /*
+   * Per-player scoring history, used for starter quality and bench depth after
+   * a draft. Deliberately NOT derived from pick position: where a player went
+   * records what a draft room believed on the night, so ranking rosters by it
+   * would just restate the draft order under a new name.
+   */
+  const draftedPlayerIds = [
+    ...new Set(draftPicks.map((p) => p.playerId).filter((id): id is string => !!id)),
+  ];
+  const playerHistory = draftedPlayerIds.length
+    ? await prisma.weeklyPlayerScore.findMany({
+        where: {
+          playerId: { in: draftedPlayerIds },
+          points: { not: null },
+          roster: { fantasyTeam: { season: { year: { lt: seasonYear } } } },
+        },
+        select: { playerId: true, points: true },
+      })
+    : [];
+  const playerPoints = new Map<string, number[]>();
+  for (const row of playerHistory) {
+    if (row.points == null) continue;
+    const list = playerPoints.get(row.playerId) ?? [];
+    list.push(row.points);
+    playerPoints.set(row.playerId, list);
+  }
+  const playerPpg = new Map<string, number>();
+  for (const [playerId, points] of playerPoints) {
+    const avg = meanOf(points);
+    if (avg != null) playerPpg.set(playerId, avg);
+  }
+
+  /** Slots a lineup has to fill, and how many bodies count as real cover. */
+  const REQUIRED_SLOTS: Record<string, number> = { QB: 1, RB: 2, WR: 2, TE: 1, K: 1, DEF: 1 };
+
+  const picksByTeamFull = new Map<string, typeof draftPicks>();
+  for (const pick of draftPicks) {
+    const list = picksByTeamFull.get(pick.fantasyTeamId) ?? [];
+    list.push(pick);
+    picksByTeamFull.set(pick.fantasyTeamId, list);
+  }
+
+  /**
+   * Splits a drafted roster into the players who will start and the rest, by
+   * production rather than by pick order, and reports how well the required
+   * slots are covered.
+   */
+  function rosterShape(teamId: string) {
+    const picks = picksByTeamFull.get(teamId) ?? [];
+    if (picks.length === 0) {
+      return { starterQuality: null, benchQuality: null, positionalBalance: null, keeperValue: null };
+    }
+
+    const withPpg = picks
+      .map((p) => ({
+        position: p.player?.position ?? "UNK",
+        ppg: p.playerId ? (playerPpg.get(p.playerId) ?? null) : null,
+        isKeeper: p.isKeeper,
+      }))
+      .filter((p) => p.ppg != null) as { position: string; ppg: number; isKeeper: boolean }[];
+
+    const byPosition = new Map<string, number[]>();
+    for (const p of withPpg) {
+      const list = byPosition.get(p.position) ?? [];
+      list.push(p.ppg);
+      byPosition.set(p.position, list);
+    }
+    for (const list of byPosition.values()) list.sort((a, b) => b - a);
+
+    const starters: number[] = [];
+    let slotsCovered = 0;
+    let slotsWithBackup = 0;
+    let slotsRequired = 0;
+    for (const [position, count] of Object.entries(REQUIRED_SLOTS)) {
+      slotsRequired += count;
+      const available = byPosition.get(position) ?? [];
+      starters.push(...available.slice(0, count));
+      slotsCovered += Math.min(count, available.length);
+      if (available.length > count) slotsWithBackup += count;
+    }
+
+    // Whatever is left once the starting slots are filled is the bench.
+    const bench = withPpg
+      .map((p) => p.ppg)
+      .sort((a, b) => b - a)
+      .slice(starters.length);
+
+    const keeperPoints = withPpg.filter((p) => p.isKeeper).reduce((sum, p) => sum + p.ppg, 0);
+
+    return {
+      starterQuality: starters.length > 0 ? meanOf(starters) : null,
+      benchQuality: bench.length > 0 ? meanOf(bench) : null,
+      // Covered slots count for most of it; a backup behind a slot is the
+      // difference between depth and one injury from a hole.
+      positionalBalance:
+        slotsRequired > 0
+          ? (slotsCovered / slotsRequired) * 0.7 + (slotsWithBackup / slotsRequired) * 0.3
+          : null,
+      keeperValue: withPpg.some((p) => p.isKeeper) ? keeperPoints : null,
+    };
+  }
+
   const inputs: TeamRankingInput[] = teams.map((team) => {
     const prior = team.manager?.id ? (priorByManager.get(team.manager.id) ?? []) : [];
     const picks = picksByTeam.get(team.id) ?? [];
     const rosterSize = rosterSizeByTeam.get(team.id) ?? 0;
+    const shape = rosterShape(team.id);
+    const draftedCount = picksByTeamFull.get(team.id)?.length ?? 0;
     return {
       fantasyTeamId: team.id,
       managerId: team.manager?.id ?? null,
@@ -171,9 +327,24 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
       teamName: team.teamName,
       weeks: [...(linesByTeam.get(team.id)?.values() ?? [])].sort((a, b) => a.week - b.week),
       draftCapital: picks.length > 0 ? draftCapitalScore(picks) : null,
-      rosterDepth: rosterSize > 0 ? Math.max(0, rosterSize - STARTER_SLOTS) : null,
+      // Before a draft there is no weekly roster either, so fall back to the
+      // drafted squad size; both are null pre-draft, which is the point.
+      rosterDepth:
+        rosterSize > 0
+          ? Math.max(0, rosterSize - STARTER_SLOTS)
+          : draftedCount > 0
+            ? Math.max(0, draftedCount - STARTER_SLOTS)
+            : null,
       historicalPointsPerGame: meanOf(prior),
       historicalStdDev: sdOf(prior),
+      managerAllPlayRate: team.manager?.id ? (allPlayRate.get(team.manager.id) ?? null) : null,
+      keeperValue: shape.keeperValue,
+      starterQuality: shape.starterQuality,
+      benchQuality: shape.benchQuality,
+      positionalBalance: shape.positionalBalance,
+      // Neither platform's archived data carries published preseason
+      // projections, so this stays null and its weight is redistributed.
+      projectedPoints: null,
     };
   });
 

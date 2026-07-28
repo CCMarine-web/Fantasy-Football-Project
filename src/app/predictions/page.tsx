@@ -51,6 +51,12 @@ export default async function PredictionsPage() {
         eyebrow={`${season.year} Season`}
         title="Preseason Predictions"
         description="Managers call their shots before the draft. Once the deadline hits, the picks lock and the Prophet Rating tracks who actually saw it coming."
+        /*
+         * Only a signed-in manager gets a call to action. A visitor used to be
+         * shown "Sign in to predict", which led to a login they have no account
+         * for — public sign-in was removed. The page is now read-only for them
+         * and says so below instead of offering a door that does not open.
+         */
         actions={
           user?.managerId && !locked ? (
             <Button render={<Link href="/predictions/submit" />} nativeButton={false} size="sm">
@@ -58,18 +64,17 @@ export default async function PredictionsPage() {
                 ? "Edit your picks"
                 : "Make your picks"}
             </Button>
-          ) : !user ? (
-            <Button
-              render={<Link href="/login?callbackUrl=/predictions/submit" />}
-              nativeButton={false}
-              variant="outline"
-              size="sm"
-            >
-              Sign in to predict
-            </Button>
           ) : null
         }
       />
+
+      {!user ? (
+        <p className="mt-4 rounded-md border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          Predictions are made by the league&rsquo;s own managers before the draft. This page is the
+          public record of what they called — everyone can read it, nobody outside the league submits
+          to it.
+        </p>
+      ) : null}
 
       <p className="mt-4 text-xs text-muted-foreground">
         {locked ? (
@@ -179,7 +184,9 @@ export default async function PredictionsPage() {
             description={
               locked
                 ? "The deadline passed before anyone locked in their picks."
-                : "Be the first to call it. Sign in and make your picks before the draft."
+                : user?.managerId
+                  ? "Be the first to call it — make your picks before the draft."
+                  : "Nobody has locked in their picks yet. They appear here as managers submit them."
             }
           />
         ) : (

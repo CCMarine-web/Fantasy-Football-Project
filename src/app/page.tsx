@@ -13,7 +13,10 @@ import { getCurrentChampion } from "@/server/repositories/championship-belt-repo
 import { getPowerRankingsPreview } from "@/server/repositories/power-rankings-repository";
 import { BRAND } from "@/lib/branding";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
-import { DraftCountdown } from "@/components/home/draft-countdown";
+import { DraftCountdown, initialRemaining } from "@/components/home/draft-countdown";
+import { OffseasonPanel } from "@/components/home/offseason-panel";
+import { getSeasonPhase } from "@/server/repositories/season-phase";
+import { getOffseasonData } from "@/server/repositories/offseason-repository";
 
 export default async function HomePage() {
   const [data, seasonNarrative, champion, powerPreview] = await Promise.all([
@@ -24,6 +27,14 @@ export default async function HomePage() {
     // never disagree with the page it links to.
     getPowerRankingsPreview(5),
   ]);
+
+  // Where the season actually is. The page used to announce "Week 1" in July
+  // because it read the highest scheduled week rather than a played one.
+  const phase = data ? await getSeasonPhase(data.season.id, data.season.year) : null;
+  const offseason =
+    data && phase && phase.phase !== "IN_SEASON"
+      ? await getOffseasonData(data.season.id, data.season.year)
+      : null;
 
   if (!data) {
     return (
@@ -68,7 +79,10 @@ export default async function HomePage() {
       <section className="flex flex-col gap-6 border-b border-border/60 pb-8 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-xs font-semibold tracking-[0.3em] text-primary uppercase">
-            {season.year} Season · Week {currentWeek}
+            {/* "Week N" only once a week has actually been played. */}
+            {phase?.phase === "IN_SEASON"
+              ? `${season.year} Season · ${phase.label}`
+              : (phase?.label ?? `${season.year} Season`)}
           </p>
           <h1 className="mt-2 font-heading text-4xl font-semibold tracking-wide uppercase sm:text-5xl">
             {BRAND.name}
@@ -80,7 +94,11 @@ export default async function HomePage() {
         </div>
         {LEAGUE_CONFIG.showDraftCountdown ? (
           <div className="w-full shrink-0 lg:max-w-xs">
-            <DraftCountdown isoDate={LEAGUE_CONFIG.draftDate} timeZone={LEAGUE_CONFIG.draftTimeZone} />
+            <DraftCountdown
+              isoDate={LEAGUE_CONFIG.draftDate}
+              timeZone={LEAGUE_CONFIG.draftTimeZone}
+              initial={phase ? initialRemaining(LEAGUE_CONFIG.draftDate, phase.nowMs) : null}
+            />
           </div>
         ) : null}
       </section>
@@ -102,7 +120,9 @@ export default async function HomePage() {
         {/* Main column */}
         <div className="space-y-8 lg:col-span-2">
           {/* 3 — Current matchups */}
-          {featuredMatchup ? (
+          {/* A "featured matchup" with no scores and no form behind it is just
+              two names, so it waits until the season starts. */}
+          {featuredMatchup && phase?.phase === "IN_SEASON" ? (
             <section>
               <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
                 Featured Matchup
@@ -111,38 +131,50 @@ export default async function HomePage() {
             </section>
           ) : null}
 
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-                Week {currentWeek} Matchups
-              </h2>
-              <Link href="/matchups" className="text-sm text-primary hover:underline">
-                View all
-              </Link>
-            </div>
-            {currentWeekMatchups.length === 0 ? (
-              <EmptyState title="No matchups yet" description="Check back once this week is scheduled." />
-            ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {currentWeekMatchups.map((m) => (
-                  <MatchupCard key={m.matchupId} data={m} />
-                ))}
-              </div>
-            )}
-          </section>
+          {/*
+           * Before the season starts there are no matchups worth showing, and
+           * an empty "Week 1 Matchups" grid told a visitor nothing. What the
+           * offseason actually has is a draft to look forward to and a season
+           * just finished to look back on, so that is what fills the space.
+           */}
+          {phase?.phase === "IN_SEASON" ? (
+            <>
+              <section>
+                <div className="mb-3 flex items-center justify-between">
+                  <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+                    Week {currentWeek} Matchups
+                  </h2>
+                  <Link href="/matchups" className="text-sm text-primary hover:underline">
+                    View all
+                  </Link>
+                </div>
+                {currentWeekMatchups.length === 0 ? (
+                  <EmptyState title="No matchups yet" description="Check back once this week is scheduled." />
+                ) : (
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {currentWeekMatchups.map((m) => (
+                      <MatchupCard key={m.matchupId} data={m} />
+                    ))}
+                  </div>
+                )}
+              </section>
 
-          {upcomingMatchups.length > 0 ? (
-            <section>
-              <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
-                Up Next — Week {currentWeek + 1}
-              </h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {upcomingMatchups.map((m) => (
-                  <MatchupCard key={m.matchupId} data={m} />
-                ))}
-              </div>
-            </section>
-          ) : null}
+              {upcomingMatchups.length > 0 ? (
+                <section>
+                  <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
+                    Up Next — Week {currentWeek + 1}
+                  </h2>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {upcomingMatchups.map((m) => (
+                      <MatchupCard key={m.matchupId} data={m} />
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+            </>
+          ) : (
+            <OffseasonPanel phase={phase} narrative={seasonNarrative} data={offseason} />
+          )}
 
           {/* 6 — Recent AI content: weekly headline + short season-review preview */}
           <section>
@@ -210,26 +242,49 @@ export default async function HomePage() {
 
         {/* Sidebar */}
         <div className="space-y-8">
-          {/* 4 — Standings */}
+          {/*
+           * 4 — Standings, but only once they mean something. Ten teams at 0-0
+           * were being numbered 1 to 10, which reads as a table and is not one:
+           * the order was alphabetical by whatever the query returned. Before
+           * kickoff the same teams are listed with no rank numbers and an
+           * explicit note about the ordering.
+           */}
           <section>
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Standings</h2>
+              <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+                {phase?.phase === "IN_SEASON" ? "Standings" : "The League"}
+              </h2>
               <Link href="/standings" className="text-sm text-primary hover:underline">
                 Full table
               </Link>
             </div>
             <Card>
               <CardContent className="space-y-3">
-                {standings.slice(0, 5).map((row, i) => (
+                {phase?.phase !== "IN_SEASON" ? (
+                  <p className="text-xs text-muted-foreground">
+                    Nobody has played a game, so there is nothing to rank yet. Listed alphabetically.
+                  </p>
+                ) : null}
+                {(phase?.phase === "IN_SEASON"
+                  ? standings.slice(0, 5)
+                  : [...standings].sort((a, b) => a.managerName.localeCompare(b.managerName)).slice(0, 5)
+                ).map((row, i) => (
                   <div key={row.fantasyTeamId} className="flex items-center gap-3">
-                    <span className="w-4 font-mono text-sm text-muted-foreground">{i + 1}</span>
+                    {phase?.phase === "IN_SEASON" ? (
+                      <span className="w-4 font-mono text-sm text-muted-foreground">{i + 1}</span>
+                    ) : null}
                     <TeamAvatar name={row.managerName} imageUrl={row.avatarUrl} className="h-7 w-7" />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium">{row.teamName}</p>
+                      {phase?.phase !== "IN_SEASON" ? (
+                        <p className="truncate text-xs text-muted-foreground">{row.managerName}</p>
+                      ) : null}
                     </div>
-                    <span className="font-mono text-sm text-muted-foreground">
-                      {row.wins}-{row.losses}
-                    </span>
+                    {phase?.phase === "IN_SEASON" ? (
+                      <span className="font-mono text-sm text-muted-foreground">
+                        {row.wins}-{row.losses}
+                      </span>
+                    ) : null}
                   </div>
                 ))}
               </CardContent>
@@ -241,17 +296,24 @@ export default async function HomePage() {
             <div className="mb-3 flex items-center gap-2">
               <TrendingUp className="h-4 w-4 text-primary" />
               <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-                Power Rankings
+                {powerPreview?.mode === "MANAGER_BASELINE"
+                  ? "Manager Baseline"
+                  : powerPreview?.mode === "PRESEASON"
+                    ? "Preseason Power Rankings"
+                    : "Power Rankings"}
               </h2>
             </div>
             <Card>
               <CardContent className="space-y-2">
                 {powerPreview && powerPreview.rows.length > 0 ? (
                   <>
+                    {/* Must read identically to the page it links to. */}
                     <p className="text-xs text-muted-foreground">
-                      {powerPreview.mode === "PRESEASON"
-                        ? "Preseason projection"
-                        : `Updated through Week ${powerPreview.throughWeek}`}
+                      {powerPreview.mode === "IN_SEASON"
+                        ? `Updated through Week ${powerPreview.throughWeek}`
+                        : powerPreview.mode === "MANAGER_BASELINE"
+                          ? "Manager baseline — before the draft"
+                          : "Preseason — after the draft, before Week 1"}
                     </p>
                     {powerPreview.rows.map((row) => (
                       <div key={row.fantasyTeamId} className="flex items-center justify-between gap-2 text-sm">

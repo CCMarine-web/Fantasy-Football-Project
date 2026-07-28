@@ -147,42 +147,96 @@ describe("weekly power rankings — in season", () => {
   });
 });
 
-describe("weekly power rankings — preseason", () => {
-  it("switches to projection inputs when no games have been played", () => {
+describe("weekly power rankings — before the draft", () => {
+  it("ranks managers on history when no draft has happened", () => {
     const a = team({
       fantasyTeamId: "a",
-      draftCapital: 500,
-      rosterDepth: 7,
       historicalPointsPerGame: 120,
       historicalStdDev: 10,
+      managerAllPlayRate: 0.62,
     });
     const b = team({
       fantasyTeamId: "b",
-      draftCapital: 300,
-      rosterDepth: 5,
       historicalPointsPerGame: 100,
       historicalStdDev: 25,
+      managerAllPlayRate: 0.41,
     });
     const result = computeWeeklyPowerRankings([a, b]);
 
-    expect(result.mode).toBe("PRESEASON");
+    expect(result.mode).toBe("MANAGER_BASELINE");
     expect(result.throughWeek).toBe(0);
     expect(result.rows[0].fantasyTeamId).toBe("a");
-    expect(result.weights.map((w) => w.key)).toEqual([
-      "draftCapital",
-      "rosterDepth",
-      "historicalScoring",
-      "historicalConsistency",
-    ]);
-    expect(result.notes.join(" ")).toMatch(/no games/i);
+    expect(result.notes.join(" ")).toMatch(/draft has not happened/i);
+  });
+
+  it("never scores draft capital before a draft exists", () => {
+    const a = team({ fantasyTeamId: "a", historicalPointsPerGame: 110, managerAllPlayRate: 0.5 });
+    const b = team({ fantasyTeamId: "b", historicalPointsPerGame: 100, managerAllPlayRate: 0.5 });
+    const result = computeWeeklyPowerRankings([a, b]);
+    expect(result.weights.map((w) => w.key)).not.toContain("draftCapital");
+  });
+
+  it("drops categories it cannot measure and rescales the rest to 100%", () => {
+    // No keepers and no consistency data for either team.
+    const a = team({ fantasyTeamId: "a", historicalPointsPerGame: 120, managerAllPlayRate: 0.6 });
+    const b = team({ fantasyTeamId: "b", historicalPointsPerGame: 100, managerAllPlayRate: 0.4 });
+    const result = computeWeeklyPowerRankings([a, b]);
+
+    expect(result.weights.map((w) => w.key).sort()).toEqual(["historicalScoring", "managerStrength"]);
+    const total = result.weights.reduce((sum, w) => sum + w.weight, 0);
+    expect(total).toBeCloseTo(1, 10);
+    expect(result.notes.join(" ")).toMatch(/redistributed/i);
+    // And every row's own factor weights add to 1 as well.
+    for (const row of result.rows) {
+      expect(row.factors.reduce((s, f) => s + f.weight, 0)).toBeCloseTo(1, 10);
+    }
   });
 
   it("handles a manager with no prior seasons without crashing", () => {
-    const a = team({ fantasyTeamId: "a", draftCapital: 400, rosterDepth: 6 });
-    const b = team({ fantasyTeamId: "b", draftCapital: 350, rosterDepth: 6 });
+    const a = team({ fantasyTeamId: "a" });
+    const b = team({ fantasyTeamId: "b" });
     const result = computeWeeklyPowerRankings([a, b]);
     expect(result.rows).toHaveLength(2);
     expect(result.rows.every((r) => Number.isFinite(r.score))).toBe(true);
+  });
+});
+
+describe("weekly power rankings — after the draft, before week 1", () => {
+  const drafted = (id: string, capital: number, starter: number) =>
+    team({
+      fantasyTeamId: id,
+      draftCapital: capital,
+      starterQuality: starter,
+      benchQuality: starter * 0.4,
+      positionalBalance: 0.9,
+      rosterDepth: 6,
+      // Present, and deliberately ignored by this mode.
+      historicalPointsPerGame: 999,
+      managerAllPlayRate: 0.99,
+    });
+
+  it("switches to roster inputs once picks exist", () => {
+    const result = computeWeeklyPowerRankings([drafted("a", 500, 14), drafted("b", 300, 10)]);
+    expect(result.mode).toBe("PRESEASON");
+    expect(result.rows[0].fantasyTeamId).toBe("a");
+    expect(result.notes.join(" ")).toMatch(/draft is done/i);
+  });
+
+  it("scores the roster, not the manager's history", () => {
+    // "b" has every historical advantage and a worse roster; the roster wins.
+    const a = drafted("a", 600, 16);
+    const b = { ...drafted("b", 200, 8), historicalPointsPerGame: 200, managerAllPlayRate: 0.95 };
+    const result = computeWeeklyPowerRankings([a, b]);
+    expect(result.rows[0].fantasyTeamId).toBe("a");
+    expect(result.weights.map((w) => w.key)).not.toContain("historicalScoring");
+    expect(result.weights.map((w) => w.key)).not.toContain("managerStrength");
+  });
+
+  it("drops the projection category when no projections exist and says so", () => {
+    const result = computeWeeklyPowerRankings([drafted("a", 500, 14), drafted("b", 300, 10)]);
+    expect(result.weights.map((w) => w.key)).not.toContain("projection");
+    expect(result.notes.join(" ")).toMatch(/Preseason projection/i);
+    expect(result.weights.reduce((sum, w) => sum + w.weight, 0)).toBeCloseTo(1, 10);
   });
 });
 

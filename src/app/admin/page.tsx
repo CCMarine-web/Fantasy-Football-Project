@@ -52,6 +52,18 @@ const SOURCE_REVIEW_SECTIONS = [
     title: "Manager Mappings",
     description: "Identity overview: aliases, photos, and chat identifiers.",
   },
+  /*
+   * Predictions is reachable from here rather than from the public footer.
+   * Submitting one needs an account linked to a manager, and public sign-in
+   * has been removed, so the footer link only ever led visitors to a login
+   * they could not use.
+   */
+  {
+    href: "/predictions",
+    icon: Sparkles,
+    title: "Predictions",
+    description: "Preseason picks and the Prophet Rating. Managers submit; everyone can read.",
+  },
 ] as const;
 
 export const metadata = { title: "Admin" };

@@ -79,9 +79,15 @@ export const INLINE_NAV_XL = 7;
  * Extra destinations not in the top nav but linked in the footer. Draft Report
  * Cards appears in the footer under its FULL name, so the short nav label never
  * leaves a visitor unsure what the page is.
+ *
+ * Predictions is deliberately NOT here. Submitting one requires an account
+ * linked to a manager, and public sign-in has been removed, so every visitor
+ * who followed the footer link hit a page whose only call to action was a
+ * "Sign in to predict" button they could not use. The page still exists and is
+ * linked from the commissioner's dashboard; it is simply not advertised to
+ * people who cannot take part.
  */
 const footerExtras: NavLink[] = [
-  { href: "/predictions", label: "Predictions" },
   { href: "/draft-report-cards", label: "Draft Report Cards" },
 ];
 

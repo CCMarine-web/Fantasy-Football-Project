@@ -30,17 +30,46 @@
  * recent week counts about three times a week from ten weeks earlier while
  * every week still contributes. Nothing is discarded.
  *
- * ── Preseason formula ──────────────────────────────────────────────────────
- * With no games played there is nothing to measure, so the model switches
- * inputs rather than pretending. Draft capital, roster depth and the
- * manager's own multi-season scoring baseline stand in until week 1 posts,
- * and the UI is told which mode produced the numbers.
+ * ── Before the season: two different questions ─────────────────────────────
+ * The old model had one "preseason" mode that mixed draft capital with the
+ * manager's scoring history, which meant it produced draft-based numbers in
+ * July when no draft had happened. There are two genuinely different questions
+ * before week 1, and they now get two different formulas:
+ *
+ *   MANAGER_BASELINE (before the draft)
+ *     Nothing about the coming season exists yet — no roster, no picks. All
+ *     that can honestly be ranked is the manager: how much they have scored,
+ *     how reliably, how they have fared with schedule luck removed, and what
+ *     they are keeping.
+ *
+ *       Historical scoring       34%
+ *       Manager strength         30%   career all-play rate
+ *       Historical consistency   20%
+ *       Keeper value             16%
+ *
+ *   PRESEASON (after the draft, before week 1)
+ *     Now there is a roster, so the roster is what gets ranked.
+ *
+ *       Draft capital            28%
+ *       Starter quality          22%
+ *       Preseason projection     18%
+ *       Bench depth              14%
+ *       Positional balance       10%
+ *       Roster depth              8%
+ *
+ * ── Missing categories ─────────────────────────────────────────────────────
+ * A category with no data behind it is DROPPED and the remaining weights are
+ * rescaled to sum to 100%, rather than being scored zero or silently treated
+ * as league-average. Scoring it zero would punish a team for a gap in the
+ * data; treating it as average would hide the gap. Every dropped category is
+ * named in the notes, and the weights shown to a reader are the rescaled ones
+ * actually used.
  *
  * Everything here is pure and deterministic. AI never computes a rank; it only
  * writes commentary about numbers this file produced.
  */
 
-export type RankingMode = "IN_SEASON" | "PRESEASON";
+export type RankingMode = "IN_SEASON" | "PRESEASON" | "MANAGER_BASELINE";
 
 export const IN_SEASON_WEIGHTS = {
   scoring: 0.22,
@@ -54,16 +83,28 @@ export const IN_SEASON_WEIGHTS = {
   scheduleStrength: 0.04,
 } as const;
 
+/** After the draft, before week 1: the roster is what gets ranked. */
 export const PRESEASON_WEIGHTS = {
-  draftCapital: 0.34,
-  rosterDepth: 0.22,
-  historicalScoring: 0.3,
-  historicalConsistency: 0.14,
+  draftCapital: 0.28,
+  starterQuality: 0.22,
+  projection: 0.18,
+  benchDepth: 0.14,
+  positionalBalance: 0.1,
+  rosterDepth: 0.08,
+} as const;
+
+/** Before the draft: only the manager exists to be ranked. */
+export const MANAGER_BASELINE_WEIGHTS = {
+  historicalScoring: 0.34,
+  managerStrength: 0.3,
+  historicalConsistency: 0.2,
+  keeperValue: 0.16,
 } as const;
 
 export type InSeasonFactorKey = keyof typeof IN_SEASON_WEIGHTS;
 export type PreseasonFactorKey = keyof typeof PRESEASON_WEIGHTS;
-export type FactorKey = InSeasonFactorKey | PreseasonFactorKey;
+export type BaselineFactorKey = keyof typeof MANAGER_BASELINE_WEIGHTS;
+export type FactorKey = InSeasonFactorKey | PreseasonFactorKey | BaselineFactorKey;
 
 export const FACTOR_META: Record<FactorKey, { label: string; description: string }> = {
   scoring: {
@@ -127,6 +168,31 @@ export const FACTOR_META: Record<FactorKey, { label: string; description: string
     label: "Historical consistency",
     description: "How reliably the manager has scored in previous seasons.",
   },
+  starterQuality: {
+    label: "Starter quality",
+    description:
+      "The scoring rate of the drafted players who will start, measured by what those players have actually produced — not by how early they were taken.",
+  },
+  projection: {
+    label: "Preseason projection",
+    description:
+      "Published preseason projections for the drafted roster. Neither platform's archived data includes these, so this category is normally dropped and its weight redistributed.",
+  },
+  positionalBalance: {
+    label: "Positional balance",
+    description:
+      "Whether every required starting slot is covered, and how thinly. A roster with no second tight end is one injury from a hole.",
+  },
+  managerStrength: {
+    label: "Manager strength",
+    description:
+      "Career all-play rate: how often this manager would have beaten a randomly chosen opponent. Schedule luck is removed entirely.",
+  },
+  keeperValue: {
+    label: "Keeper value",
+    description:
+      "The production of the players carried into the new season. Dropped when no keepers have been declared.",
+  },
 };
 
 /** Weekly result for one team. */
@@ -148,14 +214,34 @@ export interface TeamRankingInput {
   managerName: string;
   teamName: string;
   weeks: WeeklyLine[];
-  /** Preseason only: total draft-capital score (see buildDraftCapital). */
+  /** Preseason only: total draft-capital score (see draftCapitalScore). */
   draftCapital?: number | null;
   /** Preseason only: number of rostered players beyond a standard starting nine. */
   rosterDepth?: number | null;
-  /** Preseason only: the manager's points per game across prior seasons. */
+  /** Pre-draft only: the manager's points per game across prior seasons. */
   historicalPointsPerGame?: number | null;
-  /** Preseason only: std dev of the manager's prior-season weekly scores. */
+  /** Pre-draft only: std dev of the manager's prior-season weekly scores. */
   historicalStdDev?: number | null;
+  /**
+   * Pre-draft only: career all-play win rate, 0-1. A schedule-free measure of
+   * how good the manager has been, as distinct from how much they scored.
+   */
+  managerAllPlayRate?: number | null;
+  /** Pre-draft only: total prior-season production of declared keepers. */
+  keeperValue?: number | null;
+  /**
+   * Post-draft only: mean prior-season points per game of the drafted players
+   * who fill the starting slots. Deliberately NOT derived from where they were
+   * picked — draft position measures what a room believed, not what a player
+   * produces, and using it would make the ranking a restatement of draft order.
+   */
+  starterQuality?: number | null;
+  /** Post-draft only: mean prior-season points per game of the bench. */
+  benchQuality?: number | null;
+  /** Post-draft only: 0-1, share of required starting slots with real cover. */
+  positionalBalance?: number | null;
+  /** Post-draft only: total published preseason projection, when available. */
+  projectedPoints?: number | null;
 }
 
 export interface RankingFactor {
@@ -259,9 +345,68 @@ export function computeWeeklyPowerRankings(
   for (const t of teams) for (const w of t.weeks) playedWeeks.add(w.week);
   const throughWeek = playedWeeks.size > 0 ? Math.max(...playedWeeks) : 0;
 
-  return playedWeeks.size === 0
-    ? preseasonRankings(teams, prevRank)
-    : inSeasonRankings(teams, throughWeek, playedWeeks.size, prevRank);
+  if (playedWeeks.size > 0) {
+    return inSeasonRankings(teams, throughWeek, playedWeeks.size, prevRank);
+  }
+
+  /*
+   * Which pre-season question to answer is decided by the data, not by the
+   * calendar: a draft that has produced picks means there are rosters to rank,
+   * and no picks means there is nothing yet but the managers themselves.
+   */
+  const drafted = teams.some((t) => t.draftCapital != null);
+  return drafted ? preseasonRankings(teams, prevRank) : baselineRankings(teams, prevRank);
+}
+
+// ---------------------------------------------------------------------------
+// Shared: blend a set of factors, dropping the ones with no data
+// ---------------------------------------------------------------------------
+
+interface FactorSpec {
+  key: FactorKey;
+  /** 0-100 after normalisation, or null when the category cannot be measured. */
+  value: number | null;
+  /** Weight before rescaling. */
+  weight: number;
+  /** Human-readable underlying value, or the reason it is missing. */
+  raw: string;
+}
+
+/**
+ * Combines factors into a 0-100 score, DROPPING any whose value is null and
+ * rescaling the survivors so their weights still sum to 1.
+ *
+ * The alternative — scoring a missing category zero — would rank a team last
+ * for a gap in the data rather than for anything they did, and treating it as
+ * 50 would quietly pull every team toward the middle without saying so. The
+ * weights returned here are the rescaled ones, so what a reader is shown is
+ * what was actually used.
+ */
+function blend(specs: FactorSpec[]): { score: number; factors: RankingFactor[]; dropped: FactorKey[] } {
+  const usable = specs.filter((s) => s.value != null);
+  const totalWeight = usable.reduce((sum, s) => sum + s.weight, 0);
+  const factors: RankingFactor[] = specs.map((s) => ({
+    key: s.key,
+    label: FACTOR_META[s.key].label,
+    value: s.value == null ? 0 : round(s.value),
+    weight: s.value == null || totalWeight === 0 ? 0 : s.weight / totalWeight,
+    raw: s.raw,
+  }));
+  const score =
+    totalWeight === 0
+      ? 50
+      : usable.reduce((sum, s) => sum + (s.value as number) * (s.weight / totalWeight), 0);
+  return { score, factors, dropped: specs.filter((s) => s.value == null).map((s) => s.key) };
+}
+
+/** Min-max range over whichever teams have a value for a field. */
+function rangeOf(
+  teams: TeamRankingInput[],
+  pick: (t: TeamRankingInput) => number | null | undefined,
+): { min: number; max: number } | null {
+  const values = teams.map(pick).filter((v): v is number => v != null && Number.isFinite(v));
+  if (values.length === 0) return null;
+  return { min: Math.min(...values), max: Math.max(...values) };
 }
 
 // ---------------------------------------------------------------------------
@@ -480,71 +625,47 @@ function inSeasonRankings(
 }
 
 // ---------------------------------------------------------------------------
-// Preseason
+// Before week 1
 // ---------------------------------------------------------------------------
 
-function preseasonRankings(
-  teams: TeamRankingInput[],
+/** Shared shell for the two pre-season modes. */
+function preSeasonResult(
+  mode: Exclude<RankingMode, "IN_SEASON">,
+  weightTable: Record<string, number>,
+  rowsIn: {
+    input: TeamRankingInput;
+    score: number;
+    factors: RankingFactor[];
+    dropped: FactorKey[];
+    headlineNumber: number | null;
+  }[],
   prevRank: Map<string, number>,
+  leadNote: string,
 ): PowerRankingsResult {
-  const notes = [
-    "No games have been played yet, so this is a projection: it uses draft capital, roster depth and each manager's multi-season scoring baseline. It switches to live results automatically once week 1 is final.",
-  ];
+  const notes = [leadNote];
 
-  const range = (pick: (t: TeamRankingInput) => number | null | undefined) => {
-    const vals = teams.map(pick).filter((v): v is number => v != null && Number.isFinite(v));
-    return vals.length > 0
-      ? { min: Math.min(...vals), max: Math.max(...vals) }
-      : { min: 0, max: 0 };
-  };
-  const rDraft = range((t) => t.draftCapital);
-  const rDepth = range((t) => t.rosterDepth);
-  const rHist = range((t) => t.historicalPointsPerGame);
-  const rHistSd = range((t) => t.historicalStdDev);
+  /*
+   * A category is only reported as dropped when it is missing for EVERY team —
+   * that is the case a reader needs explained. A single team missing one input
+   * is visible in that team's own factor breakdown.
+   */
+  const droppedForAll = (Object.keys(weightTable) as FactorKey[]).filter((key) =>
+    rowsIn.every((r) => r.dropped.includes(key)),
+  );
+  if (droppedForAll.length > 0) {
+    notes.push(
+      `${droppedForAll.map((k) => FACTOR_META[k].label).join(", ")} could not be measured from the recorded data, so ${droppedForAll.length === 1 ? "its weight was" : "their weights were"} redistributed across the remaining categories rather than scored as zero. The percentages below are the ones actually used.`,
+    );
+  }
 
-  const rows = teams.map((t) => {
-    const values: Record<PreseasonFactorKey, number> = {
-      draftCapital: t.draftCapital == null ? 50 : normalize(t.draftCapital, rDraft.min, rDraft.max),
-      rosterDepth: t.rosterDepth == null ? 50 : normalize(t.rosterDepth, rDepth.min, rDepth.max),
-      historicalScoring:
-        t.historicalPointsPerGame == null
-          ? 50
-          : normalize(t.historicalPointsPerGame, rHist.min, rHist.max),
-      historicalConsistency:
-        t.historicalStdDev == null
-          ? 50
-          : 100 - normalize(t.historicalStdDev, rHistSd.min, rHistSd.max),
-    };
-    const raws: Record<PreseasonFactorKey, string> = {
-      draftCapital:
-        t.draftCapital == null ? "no draft on record" : `${round(t.draftCapital)} capital`,
-      rosterDepth: t.rosterDepth == null ? "no roster on record" : `${t.rosterDepth} bench players`,
-      historicalScoring:
-        t.historicalPointsPerGame == null
-          ? "no prior seasons"
-          : `${round(t.historicalPointsPerGame)} pts/gm`,
-      historicalConsistency:
-        t.historicalStdDev == null ? "no prior seasons" : `±${round(t.historicalStdDev)} std dev`,
-    };
-
-    const keys = Object.keys(PRESEASON_WEIGHTS) as PreseasonFactorKey[];
-    const factors: RankingFactor[] = keys.map((key) => ({
-      key,
-      label: FACTOR_META[key].label,
-      value: round(values[key]),
-      weight: PRESEASON_WEIGHTS[key],
-      raw: raws[key],
-    }));
-    const score = keys.reduce((sum, key) => sum + values[key] * PRESEASON_WEIGHTS[key], 0);
-
-    return {
-      fantasyTeamId: t.fantasyTeamId,
-      managerId: t.managerId,
-      managerName: t.managerName,
-      teamName: t.teamName,
-      score: round(score),
-      weightedPointsPerGame:
-        t.historicalPointsPerGame == null ? null : round(t.historicalPointsPerGame),
+  const rows = rowsIn
+    .map((r) => ({
+      fantasyTeamId: r.input.fantasyTeamId,
+      managerId: r.input.managerId,
+      managerName: r.input.managerName,
+      teamName: r.input.teamName,
+      score: round(r.score),
+      weightedPointsPerGame: r.headlineNumber == null ? null : round(r.headlineNumber),
       allPlayWins: 0,
       allPlayLosses: 0,
       allPlayTies: 0,
@@ -553,29 +674,205 @@ function preseasonRankings(
       actualWins: 0,
       luck: null,
       lineupEfficiency: null,
-      factors,
-    };
-  });
+      factors: r.factors,
+    }))
+    .sort((a, b) => b.score - a.score || a.managerName.localeCompare(b.managerName));
 
-  rows.sort((a, b) => b.score - a.score || a.managerName.localeCompare(b.managerName));
+  // The published weights are the RESCALED ones, taken from the first team that
+  // has a value for each category, so the table adds to 100%.
+  const publishedWeight = (key: FactorKey): number => {
+    for (const r of rowsIn) {
+      const f = r.factors.find((x) => x.key === key);
+      if (f && f.weight > 0) return f.weight;
+    }
+    return 0;
+  };
 
   return {
-    mode: "PRESEASON",
+    mode,
     throughWeek: 0,
     weeksCounted: 0,
     notes,
-    weights: (Object.keys(PRESEASON_WEIGHTS) as PreseasonFactorKey[]).map((key) => ({
-      key,
-      label: FACTOR_META[key].label,
-      description: FACTOR_META[key].description,
-      weight: PRESEASON_WEIGHTS[key],
-    })),
+    weights: (Object.keys(weightTable) as FactorKey[])
+      .map((key) => ({
+        key,
+        label: FACTOR_META[key].label,
+        description: FACTOR_META[key].description,
+        weight: publishedWeight(key),
+      }))
+      .filter((w) => w.weight > 0)
+      .sort((a, b) => b.weight - a.weight),
     rows: rows.map((r, i) => ({
       ...r,
       rank: i + 1,
       previousRank: prevRank.get(r.fantasyTeamId) ?? null,
     })),
   };
+}
+
+/**
+ * BEFORE THE DRAFT. No roster exists, so nothing about the coming season can be
+ * ranked; what can be is the manager. Draft capital is deliberately absent —
+ * there are no picks.
+ */
+function baselineRankings(
+  teams: TeamRankingInput[],
+  prevRank: Map<string, number>,
+): PowerRankingsResult {
+  const rScoring = rangeOf(teams, (t) => t.historicalPointsPerGame);
+  const rSd = rangeOf(teams, (t) => t.historicalStdDev);
+  const rAllPlay = rangeOf(teams, (t) => t.managerAllPlayRate);
+  const rKeeper = rangeOf(teams, (t) => t.keeperValue);
+
+  const rowsIn = teams.map((t) => {
+    const specs: FactorSpec[] = [
+      {
+        key: "historicalScoring",
+        weight: MANAGER_BASELINE_WEIGHTS.historicalScoring,
+        value:
+          t.historicalPointsPerGame == null || !rScoring
+            ? null
+            : normalize(t.historicalPointsPerGame, rScoring.min, rScoring.max),
+        raw:
+          t.historicalPointsPerGame == null
+            ? "no prior seasons on record"
+            : `${round(t.historicalPointsPerGame)} pts/gm across previous seasons`,
+      },
+      {
+        key: "managerStrength",
+        weight: MANAGER_BASELINE_WEIGHTS.managerStrength,
+        value:
+          t.managerAllPlayRate == null || !rAllPlay
+            ? null
+            : normalize(t.managerAllPlayRate, rAllPlay.min, rAllPlay.max),
+        raw:
+          t.managerAllPlayRate == null
+            ? "no prior seasons on record"
+            : `${(t.managerAllPlayRate * 100).toFixed(1)}% career all-play`,
+      },
+      {
+        key: "historicalConsistency",
+        weight: MANAGER_BASELINE_WEIGHTS.historicalConsistency,
+        value:
+          t.historicalStdDev == null || !rSd
+            ? null
+            : 100 - normalize(t.historicalStdDev, rSd.min, rSd.max),
+        raw:
+          t.historicalStdDev == null
+            ? "no prior seasons on record"
+            : `±${round(t.historicalStdDev)} points week to week`,
+      },
+      {
+        key: "keeperValue",
+        weight: MANAGER_BASELINE_WEIGHTS.keeperValue,
+        value:
+          t.keeperValue == null || !rKeeper ? null : normalize(t.keeperValue, rKeeper.min, rKeeper.max),
+        raw: t.keeperValue == null ? "no keepers declared" : `${round(t.keeperValue)} points kept`,
+      },
+    ];
+    const { score, factors, dropped } = blend(specs);
+    return { input: t, score, factors, dropped, headlineNumber: t.historicalPointsPerGame ?? null };
+  });
+
+  return preSeasonResult(
+    "MANAGER_BASELINE",
+    MANAGER_BASELINE_WEIGHTS,
+    rowsIn,
+    prevRank,
+    "The draft has not happened, so there are no rosters to rank. These are MANAGER BASELINE rankings: what each manager has done across previous seasons, with schedule luck removed. They say nothing about this year's team, because this year's team does not exist yet. They become Preseason Power Rankings the moment the draft board is in, and live rankings once week 1 is final.",
+  );
+}
+
+/**
+ * AFTER THE DRAFT, BEFORE WEEK 1. Now there is a roster, so the roster is what
+ * gets ranked. Starter quality is measured from what the drafted players have
+ * actually produced rather than from where they were taken — using pick
+ * position would make this a restatement of the draft order.
+ */
+function preseasonRankings(
+  teams: TeamRankingInput[],
+  prevRank: Map<string, number>,
+): PowerRankingsResult {
+  const rDraft = rangeOf(teams, (t) => t.draftCapital);
+  const rStarter = rangeOf(teams, (t) => t.starterQuality);
+  const rBench = rangeOf(teams, (t) => t.benchQuality);
+  const rBalance = rangeOf(teams, (t) => t.positionalBalance);
+  const rDepth = rangeOf(teams, (t) => t.rosterDepth);
+  const rProjection = rangeOf(teams, (t) => t.projectedPoints);
+
+  const rowsIn = teams.map((t) => {
+    const specs: FactorSpec[] = [
+      {
+        key: "draftCapital",
+        weight: PRESEASON_WEIGHTS.draftCapital,
+        value:
+          t.draftCapital == null || !rDraft ? null : normalize(t.draftCapital, rDraft.min, rDraft.max),
+        raw: t.draftCapital == null ? "no draft picks on record" : `${round(t.draftCapital)} capital`,
+      },
+      {
+        key: "starterQuality",
+        weight: PRESEASON_WEIGHTS.starterQuality,
+        value:
+          t.starterQuality == null || !rStarter
+            ? null
+            : normalize(t.starterQuality, rStarter.min, rStarter.max),
+        raw:
+          t.starterQuality == null
+            ? "no prior production on record for the drafted starters"
+            : `${round(t.starterQuality)} pts/gm from projected starters`,
+      },
+      {
+        key: "projection",
+        weight: PRESEASON_WEIGHTS.projection,
+        value:
+          t.projectedPoints == null || !rProjection
+            ? null
+            : normalize(t.projectedPoints, rProjection.min, rProjection.max),
+        raw:
+          t.projectedPoints == null
+            ? "no published preseason projections available"
+            : `${round(t.projectedPoints)} projected points`,
+      },
+      {
+        key: "benchDepth",
+        weight: PRESEASON_WEIGHTS.benchDepth,
+        value:
+          t.benchQuality == null || !rBench ? null : normalize(t.benchQuality, rBench.min, rBench.max),
+        raw:
+          t.benchQuality == null
+            ? "no prior production on record for the bench"
+            : `${round(t.benchQuality)} pts/gm on the bench`,
+      },
+      {
+        key: "positionalBalance",
+        weight: PRESEASON_WEIGHTS.positionalBalance,
+        value:
+          t.positionalBalance == null || !rBalance
+            ? null
+            : normalize(t.positionalBalance, rBalance.min, rBalance.max),
+        raw:
+          t.positionalBalance == null
+            ? "no roster positions on record"
+            : `${(t.positionalBalance * 100).toFixed(0)}% of required slots covered with backup`,
+      },
+      {
+        key: "rosterDepth",
+        weight: PRESEASON_WEIGHTS.rosterDepth,
+        value: t.rosterDepth == null || !rDepth ? null : normalize(t.rosterDepth, rDepth.min, rDepth.max),
+        raw: t.rosterDepth == null ? "no roster on record" : `${t.rosterDepth} players beyond the starters`,
+      },
+    ];
+    const { score, factors, dropped } = blend(specs);
+    return { input: t, score, factors, dropped, headlineNumber: t.starterQuality ?? null };
+  });
+
+  return preSeasonResult(
+    "PRESEASON",
+    PRESEASON_WEIGHTS,
+    rowsIn,
+    prevRank,
+    "The draft is done but no week has been played, so these are PRESEASON POWER RANKINGS of the drafted rosters: draft capital, the production history of the players taken, bench cover and positional balance. No result from a previous season is scored here — this is about the team that was just assembled. They switch to live rankings automatically once week 1 is final.",
+  );
 }
 
 /**

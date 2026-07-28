@@ -63,29 +63,39 @@ export default async function PowerRankingsPage() {
     );
   }
 
-  const isPreseason = data.mode === "PRESEASON";
-  const updatedLabel = isPreseason
-    ? "Preseason projection — no games played"
-    : `Updated through Week ${data.throughWeek}`;
+  /*
+   * Three states, three different things being ranked. The page names which
+   * one it is showing rather than calling everything "Power Rankings" —
+   * ranking managers on history and ranking freshly drafted rosters are not
+   * the same claim, and neither is a live weekly rating.
+   */
+  const isInSeason = data.mode === "IN_SEASON";
+  const isBaseline = data.mode === "MANAGER_BASELINE";
+  const title = isInSeason
+    ? "Power Rankings"
+    : isBaseline
+      ? "Manager Baseline Rankings"
+      : "Preseason Power Rankings";
+  const updatedLabel = isInSeason
+    ? `Updated through Week ${data.throughWeek}`
+    : isBaseline
+      ? `${data.seasonYear} preseason — before the draft`
+      : `${data.seasonYear} preseason — after the draft, before Week 1`;
+  const description = isInSeason
+    ? `A measure of how good each team is right now, rebuilt every week from ${data.weeksCounted} week${data.weeksCounted === 1 ? "" : "s"} of results. Wins and losses are not a scoring category — this rates team quality, not luck.`
+    : isBaseline
+      ? "The draft has not happened, so there is no roster to rank. This ranks the managers on what they have done in previous seasons, with schedule luck removed. It becomes Preseason Power Rankings as soon as the draft board is in."
+      : "The draft is done and no week has been played, so this ranks the rosters that were just assembled — draft capital, what the drafted players have actually produced, bench cover and positional balance. It switches to live rankings once Week 1 is final.";
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
-        eyebrow={`${data.seasonYear} Season`}
-        title="Power Rankings"
-        description={
-          isPreseason
-            ? "A projection of team strength before week 1, built from draft capital, roster depth and each manager's multi-season scoring baseline. It switches to live results automatically once games are played."
-            : `A measure of how good each team is right now, rebuilt every week from ${data.weeksCounted} week${data.weeksCounted === 1 ? "" : "s"} of results. Wins and losses are not a scoring category — this rates team quality, not luck.`
-        }
-      />
+      <PageHeader eyebrow={`${data.seasonYear} Season`} title={title} description={description} />
 
-      {/* The "updated through" state, stated prominently. */}
+      {/* Which of the three states this is, stated prominently. */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Badge className="bg-primary text-primary-foreground">{updatedLabel}</Badge>
-        {!isPreseason ? (
-          <Badge variant="outline">Regular-season games only</Badge>
-        ) : null}
+        {isInSeason ? <Badge variant="outline">Regular-season games only</Badge> : null}
+        {isBaseline ? <Badge variant="outline">Not a projection of this year&rsquo;s teams</Badge> : null}
       </div>
 
       {/* Methodology — stated up front so the ranking is reproducible. */}
@@ -95,12 +105,17 @@ export default async function PowerRankingsPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Each factor is scored 0-100 relative to the rest of the league, then blended with the
             weights below.{" "}
-            {isPreseason
-              ? "These are the only inputs available before kickoff; the model swaps to live results the moment week 1 is final."
-              : "Recent weeks carry more weight than early ones, but every week still counts."}{" "}
+            {isInSeason
+              ? "Recent weeks carry more weight than early ones, but every week still counts."
+              : "The model swaps to live results the moment Week 1 is final."}{" "}
             Win-loss record, championships and playoff finishes are deliberately{" "}
             <strong className="text-foreground">not</strong> inputs — they describe what happened to a
             team, not how good it is.
+          </p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            A category with no data behind it is dropped and the remaining weights are rescaled to
+            add up to 100%, rather than being scored zero or quietly treated as league-average. The
+            percentages below are the ones actually used.
           </p>
           <dl className="mt-3 grid gap-2 sm:grid-cols-2">
             {data.weights.map((m) => (
@@ -157,7 +172,7 @@ export default async function PowerRankingsPage() {
                       {row.weightedPointsPerGame.toFixed(1)} pts/gm
                     </Badge>
                   ) : null}
-                  {!isPreseason ? (
+                  {isInSeason ? (
                     <>
                       <Badge variant="outline">
                         All-play {row.allPlayWins}-{row.allPlayLosses}

@@ -11,8 +11,8 @@ interface Remaining {
   passed: boolean;
 }
 
-function computeRemaining(targetMs: number): Remaining {
-  const diff = targetMs - Date.now();
+function computeRemaining(targetMs: number, nowMs: number = Date.now()): Remaining {
+  const diff = targetMs - nowMs;
   if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, passed: true };
   const seconds = Math.floor(diff / 1000);
   return {
@@ -22,6 +22,18 @@ function computeRemaining(targetMs: number): Remaining {
     seconds: seconds % 60,
     passed: false,
   };
+}
+
+/**
+ * The server calls this at render time and passes the result in, so the first
+ * paint shows the real figure. Previously the digits rendered as 00:00:00:00
+ * until the first client tick, which read as a broken or expired countdown for
+ * the fraction of a second before it snapped to the real number.
+ */
+export function initialRemaining(isoDate: string, nowMs: number): Remaining | null {
+  const targetMs = new Date(isoDate).getTime();
+  if (Number.isNaN(targetMs)) return null;
+  return computeRemaining(targetMs, nowMs);
 }
 
 function Unit({ value, label }: { value: number; label: string }) {
@@ -45,9 +57,22 @@ function Unit({ value, label }: { value: number; label: string }) {
  * hydration mismatch. Showing league time is also just more useful: everyone
  * sees the same draft time the commissioner announced.
  */
-export function DraftCountdown({ isoDate, timeZone = "America/Chicago" }: { isoDate: string; timeZone?: string }) {
+export function DraftCountdown({
+  isoDate,
+  timeZone = "America/Chicago",
+  initial = null,
+}: {
+  isoDate: string;
+  timeZone?: string;
+  /**
+   * Server-computed starting figure. Both the server render and the client's
+   * first render use this exact value, so there is no hydration mismatch and no
+   * frame of zeros before the timer starts.
+   */
+  initial?: Remaining | null;
+}) {
   const targetMs = new Date(isoDate).getTime();
-  const [remaining, setRemaining] = useState<Remaining | null>(null);
+  const [remaining, setRemaining] = useState<Remaining | null>(initial);
 
   useEffect(() => {
     if (Number.isNaN(targetMs)) return;
@@ -86,16 +111,20 @@ export function DraftCountdown({ isoDate, timeZone = "America/Chicago" }: { isoD
       </div>
       {remaining?.passed ? (
         <p className="mt-2 font-heading text-2xl font-semibold uppercase">It&apos;s draft time — good luck.</p>
-      ) : (
+      ) : remaining ? (
         <div className="mt-3 flex items-center justify-between gap-1">
-          <Unit value={remaining?.days ?? 0} label="Days" />
+          <Unit value={remaining.days} label="Days" />
           <span className="font-heading text-xl text-primary-foreground/40">:</span>
-          <Unit value={remaining?.hours ?? 0} label="Hrs" />
+          <Unit value={remaining.hours} label="Hrs" />
           <span className="font-heading text-xl text-primary-foreground/40">:</span>
-          <Unit value={remaining?.minutes ?? 0} label="Min" />
+          <Unit value={remaining.minutes} label="Min" />
           <span className="font-heading text-xl text-primary-foreground/40">:</span>
-          <Unit value={remaining?.seconds ?? 0} label="Sec" />
+          <Unit value={remaining.seconds} label="Sec" />
         </div>
+      ) : (
+        // Only reachable if no starting figure was supplied. Says what it is
+        // doing rather than showing a row of zeros that reads as "expired".
+        <p className="mt-3 font-heading text-lg font-semibold">Calculating countdown…</p>
       )}
       <p className="mt-3 text-xs text-primary-foreground/70">{dateLabel}</p>
     </div>
