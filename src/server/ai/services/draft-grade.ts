@@ -102,6 +102,12 @@ export async function generateDraftRationale(
     systemPrompt,
     userPrompt,
     humorLevel: safeguards.humorLevel,
+    // A two-sentence rationale does not need deep reasoning, and left unset the
+    // provider was spending minutes per call: regenerating all 88 grades was on
+    // course for eight hours. Bounded here to keep a full regeneration to
+    // something a person will actually wait for.
+    reasoningEffort: "low",
+    maxOutputTokens: 900,
   });
 
   return { text: result.text, providerName: result.providerName };
@@ -119,6 +125,12 @@ export async function generateDraftRevisitRationale(
     systemPrompt,
     userPrompt,
     humorLevel: safeguards.humorLevel,
+    // A two-sentence rationale does not need deep reasoning, and left unset the
+    // provider was spending minutes per call: regenerating all 88 grades was on
+    // course for eight hours. Bounded here to keep a full regeneration to
+    // something a person will actually wait for.
+    reasoningEffort: "low",
+    maxOutputTokens: 900,
   });
 
   return { text: result.text, providerName: result.providerName };

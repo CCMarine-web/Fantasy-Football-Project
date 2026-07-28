@@ -17,6 +17,23 @@ export default async function RecordsPage() {
         title="League Records"
         description="Every record on the books, computed live across all synced seasons."
       />
+
+      {/*
+       * What "all games" means here, said once. Single-game and streak records
+       * span every game a manager played — a title-game score is still a score
+       * — but season records are the regular season, because that is what a
+       * season row is. Saying so is the difference between a record book and a
+       * pile of numbers.
+       */}
+      <p className="mt-4 max-w-prose text-sm text-muted-foreground">
+        Single-game and streak records count <strong className="text-foreground">every game</strong>{" "}
+        a manager has played, regular season and postseason alike, and the detail line names the week.
+        Season records — most points, best and worst record — are the{" "}
+        <strong className="text-foreground">regular season</strong>, matching the season tables
+        elsewhere on the site. Scores that could not be verified as real contest results are excluded;
+        see the Hall of Shame for what that covers.
+      </p>
+
       <div className="mt-8">
         {records.length === 0 ? (
           <EmptyState icon={Award} title="No records yet" description="Records populate once games have been played and synced." />

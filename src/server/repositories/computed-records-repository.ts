@@ -85,7 +85,9 @@ export async function getComputedRecords(): Promise<RecordEntry[]> {
   if (games.length === 0) return [];
 
   const entries: RecordEntry[] = [];
-  const where = (g: Mt) => `Week ${g.week}, ${g.year}`;
+  // Postseason games are named as such. Without it a title-game score and a
+  // week-4 score look like the same kind of achievement.
+  const where = (g: Mt) => `Week ${g.week}, ${g.year}${g.isPlayoff ? " (postseason)" : ""}`;
   const vs = (g: Mt) => `vs ${g.opponentName} · ${where(g)}`;
 
   // Highest / lowest single-game score.

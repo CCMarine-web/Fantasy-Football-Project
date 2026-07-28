@@ -15,6 +15,13 @@ import { History as HistoryIcon, ScrollText, Trophy } from "lucide-react";
 
 export const metadata = { title: "League History" };
 
+const SEASON_STATUS_LABEL: Record<string, string> = {
+  UPCOMING: "Upcoming",
+  IN_PROGRESS: "In progress",
+  COMPLETE: "Complete",
+};
+
+
 export default async function HistoryPage() {
   const [seasons, trend, narrative, articles] = await Promise.all([
     listSeasonsWithChampions(),
@@ -116,7 +123,7 @@ export default async function HistoryPage() {
                       <div>
                         <p className="font-heading text-xl font-semibold">{season.year}</p>
                         <Badge variant="outline" className="mt-1 text-[12px] uppercase">
-                          {season.status.replace("_", " ")}
+                          {SEASON_STATUS_LABEL[season.status] ?? season.status}
                         </Badge>
                       </div>
                       {season.championship ? (
