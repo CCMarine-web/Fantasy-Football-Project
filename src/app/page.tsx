@@ -13,7 +13,8 @@ import { getCurrentChampion } from "@/server/repositories/championship-belt-repo
 import { getPowerRankingsPreview } from "@/server/repositories/power-rankings-repository";
 import { BRAND } from "@/lib/branding";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
-import { DraftCountdown, initialRemaining } from "@/components/home/draft-countdown";
+import { DraftCountdown } from "@/components/home/draft-countdown";
+import { initialRemaining } from "@/lib/countdown";
 import { OffseasonPanel } from "@/components/home/offseason-panel";
 import { getSeasonPhase } from "@/server/repositories/season-phase";
 import { getOffseasonData } from "@/server/repositories/offseason-repository";

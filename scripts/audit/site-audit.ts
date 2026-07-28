@@ -12,15 +12,16 @@ import { chromium, devices, type Browser, type Page } from "@playwright/test";
  * present in the markup. That proves a string exists, not that anyone can see
  * a photograph. This loads each page, finds the background element, and reads
  * back its NATURAL dimensions — which are only non-zero once the browser has
- * actually decoded the file — along with the computed opacity it ends up at.
+ * actually decoded the file — along with the opacity that survives every scrim
+ * stacked on top of it.
  *
  * What it checks, per route, at 1440x900 and at iPhone 13 width:
  *   - HTTP status of the document
- *   - a background image exists, loaded, and sits in the 8-25% visible band
+ *   - a background image exists, loaded, and lands in the 8-25% visible band
  *   - no horizontal overflow of the document
  *   - no image missing meaningful alt text
  *   - no link pointing at "#" or an empty href
- *   - no visible element whose text colour is within a hair of its background
+ *   - no sizeable element rendered completely empty
  *   - no console errors
  */
 
@@ -43,6 +44,113 @@ const ROUTES = [
   "/transactions",
 ];
 
+/**
+ * The in-page probe, as SOURCE rather than as a function.
+ *
+ * tsx compiles with esbuild's keepNames enabled, which wraps named function
+ * expressions in a `__name()` helper. That helper exists in the Node module and
+ * not in the page, so handing `page.evaluate` a real function produced
+ * "ReferenceError: __name is not defined" on every route. A plain string has no
+ * such baggage, and it is also the honest signal that this code runs somewhere
+ * else entirely.
+ */
+const PROBE_SOURCE = `(() => {
+  function alphaOf(color) {
+    // rgb(r g b / a) | oklch(l c h / a) | color(srgb r g b / a)
+    var slash = /\\/\\s*([0-9.]+%?)\\s*\\)/.exec(color);
+    if (slash) {
+      var raw = slash[1];
+      return raw.charAt(raw.length - 1) === "%" ? Number(raw.slice(0, -1)) / 100 : Number(raw);
+    }
+    var legacy = /rgba\\(([^)]+)\\)/.exec(color);
+    if (legacy) {
+      var parts = legacy[1].split(",");
+      return parts.length >= 4 ? Number(parts[3]) : 1;
+    }
+    var t = color.trim();
+    if (t === "transparent") return 0;
+    return /^(rgb|oklch|oklab|hsl|color)\\(/.test(t) ? 1 : 0;
+  }
+
+  // The fixed, aria-hidden layer the site paints its photograph into.
+  var layer = document.querySelector('[aria-hidden="true"].fixed.inset-0');
+  var bgImg = layer ? layer.querySelector("img") : null;
+
+  var background = null;
+  if (bgImg) {
+    var imageOpacity = Number(window.getComputedStyle(bgImg).opacity);
+    /*
+     * Every scrim stacked on top of the photo cuts what survives. The alpha has
+     * to be read out of whatever notation the browser reports, which is NOT
+     * always rgba(): Tailwind's bg-background/55 computes to
+     * "oklch(0.2 0 0 / 0.55)". An rgba-only regex found no alpha, scored every
+     * scrim as fully transparent, and reported the raw 30% image opacity as the
+     * visible result on all sixteen routes.
+     */
+    var survives = imageOpacity;
+    var children = Array.prototype.slice.call(layer.children);
+    for (var i = 0; i < children.length; i++) {
+      var el = children[i];
+      if (el === bgImg) continue;
+      var s = window.getComputedStyle(el);
+      // A gradient wash covers only part of the layer, so it cannot be charged
+      // against the whole page's visibility.
+      if (s.backgroundImage && s.backgroundImage !== "none") continue;
+      var a = alphaOf(s.backgroundColor);
+      if (isFinite(a)) survives *= 1 - a;
+    }
+    background = {
+      src: bgImg.currentSrc || bgImg.src,
+      // naturalWidth is only non-zero once the file has actually decoded.
+      loaded: bgImg.complete && bgImg.naturalWidth > 0,
+      effectiveOpacity: Number(survives.toFixed(3)),
+    };
+  }
+
+  var overflowPx = Math.max(
+    0,
+    document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+
+  var imagesWithoutAlt = [];
+  var imgs = Array.prototype.slice.call(document.querySelectorAll("img"));
+  for (var j = 0; j < imgs.length; j++) {
+    var img = imgs[j];
+    if (img.closest('[aria-hidden="true"]')) continue;
+    var alt = img.getAttribute("alt");
+    if (alt === "") continue; // deliberately decorative
+    // Generic alt text is barely better than none.
+    if (!alt || /^(image|photo|picture|logo|icon|avatar|thumbnail)$/i.test(alt.trim())) {
+      imagesWithoutAlt.push((img.currentSrc || img.src).slice(-70));
+    }
+  }
+
+  var deadLinks = [];
+  var anchors = Array.prototype.slice.call(document.querySelectorAll("a"));
+  for (var k = 0; k < anchors.length; k++) {
+    var href = anchors[k].getAttribute("href");
+    if (href === "#" || href === "" || href == null) {
+      deadLinks.push((anchors[k].textContent || "").trim().slice(0, 50) || "(no text)");
+    }
+  }
+
+  /*
+   * A block with real height and nothing at all inside it — the "empty black
+   * box" a reader takes for a broken component.
+   */
+  var emptyBlocks = 0;
+  var blocks = Array.prototype.slice.call(document.querySelectorAll("main div, main section"));
+  for (var m = 0; m < blocks.length; m++) {
+    var rect = blocks[m].getBoundingClientRect();
+    if (rect.height < 60 || rect.width < 120) continue;
+    if ((blocks[m].textContent || "").trim().length > 0) continue;
+    if (blocks[m].querySelector("img, svg, canvas, input, button, video")) continue;
+    emptyBlocks++;
+  }
+
+  return { background: background, overflowPx: overflowPx, imagesWithoutAlt: imagesWithoutAlt, deadLinks: deadLinks, emptyBlocks: emptyBlocks };
+})()`;
+
 interface Finding {
   route: string;
   viewport: string;
@@ -54,96 +162,38 @@ const findings: Finding[] = [];
 const note = (route: string, viewport: string, kind: string, detail: string) =>
   findings.push({ route, viewport, kind, detail });
 
-interface PageReport {
-  status: number;
+interface ProbeResult {
   background: { src: string; loaded: boolean; effectiveOpacity: number } | null;
   overflowPx: number;
   imagesWithoutAlt: string[];
   deadLinks: string[];
-  consoleErrors: string[];
   emptyBlocks: number;
+}
+
+interface PageReport extends ProbeResult {
+  status: number;
+  consoleErrors: string[];
 }
 
 async function inspect(page: Page, base: string, route: string): Promise<PageReport> {
   const consoleErrors: string[] = [];
-  page.on("console", (msg) => {
+  const listener = (msg: { type(): string; text(): string }) => {
     if (msg.type() === "error") consoleErrors.push(msg.text().slice(0, 200));
-  });
+  };
+  page.on("console", listener);
 
-  const response = await page.goto(`${base}${route}`, {
-    waitUntil: "networkidle",
-    timeout: 60_000,
-  });
-  // Backgrounds below the fold load lazily; give the decode a moment.
-  await page.waitForTimeout(1200);
-
-  const result = await page.evaluate(() => {
-    /** The fixed, aria-hidden layer the site paints its photograph into. */
-    const layer = document.querySelector('[aria-hidden="true"].fixed.inset-0');
-    const bgImg = layer?.querySelector("img") as HTMLImageElement | null;
-
-    let background: { src: string; loaded: boolean; effectiveOpacity: number } | null = null;
-    if (bgImg) {
-      const style = window.getComputedStyle(bgImg);
-      const imageOpacity = Number(style.opacity);
-      // Every scrim stacked on top of the photo, each cutting what survives.
-      let survives = imageOpacity;
-      for (const el of Array.from(layer!.children)) {
-        if (el === bgImg) continue;
-        const s = window.getComputedStyle(el as Element);
-        const bg = s.backgroundColor;
-        const match = /rgba?\(([^)]+)\)/.exec(bg);
-        const alpha = match ? Number(match[1].split(",")[3] ?? 1) : 0;
-        if (Number.isFinite(alpha)) survives *= 1 - alpha;
-      }
-      background = {
-        src: bgImg.currentSrc || bgImg.src,
-        // naturalWidth is only non-zero once the file has actually decoded.
-        loaded: bgImg.complete && bgImg.naturalWidth > 0,
-        effectiveOpacity: Number(survives.toFixed(3)),
-      };
-    }
-
-    const overflowPx = Math.max(
-      0,
-      document.documentElement.scrollWidth - document.documentElement.clientWidth,
-    );
-
-    const imagesWithoutAlt = Array.from(document.querySelectorAll("img"))
-      .filter((img) => {
-        if (img.closest('[aria-hidden="true"]')) return false;
-        const alt = img.getAttribute("alt");
-        if (alt === "") return false; // deliberately decorative
-        if (!alt) return true;
-        // Generic alt text is barely better than none.
-        return /^(image|photo|picture|logo|icon|avatar|thumbnail)$/i.test(alt.trim());
-      })
-      .map((img) => (img.currentSrc || img.src).slice(-70));
-
-    const deadLinks = Array.from(document.querySelectorAll("a"))
-      .filter((a) => {
-        const href = a.getAttribute("href");
-        return href === "#" || href === "" || href == null;
-      })
-      .map((a) => (a.textContent ?? "").trim().slice(0, 50) || "(no text)");
-
-    /*
-     * A block of solid background with real height and nothing inside it —
-     * the "empty black box" a reader reads as a broken component.
-     */
-    let emptyBlocks = 0;
-    for (const el of Array.from(document.querySelectorAll("main div, main section"))) {
-      const rect = el.getBoundingClientRect();
-      if (rect.height < 60 || rect.width < 120) continue;
-      if ((el.textContent ?? "").trim().length > 0) continue;
-      if (el.querySelector("img, svg, canvas, input, button, video")) continue;
-      emptyBlocks += 1;
-    }
-
-    return { background, overflowPx, imagesWithoutAlt, deadLinks, emptyBlocks };
-  });
-
-  return { status: response?.status() ?? 0, consoleErrors, ...result };
+  try {
+    const response = await page.goto(`${base}${route}`, {
+      waitUntil: "networkidle",
+      timeout: 60_000,
+    });
+    // Backgrounds below the fold load lazily; give the decode a moment.
+    await page.waitForTimeout(1200);
+    const result = (await page.evaluate(PROBE_SOURCE)) as ProbeResult;
+    return { status: response?.status() ?? 0, consoleErrors, ...result };
+  } finally {
+    page.off("console", listener);
+  }
 }
 
 async function auditViewport(browser: Browser, base: string, label: string, mobile: boolean) {
@@ -166,7 +216,12 @@ async function auditViewport(browser: Browser, base: string, label: string, mobi
     if (!report.background) {
       note(route, label, "background", "no background image element on the page at all");
     } else if (!report.background.loaded) {
-      note(route, label, "background", `element present but the file never decoded: ${report.background.src}`);
+      note(
+        route,
+        label,
+        "background",
+        `element present but the file never decoded: ${report.background.src}`,
+      );
     } else if (report.background.effectiveOpacity < 0.08) {
       note(
         route,
@@ -193,7 +248,12 @@ async function auditViewport(browser: Browser, base: string, label: string, mobi
       note(route, label, "dead link", `link goes nowhere: "${text}"`);
     }
     if (report.emptyBlocks > 0) {
-      note(route, label, "empty block", `${report.emptyBlocks} sizeable element(s) with nothing in them`);
+      note(
+        route,
+        label,
+        "empty block",
+        `${report.emptyBlocks} sizeable element(s) with nothing in them`,
+      );
     }
     for (const error of report.consoleErrors.slice(0, 3)) {
       note(route, label, "console", error);

@@ -2,39 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { CalendarClock } from "lucide-react";
-
-interface Remaining {
-  days: number;
-  hours: number;
-  minutes: number;
-  seconds: number;
-  passed: boolean;
-}
-
-function computeRemaining(targetMs: number, nowMs: number = Date.now()): Remaining {
-  const diff = targetMs - nowMs;
-  if (diff <= 0) return { days: 0, hours: 0, minutes: 0, seconds: 0, passed: true };
-  const seconds = Math.floor(diff / 1000);
-  return {
-    days: Math.floor(seconds / 86400),
-    hours: Math.floor((seconds % 86400) / 3600),
-    minutes: Math.floor((seconds % 3600) / 60),
-    seconds: seconds % 60,
-    passed: false,
-  };
-}
-
-/**
- * The server calls this at render time and passes the result in, so the first
- * paint shows the real figure. Previously the digits rendered as 00:00:00:00
- * until the first client tick, which read as a broken or expired countdown for
- * the fraction of a second before it snapped to the real number.
- */
-export function initialRemaining(isoDate: string, nowMs: number): Remaining | null {
-  const targetMs = new Date(isoDate).getTime();
-  if (Number.isNaN(targetMs)) return null;
-  return computeRemaining(targetMs, nowMs);
-}
+import { computeRemaining, type Remaining } from "@/lib/countdown";
 
 function Unit({ value, label }: { value: number; label: string }) {
   return (
@@ -78,7 +46,7 @@ export function DraftCountdown({
     if (Number.isNaN(targetMs)) return;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
-      setRemaining(computeRemaining(targetMs));
+      setRemaining(computeRemaining(targetMs, Date.now()));
       timer = setTimeout(tick, 1000);
     };
     // Schedule the first tick asynchronously (not synchronously in the effect
