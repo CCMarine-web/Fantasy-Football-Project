@@ -23,7 +23,18 @@ import { prisma } from "@/lib/db";
  */
 export const POWER_BLURB_VERSION = 2;
 
-export type BlurbKind = "POWER_RANKING" | "RIVALRY" | "TRADE_VERDICT";
+/**
+ * MATCHUP_PREVIEW and MATCHUP_RECAP are kept apart on purpose. The featured game
+ * shows a preview before kickoff and a recap afterwards; storing both under one
+ * key would mean the recap overwrote the preview, and the preview is the more
+ * interesting of the two to have on record once the result is known.
+ */
+export type BlurbKind =
+  | "POWER_RANKING"
+  | "RIVALRY"
+  | "TRADE_VERDICT"
+  | "MATCHUP_PREVIEW"
+  | "MATCHUP_RECAP";
 
 /** Stable fingerprint of whatever facts a blurb was written from. */
 export function hashInputs(input: unknown): string {

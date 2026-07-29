@@ -25,6 +25,7 @@ export class OpenAIProviderError extends Error {
 interface ChatCompletionsResponse {
   model?: string;
   choices?: Array<{
+    finish_reason?: string | null;
     message?: {
       content?: string | null;
     };
@@ -71,7 +72,30 @@ export class OpenAIProvider implements AIProvider {
     }
 
     const data = (await response.json()) as ChatCompletionsResponse;
-    const text = data.choices?.[0]?.message?.content ?? "";
+    const choice = data.choices?.[0];
+    const text = choice?.message?.content ?? "";
+
+    /*
+     * Empty content is a FAILURE, not a result.
+     *
+     * The gpt-5 family spends `max_completion_tokens` on reasoning first, so a
+     * budget that is generous for the prose but tight for the reasoning comes
+     * back with finish_reason "length" and content "". Returning that as text
+     * used to look like a successful generation: six manager profiles were
+     * overwritten with an empty string and saved, and the pages rendered a blank
+     * biography section. Failing loudly here means the caller keeps whatever it
+     * already had.
+     */
+    if (text.trim().length === 0) {
+      throw new OpenAIProviderError(
+        response.status,
+        `model returned no content (finish_reason: ${choice?.finish_reason ?? "unknown"}, ` +
+          `completion_tokens: ${data.usage?.completion_tokens ?? "?"}, ` +
+          `max_completion_tokens: ${request.maxOutputTokens ?? "unset"}). ` +
+          `With a reasoning model this almost always means the token budget was consumed ` +
+          `by reasoning — raise maxOutputTokens or lower reasoningEffort.`,
+      );
+    }
 
     const usage =
       data.usage && (data.usage.prompt_tokens != null || data.usage.completion_tokens != null)

@@ -5,15 +5,25 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
+import { distributePercentages } from "@/lib/format";
 import { ArrowDown, ArrowUp, Info, Minus, TrendingUp } from "lucide-react";
 
 export const metadata = { title: "Power Rankings" };
 
-function FactorBar({ label, weight, value, raw }: { label: string; weight: number; value: number; raw: string }) {
+/**
+ * Whole-number percentages totalling exactly 100. The weights are already
+ * rescaled to sum to 1 when a factor is dropped; rounding each one on its own
+ * is what made the printed table add up to 99. See distributePercentages.
+ */
+function weightPercents(weights: { weight: number }[]): number[] {
+  return distributePercentages(weights.map((w) => w.weight));
+}
+
+function FactorBar({ label, percent, value, raw }: { label: string; percent: number; value: number; raw: string }) {
   return (
     <div className="flex items-center gap-2">
       <span className="w-32 shrink-0 text-[13px] text-muted-foreground">
-        {label} <span className="text-muted-foreground/60">{Math.round(weight * 100)}%</span>
+        {label} <span className="text-muted-foreground/60">{percent}%</span>
       </span>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, value)}%` }} />
@@ -71,6 +81,7 @@ export default async function PowerRankingsPage() {
    */
   const isInSeason = data.mode === "IN_SEASON";
   const isBaseline = data.mode === "MANAGER_BASELINE";
+  const methodologyPercents = weightPercents(data.weights);
   const title = isInSeason
     ? "Power Rankings"
     : isBaseline
@@ -118,10 +129,10 @@ export default async function PowerRankingsPage() {
             percentages below are the ones actually used.
           </p>
           <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-            {data.weights.map((m) => (
+            {data.weights.map((m, i) => (
               <div key={m.key} className="flex gap-2">
                 <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
-                  {Math.round(m.weight * 100)}%
+                  {methodologyPercents[i]}%
                 </dt>
                 <dd className="text-sm text-muted-foreground">
                   <span className="font-medium text-foreground">{m.label}</span> — {m.description}
@@ -207,9 +218,12 @@ export default async function PowerRankingsPage() {
                   </span>
                 </div>
                 <div className="space-y-1">
-                  {row.factors.map((f) => (
-                    <FactorBar key={f.key} label={f.label} weight={f.weight} value={f.value} raw={f.raw} />
-                  ))}
+                  {(() => {
+                    const percents = weightPercents(row.factors);
+                    return row.factors.map((f, i) => (
+                      <FactorBar key={f.key} label={f.label} percent={percents[i]} value={f.value} raw={f.raw} />
+                    ));
+                  })()}
                 </div>
               </div>
             </CardContent>

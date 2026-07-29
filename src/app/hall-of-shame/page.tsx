@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PunishmentGallery } from "@/components/shame/punishment-gallery";
+import { MiscPunishmentGallery } from "@/components/shame/misc-punishment-gallery";
 import { getHallOfShame } from "@/server/repositories/hall-of-shame-repository";
 import {
   LAST_PLACE_FALLBACK_NOTE,
@@ -46,58 +47,83 @@ export default async function HallOfShamePage() {
         description="The inverse of the record books — the lows, the blowouts, the last-place finishes, and the punishments that followed."
       />
 
-      {/* ── 1. The punishment wall ──────────────────────────────────────── */}
-      <section className="mt-8">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
-            <Camera className="h-5 w-5" /> Punishment Gallery
-          </h2>
-          {isAdmin ? (
-            <Link href="/admin/punishments" className="text-sm text-primary hover:underline">
-              Edit punishments
-            </Link>
-          ) : null}
-        </div>
-
-        {isAdmin && pendingPunishmentPhotos > 0 ? (
-          <p className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs">
-            {pendingPunishmentPhotos} punishment photograph
-            {pendingPunishmentPhotos === 1 ? "" : "s"} imported but not yet attached to a season.
-            Their filenames name no year or manager, so they were not guessed at —{" "}
-            <Link href="/admin/media" className="font-medium text-primary hover:underline">
-              assign them in Review Media
-            </Link>
-            . Admins only; nothing is public until attached.
-          </p>
-        ) : null}
-
-        {shame.punishmentPhotos.length > 0 ? (
-          <PunishmentGallery items={shame.punishmentPhotos} />
-        ) : (
-          <EmptyState
-            icon={Camera}
-            title="No punishment photographs published yet"
-            description="Photographs appear here once an admin has attached them to a season and a manager. Imported files that name neither are held back rather than guessed at."
-          />
-        )}
-
-        {shame.punishmentsWithoutPhotos.length > 0 ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            {shame.punishmentsWithoutPhotos.map((p) => (
-              <span
-                key={p.id}
-                className="rounded-md border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-muted-foreground"
-              >
-                <span className="font-medium text-foreground">{p.year}</span>
-                {p.managerName ? ` · ${p.managerName}` : ""}
-                {p.description ? ` — ${p.description}` : ""} (no photograph)
-              </span>
-            ))}
+      {/*
+        ── 1. The photographs, unlabelled ─────────────────────────────────
+        Leads the page because the photographs ARE the Hall of Shame; the tables
+        below are the bookkeeping. Nothing here carries a year, a name or a
+        caption: no record exists of which punishment any of these shows, and
+        inventing one would put a real person's face against something they may
+        not have done. See listUnlabelledPunishmentPhotos.
+      */}
+      {shame.gallery.length > 0 ? (
+        <section className="mt-8">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
+              <Camera className="h-5 w-5" /> Punishment Gallery
+            </h2>
+            {isAdmin ? (
+              <Link href="/admin/media" className="text-sm text-primary hover:underline">
+                Manage photographs
+              </Link>
+            ) : null}
           </div>
-        ) : null}
-      </section>
+          <MiscPunishmentGallery photos={shame.gallery} />
+        </section>
+      ) : null}
 
-      {/* ── 2. Regular-season last place, one uninterrupted table ────────── */}
+      {/*
+        ── 2. Punishments that ARE on the record, with a season and a name ──
+        Separate from the gallery above, and shown only when an admin has
+        genuinely attached a photograph or recorded a punishment. This is where a
+        caption is legitimate, because somebody established it.
+      */}
+      {shame.punishmentPhotos.length > 0 || shame.punishmentsWithoutPhotos.length > 0 ? (
+        <section className="mt-12">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
+              <Camera className="h-5 w-5" /> Punishments on the Record
+            </h2>
+            {isAdmin ? (
+              <Link href="/admin/punishments" className="text-sm text-primary hover:underline">
+                Edit punishments
+              </Link>
+            ) : null}
+          </div>
+
+          {shame.punishmentPhotos.length > 0 ? (
+            <PunishmentGallery items={shame.punishmentPhotos} />
+          ) : null}
+
+          {shame.punishmentsWithoutPhotos.length > 0 ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {shame.punishmentsWithoutPhotos.map((p) => (
+                <span
+                  key={p.id}
+                  className="rounded-md border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-muted-foreground"
+                >
+                  <span className="font-medium text-foreground">{p.year}</span>
+                  {p.managerName ? ` · ${p.managerName}` : ""}
+                  {p.description ? ` — ${p.description}` : ""} (no photograph)
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
+      {isAdmin && pendingPunishmentPhotos > 0 ? (
+        <p className="mt-6 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs">
+          {pendingPunishmentPhotos} punishment photograph
+          {pendingPunishmentPhotos === 1 ? " is" : "s are"} still awaiting review in{" "}
+          <Link href="/admin/media" className="font-medium text-primary hover:underline">
+            Review Media
+          </Link>
+          . Admins only. The gallery above shows approved photographs without captions; attaching a
+          season and a manager moves one into &ldquo;Punishments on the Record&rdquo; instead.
+        </p>
+      ) : null}
+
+      {/* ── 3. Regular-season last place, one uninterrupted table ────────── */}
       <section className="mt-12">
         <h2 className="mb-2 flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
           <Skull className="h-5 w-5" /> Last Place by Season
@@ -155,7 +181,7 @@ export default async function HallOfShamePage() {
         )}
       </section>
 
-      {/* ── 3. The record lows ───────────────────────────────────────────── */}
+      {/* ── 4. The record lows ───────────────────────────────────────────── */}
       <section className="mt-12">
         <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
           Record Lows

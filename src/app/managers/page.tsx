@@ -236,16 +236,19 @@ export default async function ManagersPage({
                     <ChevronRight className="hidden h-5 w-5 shrink-0 text-muted-foreground sm:block" />
                   </CardContent>
 
-                  {m.performanceSummary ? (
+                  {m.summaryCard ? (
                     <CardContent className="border-t border-border/40 pt-3">
-                      {/* The profiles are now several paragraphs. The list shows
-                          the opening one so ten managers still fit on a screen;
-                          the full piece lives on the manager's own page. */}
-                      <p className="text-sm text-foreground/80">
-                        {m.performanceSummary.split(/\n\s*\n/)[0]}
-                      </p>
-                      <span className="mt-1 inline-block text-xs font-medium text-primary">
-                        Read the full profile →
+                      {/* The full profiles run 450-650 words. This card carries
+                          120-180 of them — derived from the same text, never
+                          written separately, so the two can never disagree. See
+                          cardSummary() in the manager repository. */}
+                      {m.summaryCard.split(/\n\s*\n/).map((paragraph, i) => (
+                        <p key={i} className={i === 0 ? "text-sm text-foreground/80" : "mt-2 text-sm text-foreground/80"}>
+                          {paragraph}
+                        </p>
+                      ))}
+                      <span className="mt-2 inline-block text-xs font-medium text-primary">
+                        View full profile →
                       </span>
                     </CardContent>
                   ) : null}

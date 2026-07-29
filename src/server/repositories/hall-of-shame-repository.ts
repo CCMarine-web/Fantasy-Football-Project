@@ -28,10 +28,27 @@ export interface PunishmentPhoto {
   photoUrl: string;
 }
 
+/**
+ * One photograph in the unlabelled gallery.
+ *
+ * Deliberately carries no year, manager or description — see
+ * `listUnlabelledPunishmentPhotos`. `width` and `height` are the real output
+ * dimensions so the page can reserve the correct space and preserve the aspect
+ * ratio rather than forcing every photo into a 4:3 box.
+ */
+export interface GalleryPhoto {
+  id: string;
+  url: string;
+  width: number;
+  height: number;
+}
+
 export interface HallOfShame {
   entries: ShameEntry[];
   /** Season-by-season regular-season last place, newest first. */
   lastPlace: LastPlaceFinish[];
+  /** Every published punishment photograph, unlabelled. Leads the page. */
+  gallery: GalleryPhoto[];
   /** Published punishment photographs, newest season first. */
   punishmentPhotos: PunishmentPhoto[];
   /** Recorded punishments with no photograph — still part of the record. */
@@ -234,14 +251,16 @@ async function buildHallOfShame(): Promise<HallOfShame> {
   }
 
   const lastPlace = await getLastPlaceBySeason();
-  const [photos, excludedScores] = await Promise.all([
+  const [photos, gallery, excludedScores] = await Promise.all([
     listPunishmentPhotos(),
+    listUnlabelledPunishmentPhotos(),
     countExcludedScores(),
   ]);
 
   return {
     entries,
     lastPlace,
+    gallery,
     punishmentPhotos: photos.filter((p): p is PunishmentPhoto => p.photoUrl != null),
     punishmentsWithoutPhotos: photos.filter((p) => p.photoUrl == null) as PunishmentPhoto[],
     benchYearsCovered: [...benchYears].sort((a, b) => a - b),
@@ -299,6 +318,43 @@ async function buildLastPlaceBySeason(): Promise<LastPlaceFinish[]> {
     .map(([year, list]) => findLastPlace(year, list))
     .filter((x): x is LastPlaceFinish => x != null)
     .sort((a, b) => b.year - a.year);
+}
+
+/**
+ * Every published punishment photograph, with nothing attached to it.
+ *
+ * ── Why unlabelled ────────────────────────────────────────────────────────
+ * The photographs arrived as IMG_1364.jpg and similar. Nothing in the files, and
+ * nothing in the league's records, says which punishment, which season or which
+ * manager any of them shows. The importer therefore held them all back for a
+ * human to attach, and the page explained the absence — truthfully, and to
+ * nobody, because the photographs are the whole point of a punishment gallery.
+ *
+ * So they are published with no caption. A photograph with no caption asserts
+ * nothing; one captioned with a guessed year asserts something false. Rows here
+ * must have no manager attached — that is what distinguishes a miscellaneous
+ * photograph from one an admin has genuinely identified, and an identified photo
+ * belongs in the labelled gallery further down instead.
+ *
+ * Ordering is by `sortOrder` then filename, so it is stable across deploys.
+ * A photograph missing its recorded dimensions is skipped rather than guessed
+ * at: without them the page cannot reserve the right space, and a gallery that
+ * jumps as each image lands is worse than one photograph short.
+ */
+async function listUnlabelledPunishmentPhotos(): Promise<GalleryPhoto[]> {
+  const rows = await prisma.mediaAsset.findMany({
+    where: {
+      category: "PUNISHMENT",
+      isPublished: true,
+      approvalStatus: "APPROVED",
+      managerId: null,
+    },
+    orderBy: [{ sortOrder: "asc" }, { originalFilename: "asc" }],
+    select: { id: true, url: true, width: true, height: true },
+  });
+  return rows
+    .filter((r) => r.width != null && r.height != null && r.width > 0 && r.height > 0)
+    .map((r) => ({ id: r.id, url: r.url, width: r.width as number, height: r.height as number }));
 }
 
 /** Recorded punishments, newest first. Photographs are only ever admin-attached. */

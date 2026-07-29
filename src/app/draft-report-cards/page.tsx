@@ -12,9 +12,23 @@ import {
   gradeLetterToDisplay,
 } from "@/server/repositories/draft-grade-repository";
 import type { DraftFactor } from "@/server/stats/draft-quality";
+import { distributePercentages } from "@/lib/format";
 import { ChevronDown, GraduationCap, Info } from "lucide-react";
 
 export const metadata = { title: "Draft Report Cards" };
+
+/**
+ * Whole-number percentages for a set of weights, guaranteed to total 100.
+ *
+ * The weights themselves already sum to 1.0000 — they are rescaled in
+ * draft-quality.ts when a factor is dropped. What did not add up was the
+ * DISPLAY: rounding 0.2985, 0.2388, 0.1791, 0.1493 and 0.1194 one at a time
+ * gives 30/24/18/15/12, and every graded season on this page published a
+ * methodology panel totalling ninety-nine percent. See distributePercentages.
+ */
+function weightPercents(weights: { weight: number }[]): number[] {
+  return distributePercentages(weights.map((w) => w.weight));
+}
 
 /** How well the recorded data supports a grade. */
 const CONFIDENCE_LABEL = {
@@ -32,11 +46,11 @@ function gradeColorClasses(grade: GradeLetter | null): string {
   return "bg-destructive/15 text-destructive"; // D, F
 }
 
-function FactorBar({ factor }: { factor: DraftFactor }) {
+function FactorBar({ factor, percent }: { factor: DraftFactor; percent: number }) {
   return (
     <div className="flex items-center gap-2">
       <span className="w-32 shrink-0 text-[13px] text-muted-foreground">
-        {factor.label} <span className="text-muted-foreground/60">{Math.round(factor.weight * 100)}%</span>
+        {factor.label} <span className="text-muted-foreground/60">{percent}%</span>
       </span>
       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, factor.value)}%` }} />
@@ -61,6 +75,8 @@ export default async function DraftReportCardsPage({
   );
 
   const isComplete = view.status === "COMPLETE";
+  const originalPercents = weightPercents(view.weights);
+  const revisitPercents = weightPercents(view.revisitWeights);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -91,10 +107,10 @@ export default async function DraftReportCardsPage({
               was still a poor one.
             </p>
             <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-              {view.weights.map((w) => (
+              {view.weights.map((w, i) => (
                 <div key={w.key} className="flex gap-2">
                   <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
-                    {Math.round(w.weight * 100)}%
+                    {originalPercents[i]}%
                   </dt>
                   <dd className="text-sm text-muted-foreground">
                     <span className="font-medium text-foreground">{w.label}</span> — {w.description}
@@ -142,10 +158,10 @@ export default async function DraftReportCardsPage({
                     cannot rescue a bad draft and a title-less season cannot sink a good one.
                   </p>
                   <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {view.revisitWeights.map((w) => (
+                    {view.revisitWeights.map((w, i) => (
                       <div key={w.key} className="flex gap-2">
                         <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
-                          {Math.round(w.weight * 100)}%
+                          {revisitPercents[i]}%
                         </dt>
                         <dd className="text-sm text-muted-foreground">
                           <span className="font-medium text-foreground">{w.label}</span> — {w.description}
@@ -350,9 +366,12 @@ export default async function DraftReportCardsPage({
                       {card.factors.length > 0 ? (
                         <div className="shrink-0 lg:w-96">
                           <div className="space-y-1">
-                            {card.factors.map((f) => (
-                              <FactorBar key={f.key} factor={f} />
-                            ))}
+                            {(() => {
+                              const percents = weightPercents(card.factors);
+                              return card.factors.map((f, i) => (
+                                <FactorBar key={f.key} factor={f} percent={percents[i]} />
+                              ));
+                            })()}
                           </div>
                         </div>
                       ) : null}

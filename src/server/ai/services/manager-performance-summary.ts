@@ -6,9 +6,27 @@
 
 import { getAIProvider } from "../get-ai-provider";
 import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import {
+  disclosesItsSource,
+  findSourceDisclosures,
+  rewriteWithoutDisclosureInstruction,
+} from "../editorial-guards";
 import type { ContentSafeguards } from "../types";
 
-export const MANAGER_PERF_PROMPT_VERSION = "manager-perf-summary-v2";
+export const MANAGER_PERF_PROMPT_VERSION = "manager-perf-summary-v3";
+
+/**
+ * Token ceiling for one profile.
+ *
+ * 450-650 words of prose is roughly 600-900 output tokens, but the gpt-5 family
+ * spends this budget on reasoning FIRST. At 1200 the reasoning consumed the lot
+ * and the API returned empty content with finish_reason "length" — six profiles
+ * were overwritten with an empty string before the provider was taught to treat
+ * that as an error. The retries are worse again, because they carry the whole
+ * previous draft back in as input. 4000 leaves the prose ample room; the profile
+ * is generated ten times a year, so the headroom costs nothing that matters.
+ */
+const PROFILE_TOKEN_BUDGET = 4000;
 
 /** One season's verified line, so the writer can cite specifics. */
 export interface ManagerSeasonFact {
@@ -121,24 +139,35 @@ export interface ManagerPerfResult {
   text: string;
   providerName: string;
   isMock: boolean;
+  /**
+   * Set when the copy STILL discloses its own source after the corrective
+   * retries. The caller must not save it — a bio that names the group chat is
+   * worse than no bio, because the empty state is honest.
+   */
+  rejectedReason?: string;
 }
 
 const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy-football league's own newspaper, writing the standing profile of one manager.
 
+THE ONE RULE THAT OVERRIDES EVERYTHING ELSE
+Never disclose, hint at, or allude to where the personality material came from. The following words and ideas must NOT appear anywhere in your output, in any form, however natural they feel: chat, group chat, the chat, chat persona, text, texting, text message, message, meme, meme-forward, chatter, thread, archive of conversations, DM, GroupMe, iMessage, WhatsApp, Discord, AI, model, algorithm, analysis, extraction, personality profile.
+
+You WILL be given private notes describing how this manager comes across. Use them freely to decide the tone, the angle, and what to needle — then attribute every one of those traits to the manager and to the LEAGUE, never to a medium. Write "the league's loudest needler", not "loud in the chat". Write "quick with a one-liner when a lineup backfires", not "meme-forward". Write "he takes the ribbing and gives it back", not "he keeps the thread moving". A reader must finish this profile with no idea that any such notes exist.
+
 LENGTH AND SHAPE
-Write FOUR to FIVE paragraphs, roughly 280-400 words in total. Use ordinary paragraph breaks (a blank line between paragraphs). No headings, no bullet points, no lists, no JSON.
+Write FIVE to SEVEN paragraphs, roughly 450-650 words in total. Use ordinary paragraph breaks (a blank line between paragraphs). No headings, no bullet points, no lists, no JSON.
+
+The FIRST paragraph must work on its own: the league's Managers page prints the opening of this profile as a standalone summary card, so the first 120-180 words have to introduce this manager and land the single most important thing about their career without depending on anything that follows.
 
 WHAT TO COVER
-Work through the manager's whole career, but choose an angle and follow it rather than marching through a checklist. Somewhere across the piece you should touch: how good they have actually been; the difference between their ESPN years and their Sleeper years; championships and playoff record, or the lack of them; their best and worst seasons by name and year; how their scoring compares to the league and to their own past; where they are trending now; their draft, waiver and trade habits where the packet supports a claim; who they have history with; and how they come across in the league.
+Work through the manager's whole career from their first season to now, but choose an angle and follow it rather than marching through a checklist. Across the piece you should touch all of the following, in whatever order serves the writing: how good they have actually been; the difference between their ESPN years and their Sleeper years; championships and finals appearances, or the lack of them; their regular-season record; their championship-bracket playoff history; how their scoring has moved over time and how it compares to their own past; their best and worst seasons, by year; where they are trending right now; their draft, waiver and trade habits where the packet supports a claim; who they have history with and what the league thinks of them; their recurring strengths, weaknesses and patterns; and their Luck Score explained in plain English rather than as a number dropped into a sentence.
 
 VOICE
 Write as someone who has been in this league for years, not as an outside analyst summarising a spreadsheet.
 
 Every manager must read differently. Vary your opening — do NOT begin every profile with the manager's name and a career record, and do not reuse a structure across managers. Lead with whatever is genuinely most interesting about THIS person: a title drought, a monster scoring year, a collapse, a rivalry, a reputation, a habit.
 
-"personalityProfile", "communicationStyle", "leagueVoice" and "relationships" describe how this person actually comes across and how the league talks. Let them shape the voice, the jokes and what you choose to needle — that is what makes the piece sound like it came from inside the league rather than from a stats page.
-
-Avoid the tells of generated copy: no "in conclusion", no "when it comes to", no "the numbers don't lie", no "a tale of two halves", no rhetorical question openers, no closing line that restates the opening. Prefer concrete detail to adjectives.
+Avoid the tells of generated copy: no "in conclusion", no "when it comes to", no "the numbers don't lie", no "a tale of two halves", no rhetorical question openers, no closing line that restates the opening. Prefer concrete detail to adjectives. Do not stack three adjectives where one will do, and do not reach for hyperbole the numbers do not support — "the most feared manager in league history" is not a fact.
 
 HARD RULES
 - Use ONLY the facts in the packet. Never invent a stat, a championship, a trade, a quote or an event.
@@ -148,7 +177,7 @@ HARD RULES
 - LAST PLACE means finishing bottom of the REGULAR-SEASON standings, and "lastPlaceYears" lists exactly which seasons those were (it may be empty, which means never). Never call anyone a Toilet Bowl loser, and never infer last place from a final placing, a playoff exit or a postseason result.
 - The Luck Score runs 0 to 100 with 50 neutral and measures how much the SCHEDULE helped, not how good the manager is. Above 50 the record flatters the scoring; below 50 it understates it. A high score is not a compliment and a low one is not an insult. If the score is null, there are too few games to say — do not describe that manager as having neutral or average luck.
 - The packet's "unavailable" list names things that are genuinely not on record. Do not speculate about them and do not imply they are known.
-- "personalityProfile", "communicationStyle", "leagueVoice" and "relationships" are PRIVATE research distilled from material the public never sees. Use them to shape TONE, angle and the target of a joke. Never quote them, never quote or paraphrase a chat message, never attribute a specific saying to anyone, and never reveal or imply that a group chat exists or was analysed. A reader must not be able to tell these inputs were used.
+- "personalityProfile", "communicationStyle", "leagueVoice" and "relationships" are PRIVATE research the public never sees. Use them to shape TONE, angle and the target of a joke. Never quote them, never paraphrase anything anyone said, and never attribute a specific saying to anyone. See THE ONE RULE above: the traits are publishable, their origin is not.
 - Those four fields are PROSE and any numbers inside them are unverified. Ignore every figure they contain. Each statistic you cite must come from a numeric field of this packet — "careerRecord", the "eras" rows, the "seasons" rows, "topRivalries", "allPlayRecord" and so on.
 - HEAD-TO-HEAD RECORDS: the packet lists this manager's record against EVERY opponent. If you name an opponent and a record, copy that record from the list character for character, and make sure it is the row for that opponent. Do not reverse it, do not round it, and never write a head-to-head figure that is not in the list. Runs have been produced claiming "a 4-1 edge" over an opponent the manager is 6-5 against and "3-1" over one they trail 6-7 — both invented, both printed next to the real table. If you are not certain which row an opponent is, describe the rivalry without a number.
 - Do not attach a postseason claim to a head-to-head unless the packet supports it. The head-to-head rows carry no round information, so never assert that a pair met in the playoffs.
@@ -193,7 +222,7 @@ export async function generateManagerPerformanceSummary(
     systemPrompt,
     userPrompt,
     humorLevel: safeguards.humorLevel,
-    maxOutputTokens: 1200,
+    maxOutputTokens: PROFILE_TOKEN_BUDGET,
     reasoningEffort: "low",
   });
 
@@ -206,12 +235,47 @@ export async function generateManagerPerformanceSummary(
       systemPrompt,
       userPrompt: `${userPrompt}\n\nYour previous draft printed a raw field name from the packet. Rewrite it so every figure is expressed in plain English — no camelCase identifiers anywhere in the text.\n\nPrevious draft:\n${result.text}`,
       humorLevel: safeguards.humorLevel,
-      maxOutputTokens: 1200,
+      maxOutputTokens: PROFILE_TOKEN_BUDGET,
+      reasoningEffort: "low",
+    });
+  }
+
+  /*
+   * Up to two corrective retries when the draft gives away where the
+   * personality material came from.
+   *
+   * Two rather than one because the offending phrasing is genuinely the most
+   * natural way to say what the notes say — the first retry usually clears the
+   * phrase it was shown and reaches for a synonym ("meme-forward" becomes
+   * "always good for a meme"), so the second is shown the new one. If both fail,
+   * the caller is told to discard rather than save: naming the archive in a
+   * published profile is the exact defect this exists to prevent.
+   */
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (result.providerName === "mock" || !disclosesItsSource(result.text)) break;
+    result = await provider.generate({
+      promptVersion: MANAGER_PERF_PROMPT_VERSION,
+      systemPrompt,
+      userPrompt: `${userPrompt}\n\n${rewriteWithoutDisclosureInstruction(result.text)}\n\nPrevious draft:\n${result.text}`,
+      humorLevel: safeguards.humorLevel,
+      maxOutputTokens: PROFILE_TOKEN_BUDGET,
       reasoningEffort: "low",
     });
   }
 
   // VALIDATE stage
   const text = validate(result.text, packet);
-  return { text, providerName: result.providerName, isMock: result.providerName === "mock" };
+  const stillLeaking = result.providerName !== "mock" ? findSourceDisclosures(text) : [];
+  return {
+    text,
+    providerName: result.providerName,
+    isMock: result.providerName === "mock",
+    ...(stillLeaking.length > 0
+      ? {
+          rejectedReason: `still discloses its source after two retries: ${stillLeaking
+            .map((d) => d.label)
+            .join(", ")}`,
+        }
+      : {}),
+  };
 }

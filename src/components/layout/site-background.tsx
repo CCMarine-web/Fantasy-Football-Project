@@ -72,9 +72,7 @@ const ROUTE_BACKGROUNDS: [string, BackgroundChoice][] = [
   ["/records", PHOTOS.trophy],
   ["/history", PHOTOS.crowd],
   ["/news", PHOTOS.table],
-  // Listed before /chat so the longest prefix wins for the admin-only lore page.
   ["/chat-lore", PHOTOS.celebration],
-  ["/chat", PHOTOS.huddle],
 ];
 
 function pickBackground(pathname: string): BackgroundChoice | null {

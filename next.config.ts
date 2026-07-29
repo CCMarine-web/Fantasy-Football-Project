@@ -1,6 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  /**
+   * The weekly league hub was called /weekly and is now /matchups. Existing
+   * links — bookmarks, anything shared into the group chat over the last year —
+   * still work. 308 rather than 307 because the move is permanent and the query
+   * string (`?week=4`) is carried across automatically.
+   */
+  async redirects() {
+    return [{ source: "/weekly", destination: "/matchups", permanent: true }];
+  },
   images: {
     // AVIF first (roughly 20-30% smaller than WebP at equal quality), WebP as
     // the fallback. The league photos used as page backgrounds are the largest

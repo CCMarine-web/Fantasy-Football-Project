@@ -15,13 +15,17 @@ export function isNavGroup(item: NavItem): item is NavGroup {
 }
 
 /**
- * Top nav, led by the Weekly League Hub.
+ * Top nav, led by Matchups — the weekly league hub.
  *
- * Matchups, Standings, Transactions and News used to sit here as four separate
- * top-level items, which meant answering "what happened this week" took four
- * page loads. /weekly answers it once and links onward, so it takes the first
- * slot and those four move into the "This Week" group beside it — they still
- * exist, they are simply no longer the way in.
+ * Standings, Transactions and News used to sit here as separate top-level
+ * items, which meant answering "what happened this week" took several page
+ * loads. /matchups answers it once and links onward, so it takes the first slot
+ * and those move into the "This Week" group beside it — they still exist, they
+ * are simply no longer the way in.
+ *
+ * The page was called "Weekly" until it was renamed to Matchups: nobody
+ * arriving at a fantasy football site is looking for "Weekly", and the featured
+ * Matchup of the Week is now the first thing on it. /weekly redirects here.
  *
  * Draft Cards and Trade Tribunal are top-level rather than buried in History —
  * they are recurring features people come back for, not archive material.
@@ -29,25 +33,19 @@ export function isNavGroup(item: NavItem): item is NavGroup {
  * measured 148px against a header column with only ~60px to spare, so the short
  * form is what makes the item fit inline at all. The page keeps its full title.
  *
- * Chat is the public shoutbox, deliberately near the front — it is the only
- * page a visitor can actually interact with.
- *
  * Ordering matters: the last items are the ones that fold into "More" on a
  * narrower desktop (see site-header.tsx).
  */
 export const primaryNav: NavItem[] = [
-  { href: "/weekly", label: "Weekly" },
+  { href: "/matchups", label: "Matchups" },
   { href: "/power-rankings", label: "Power Rankings" },
   { href: "/managers", label: "Managers" },
   { href: "/rivalries", label: "Rivalries" },
-  { href: "/chat", label: "Chat" },
   { href: "/draft-report-cards", label: "Draft Cards" },
   { href: "/trade-tribunal", label: "Trade Tribunal" },
   {
     label: "This Week",
     links: [
-      { href: "/weekly", label: "Weekly League Hub" },
-      { href: "/matchups", label: "All Matchups" },
       { href: "/standings", label: "Full Standings" },
       { href: "/transactions", label: "Transaction Archive" },
       { href: "/news", label: "News Archive" },
@@ -71,22 +69,22 @@ export const primaryNav: NavItem[] = [
  * item — nothing is ever combined.
  *
  * These are measured, not guessed. The row now measures:
- *   Weekly 60 · Power Rankings 127 · Managers 78 · Rivalries 67 · Chat 37 ·
+ *   Matchups 82 · Power Rankings 127 · Managers 78 · Rivalries 67 ·
  *   Draft Cards 91 · Trade Tribunal 110, then the two dropdowns
  *   This Week 85 · History 74, with a 16px gap.
  *
  * The masthead takes 280px and the container 64px of padding, so:
- *   lg  (1024px): 680px of room -> 4 links + More + both dropdowns (642px)
- *   xl  (1280px): 936px of room -> all 7 links + both dropdowns (857px), so
+ *   lg  (1024px): 680px of room -> 4 links + More + both dropdowns (679px)
+ *   xl  (1280px): 936px of room -> all 6 links + both dropdowns (826px), so
  *                 "More" disappears entirely from here up
  *
- * Folding Matchups, Standings, Transactions and News into the "This Week"
- * group is what bought the room: the row was ten items wide and needed a
- * 1298px container it could never have while the header is capped at
- * `max-w-7xl` (1280px) — see site-header.tsx.
+ * Folding Standings, Transactions and News into the "This Week" group, and
+ * deleting the public Chat item, is what bought the room: the row was ten items
+ * wide and needed a 1298px container it could never have while the header is
+ * capped at `max-w-7xl` (1280px) — see site-header.tsx.
  */
 export const INLINE_NAV_LG = 4;
-export const INLINE_NAV_XL = 7;
+export const INLINE_NAV_XL = 6;
 
 /**
  * Extra destinations not in the top nav but linked in the footer. Draft Report

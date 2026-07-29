@@ -32,7 +32,6 @@ const ROUTES = [
   "/power-rankings",
   "/managers",
   "/rivalries",
-  "/chat",
   "/draft-report-cards",
   "/trade-tribunal",
   "/news",

@@ -7,6 +7,10 @@ import { getContentSafeguards } from "@/server/repositories/ai-config-repository
 import { buildLeagueVoiceGuidance } from "@/server/ai/research-packet";
 import { getRecentlyUsedMaterial, avoidRepetitionInstruction, recordContentUsage } from "@/server/ai/content-memory";
 import { hashInputs, putBlurb, POWER_BLURB_VERSION } from "@/server/ai/blurb-cache";
+import {
+  findEditorialProblems,
+  rewriteWithoutProblemsInstruction,
+} from "@/server/ai/editorial-guards";
 import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
 import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
 import type { AIUsage } from "@/server/ai/types";
@@ -69,20 +73,57 @@ interface Ctx {
   dryRun: boolean;
 }
 
-async function write(ctx: Ctx, userPrompt: string, maxTokens: number): Promise<{ text: string; provider: string; model: string } | null> {
+/**
+ * Generates one piece of copy, and refuses to hand back a draft with defects a
+ * reader would see.
+ *
+ * Every generator in this script funnels through here, so the retry applies to
+ * power-ranking blurbs, rivalry summaries and trade verdicts alike. This is
+ * where "the closet game was a 1.84-point nail-biter" — printed on an official
+ * rivalry card — is caught: the writer is shown its own offending phrase and
+ * asked again. Two attempts, then the caller is told to skip rather than save.
+ */
+async function write(
+  ctx: Ctx,
+  userPrompt: string,
+  maxTokens: number,
+): Promise<{ text: string; provider: string; model: string } | null> {
   if (ctx.dryRun) return null;
-  const result = await getAIProvider().generate({
-    promptVersion: "site-blurb-v1",
-    systemPrompt: ctx.systemBase,
-    userPrompt: [ctx.voice, ctx.avoid, userPrompt].filter(Boolean).join("\n\n"),
-    humorLevel: 3,
-    maxOutputTokens: maxTokens,
-    reasoningEffort: "low",
-    model: ctx.model,
-  });
-  if (result.providerName === "mock") return null;
-  ctx.meter.record(result.model, result.usage);
-  return { text: result.text.trim(), provider: result.providerName, model: result.model };
+
+  const base = [ctx.voice, ctx.avoid, userPrompt].filter(Boolean).join("\n\n");
+  let prompt = base;
+  let text = "";
+  let provider = "";
+  let model = "";
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await getAIProvider().generate({
+      promptVersion: "site-blurb-v2",
+      systemPrompt: ctx.systemBase,
+      userPrompt: prompt,
+      humorLevel: 3,
+      maxOutputTokens: maxTokens,
+      reasoningEffort: "low",
+      model: ctx.model,
+    });
+    if (result.providerName === "mock") return null;
+    ctx.meter.record(result.model, result.usage);
+    text = result.text.trim();
+    provider = result.providerName;
+    model = result.model;
+
+    const problems = findEditorialProblems(text);
+    if (problems.length === 0) return { text, provider, model };
+
+    if (attempt === 2) {
+      console.log(
+        `      refused after 3 attempts: ${problems.map((p) => p.label).join("; ")}`,
+      );
+      return null;
+    }
+    prompt = `${base}\n\n${rewriteWithoutProblemsInstruction(problems)}\n\nPrevious draft:\n${text}`;
+  }
+  return null;
 }
 
 const SYSTEM = `You are a staff writer for "The Rat Trap", a fantasy-football league newspaper. Write with personality — dry, needling, confident — but NEVER invent a statistic, event, quote, or storyline. You may only characterise the numbers you are given. If the numbers are thin, be brief rather than padding with invention. Do not mention that you are an AI, do not mention prompts or data sources, and do not quote anyone. Output plain prose only: no markdown, no headings, no quotation marks around the whole response.`;
@@ -198,7 +239,7 @@ async function backfillPowerRankings(ctx: Ctx, limit: number | null) {
       `Verified facts:`,
       JSON.stringify(facts, null, 2),
     ].join("\n");
-    const out = await write(ctx, prompt, 900);
+    const out = await write(ctx, prompt, 2200);
     if (!out) {
       console.log(`  [dry/mock] ${r.managerName}`);
       continue;
@@ -225,7 +266,7 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
       managerAPoints: true, managerBPoints: true, averageMargin: true, playoffMeetings: true,
       championshipMeetings: true, closestGameMargin: true, largestBlowoutMargin: true,
       currentStreakManagerId: true, currentStreakCount: true, longestStreakCount: true,
-      lastMeetingSeason: true, summaryInputHash: true,
+      lastMeetingSeason: true, summaryInputHash: true, summary: true,
       managerA: { select: { id: true, displayName: true, commProfile: { select: { styleSummary: true, isMock: true } } } },
       managerB: { select: { id: true, displayName: true, commProfile: { select: { styleSummary: true, isMock: true } } } },
     },
@@ -293,9 +334,22 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
     const contextFingerprint = hashInputs({ styles, relationship: relationship?.summary ?? null });
 
     const inputHash = hashInputs({ facts, context: contextFingerprint });
-    if (r.summaryInputHash === inputHash) {
+    /*
+     * The unchanged-input skip exists to avoid paying for copy nobody asked to
+     * change — not to preserve a defect. Two official cards were serving "expect
+     * more quick-fire meme drops" and "the closet game was a 1.84-point
+     * nail-biter" precisely because the numbers behind them had not moved since.
+     * A saved summary with a visible fault is always rewritten.
+     */
+    const savedProblems = r.summary ? findEditorialProblems(r.summary) : [];
+    if (r.summaryInputHash === inputHash && savedProblems.length === 0) {
       console.log(`  skip (unchanged): ${r.managerA.displayName} vs ${r.managerB.displayName}`);
       continue;
+    }
+    if (savedProblems.length > 0) {
+      console.log(
+        `  rewriting ${r.managerA.displayName} vs ${r.managerB.displayName} — saved copy has: ${savedProblems.map((p) => p.label).join("; ")}`,
+      );
     }
 
     const prompt = [
@@ -322,7 +376,7 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
     ]
       .filter(Boolean)
       .join("\n");
-    const out = await write(ctx, prompt, 1200);
+    const out = await write(ctx, prompt, 2600);
     if (!out) {
       console.log(`  [dry/mock] ${r.managerA.displayName} vs ${r.managerB.displayName}`);
       continue;
@@ -393,7 +447,7 @@ async function backfillTrades(ctx: Ctx, limit: number | null) {
       "Verified facts:",
       JSON.stringify(facts, null, 2),
     ].join("\n");
-    const out = await write(ctx, prompt, 900);
+    const out = await write(ctx, prompt, 2200);
     if (!out) {
       console.log(`  [dry/mock] ${t.seasonYear} wk ${t.week}`);
       continue;

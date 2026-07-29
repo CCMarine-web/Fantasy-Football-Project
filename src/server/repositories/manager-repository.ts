@@ -643,8 +643,72 @@ export interface ManagerRow {
   lastPlaceYears: number[];
   statsComplete: boolean;
   performanceSummary: string | null;
+  /**
+   * The Managers-page card summary: the opening of the full profile, trimmed to
+   * 120-180 words. See `cardSummary`.
+   */
+  summaryCard: string | null;
   /** False for managers who no longer play in the league (retired). */
   isActive: boolean;
+}
+
+/** Words in a string, the way a reader would count them. */
+function wordCount(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+const CARD_MIN_WORDS = 120;
+const CARD_MAX_WORDS = 180;
+
+/**
+ * The 120-180 word summary shown on the Managers list.
+ *
+ * DERIVED from the full profile rather than generated separately, for one
+ * reason: two independently written texts about the same career will eventually
+ * disagree, and the one on the list page is the one a reader sees first. The
+ * profile prompt is told the opening 120-180 words must stand alone, so the
+ * first paragraph is usually the whole card.
+ *
+ * Whole paragraphs are taken while they fit. If the first paragraph alone
+ * overruns 180 words — which happens, prompts being advice rather than
+ * contracts — it is cut at the last sentence boundary that fits, never
+ * mid-sentence and never with an ellipsis: a card that ends "…and then he" reads
+ * as a bug, whereas one that ends a sentence early just reads short.
+ */
+export function cardSummary(profile: string | null | undefined): string | null {
+  if (!profile) return null;
+  const paragraphs = profile
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (paragraphs.length === 0) return null;
+
+  const taken: string[] = [];
+  let words = 0;
+  for (const paragraph of paragraphs) {
+    const next = words + wordCount(paragraph);
+    // Always take the first paragraph; take later ones only while they keep the
+    // card inside the band.
+    if (taken.length > 0 && next > CARD_MAX_WORDS) break;
+    taken.push(paragraph);
+    words = next;
+    if (words >= CARD_MIN_WORDS) break;
+  }
+
+  const text = taken.join("\n\n");
+  if (wordCount(text) <= CARD_MAX_WORDS) return text;
+
+  // Too long on the first paragraph alone: keep whole sentences up to the cap.
+  const sentences = text.match(/[^.!?]+[.!?]+(?:["'”’)]+)?\s*/g) ?? [text];
+  const kept: string[] = [];
+  let n = 0;
+  for (const sentence of sentences) {
+    const next = n + wordCount(sentence);
+    if (kept.length > 0 && next > CARD_MAX_WORDS) break;
+    kept.push(sentence);
+    n = next;
+  }
+  return kept.join("").trim();
 }
 
 /**
@@ -746,6 +810,7 @@ async function buildManagerRows(): Promise<ManagerRow[]> {
       lastPlaceYears: [...(lastPlaceYears.get(m.id) ?? [])].sort((a, b) => a - b),
       statsComplete: !historyIncomplete,
       performanceSummary: m.performanceSummary?.summary ?? null,
+      summaryCard: cardSummary(m.performanceSummary?.summary),
       isActive: m.isActive,
     });
   }
@@ -1079,7 +1144,9 @@ export async function getOrCreateManagerPerformanceSummary(managerId: string): P
 }
 
 /** Force-regenerate + save the summary (admin action). */
-export async function regenerateManagerPerformanceSummary(managerId: string): Promise<{ text: string; isMock: boolean } | null> {
+export async function regenerateManagerPerformanceSummary(
+  managerId: string,
+): Promise<{ text: string; isMock: boolean; rejectedReason?: string } | null> {
   const packet = await buildPerfPacket(managerId);
   if (!packet || packet.seasonsPlayed === 0) return null;
   const safeguards = await getContentSafeguards();
@@ -1087,6 +1154,31 @@ export async function regenerateManagerPerformanceSummary(managerId: string): Pr
   // Don't persist placeholder text — only real AI summaries are saved, so the
   // public Managers page stays clean until a key is configured (on Vercel).
   if (result.isMock) return { text: result.text, isMock: true };
+  /*
+   * A draft that still names the group chat after two corrective retries is not
+   * saved. The previous summary stays in place, which is the lesser of the two
+   * evils — an old profile is merely dated, whereas one that says "runs the
+   * group chat like a betting column with memes attached" is the defect.
+   */
+  if (result.rejectedReason) {
+    return { text: result.text, isMock: false, rejectedReason: result.rejectedReason };
+  }
+  /*
+   * A floor on length, because "saved successfully" and "saved something a
+   * reader can use" turned out to be different things. A truncated generation
+   * came back as an empty string, was written over six perfectly good profiles,
+   * and the Managers page rendered blank cards. The provider now rejects empty
+   * content outright; this is the second line of defence for a draft that is
+   * technically prose but far too short to be the profile that was asked for.
+   */
+  const words = result.text.trim().split(/\s+/).filter(Boolean).length;
+  if (words < 150) {
+    return {
+      text: result.text,
+      isMock: false,
+      rejectedReason: `only ${words} words — too short to be a profile, so the previous one was kept`,
+    };
+  }
   const hash = JSON.stringify(packet).length.toString();
   await prisma.managerPerformanceSummary.upsert({
     where: { managerId },

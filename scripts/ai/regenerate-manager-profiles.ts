@@ -34,6 +34,7 @@ async function main() {
   });
 
   let rewritten = 0;
+  let failed = 0;
   for (const manager of managers) {
     const beforeWords = manager.performanceSummary?.summary.split(/\s+/).length ?? 0;
 
@@ -42,13 +43,29 @@ async function main() {
       continue;
     }
 
-    const result = await regenerateManagerPerformanceSummary(manager.id);
+    // Per-manager error handling: one provider failure used to abort the whole
+    // run, leaving the batch half-applied with no indication of where it stopped.
+    let result: Awaited<ReturnType<typeof regenerateManagerPerformanceSummary>>;
+    try {
+      result = await regenerateManagerPerformanceSummary(manager.id);
+    } catch (error) {
+      console.log(
+        `  ${manager.displayName.padEnd(22)} FAILED — ${error instanceof Error ? error.message.slice(0, 160) : String(error)}`,
+      );
+      failed++;
+      continue;
+    }
     if (!result) {
       console.log(`  ${manager.displayName.padEnd(22)} no history — skipped`);
       continue;
     }
     if (result.isMock) {
       console.log(`  ${manager.displayName.padEnd(22)} mock output — not saved`);
+      continue;
+    }
+    if (result.rejectedReason) {
+      console.log(`  ${manager.displayName.padEnd(22)} REJECTED — ${result.rejectedReason}`);
+      failed++;
       continue;
     }
 
@@ -60,7 +77,17 @@ async function main() {
     rewritten++;
   }
 
-  console.log(dryRun ? "\nDRY RUN — nothing written." : `\nRewrote ${rewritten} profile(s).`);
+  if (dryRun) {
+    console.log("\nDRY RUN — nothing written.");
+    return;
+  }
+  console.log(`\nRewrote ${rewritten} profile(s).`);
+  if (failed > 0) {
+    console.log(
+      `${failed} profile(s) were refused and left unchanged. Re-run to try again — the writer is shown its own offending phrases, so a second run usually clears them.`,
+    );
+    process.exitCode = 1;
+  }
 }
 
 main()

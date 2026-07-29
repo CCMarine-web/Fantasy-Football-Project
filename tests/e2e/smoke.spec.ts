@@ -16,7 +16,6 @@ import { test, expect, type Page } from "@playwright/test";
 
 const PUBLIC_ROUTES = [
   "/",
-  "/weekly",
   "/matchups",
   "/standings",
   "/managers",
@@ -31,7 +30,6 @@ const PUBLIC_ROUTES = [
   "/draft-report-cards",
   "/trade-tribunal",
   "/news",
-  "/chat",
 ];
 
 const PHONE = { width: 390, height: 844 };
@@ -85,7 +83,7 @@ test("every image on the visual pages actually loads", async ({ page }) => {
 });
 
 test("no admin control is exposed to a signed-out visitor", async ({ page }) => {
-  for (const route of ["/hall-of-shame", "/championship-belt", "/chat", "/weekly"]) {
+  for (const route of ["/hall-of-shame", "/championship-belt", "/matchups"]) {
     await page.goto(route);
     const adminLinks = await page.locator('a[href^="/admin"]').count();
     expect(adminLinks, `admin links on ${route}`).toBe(0);
@@ -99,16 +97,42 @@ test("admin routes redirect a signed-out visitor to the login page", async ({ pa
   await expect(page).toHaveURL(/\/login/);
 });
 
-test("the weekly hub is the primary navigation item and links onward", async ({ page }) => {
-  await page.goto("/");
+test("Matchups is the primary navigation item and links onward", async ({ page }) => {
   await page.setViewportSize(DESKTOP);
-  await expect(page.locator('header a[href="/weekly"]').first()).toBeVisible();
+  await page.goto("/");
+  await expect(page.locator('header a[href="/matchups"]').first()).toBeVisible();
 
-  await page.goto("/weekly");
-  await expect(page.getByRole("heading", { name: /weekly league hub/i })).toBeVisible();
+  await page.goto("/matchups");
+  await expect(page.getByRole("heading", { name: /^matchups$/i }).first()).toBeVisible();
   // The hub must reach every page it summarises.
-  for (const href of ["/matchups", "/standings", "/transactions", "/news"]) {
+  for (const href of ["/standings", "/transactions", "/news"]) {
     await expect(page.locator(`a[href="${href}"]`).first()).toBeVisible();
+  }
+});
+
+test("/weekly redirects to /matchups so old links still work", async ({ page }) => {
+  await page.goto("/weekly");
+  await expect(page).toHaveURL(/\/matchups$/);
+  await expect(page.getByRole("heading", { name: /^matchups$/i }).first()).toBeVisible();
+});
+
+test("/weekly carries its week query string across the redirect", async ({ page }) => {
+  await page.goto("/weekly?week=3");
+  await expect(page).toHaveURL(/\/matchups\?week=3$/);
+});
+
+test("the public chat is gone, not merely unlinked", async ({ page }) => {
+  // 404 for the page and the API, and no link to either anywhere in the shell.
+  const pageResponse = await page.goto("/chat");
+  expect(pageResponse?.status()).toBe(404);
+
+  const api = await page.request.get("/api/chat");
+  expect(api.status()).toBe(404);
+
+  for (const route of ["/", "/matchups", "/managers"]) {
+    await page.goto(route);
+    expect(await page.locator('a[href="/chat"]').count(), `chat links on ${route}`).toBe(0);
+    expect(await page.locator('a[href^="/chat?"]').count(), `chat links on ${route}`).toBe(0);
   }
 });
 
@@ -131,8 +155,44 @@ test("manager directory links into a profile that shows a Luck Score", async ({ 
   await expect(page.getByText(/Career Statistics/i).first()).toBeVisible();
 });
 
-test("the public chat explains that names are reserved", async ({ page }) => {
-  await page.goto("/chat");
-  await expect(page.getByText(/Verified Manager/i).first()).toBeVisible();
-  await expect(page.getByText(/reserved/i).first()).toBeVisible();
+test("the punishment gallery shows photographs and captions none of them", async ({ page }) => {
+  await page.goto("/hall-of-shame");
+  await page.waitForLoadState("networkidle");
+
+  const gallery = page.locator("section", { has: page.getByRole("heading", { name: /punishment gallery/i }) });
+  const images = gallery.locator("img");
+  expect(await images.count()).toBeGreaterThan(0);
+
+  /*
+   * No year, no name, no description. The alt text is deliberately generic:
+   * nothing on record says which punishment any of these photographs shows, so
+   * captioning one would be inventing a fact about a real person.
+   */
+  for (const alt of await images.evaluateAll((nodes) => nodes.map((n) => (n as HTMLImageElement).alt))) {
+    expect(alt).toBe("League punishment photograph");
+  }
+  await expect(gallery).not.toContainText(/\b20\d{2}\b/);
+
+  // Opening one gives a larger view.
+  await gallery.locator("button").first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("the last-place table sits below the whole gallery and is not split", async ({ page }) => {
+  await page.goto("/hall-of-shame");
+  const galleryHeading = page.getByRole("heading", { name: /punishment gallery/i });
+  const tableHeading = page.getByRole("heading", { name: /last place by season/i });
+  await expect(tableHeading).toBeVisible();
+
+  const galleryBox = await galleryHeading.boundingBox();
+  const tableBox = await tableHeading.boundingBox();
+  expect(tableBox!.y).toBeGreaterThan(galleryBox!.y);
+
+  // One uninterrupted table: exactly one <table> between the heading and the
+  // next section heading, with a row per completed season.
+  const table = page
+    .locator("section", { has: tableHeading })
+    .locator("table");
+  await expect(table).toHaveCount(1);
+  expect(await table.locator("tbody tr").count()).toBeGreaterThan(0);
 });

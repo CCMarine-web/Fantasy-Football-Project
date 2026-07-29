@@ -11,6 +11,7 @@ import {
   type PowerRankingView,
 } from "./power-rankings-repository";
 import { getWeeklyAwards, type WeeklyAwardView } from "./weekly-awards-repository";
+import { getFeaturedMatchup, type FeaturedMatchupView } from "./featured-matchup-repository";
 import { loadVerifiedGames } from "./verified-games";
 import { longestLosingStreak, longestWinningStreak } from "@/server/stats";
 import type { GameResult } from "@/server/stats/types";
@@ -47,10 +48,32 @@ export interface WeeklyNewsItem {
   week: number | null;
 }
 
+/**
+ * The state of the automated data sync, so the page can say how current it is.
+ *
+ * A page that silently shows week-4 data in week 6 is worse than one that admits
+ * it: the reader has no way to tell, and every number on it is wrong in the same
+ * direction. `isStale` is set when the last attempt failed, or when the most
+ * recent successful one is old enough that a weekly sync should have run since.
+ */
+export interface SyncState {
+  /** When the last SUCCESSFUL sync of any kind finished. */
+  lastSuccessAt: Date | null;
+  /** Set when the most recent attempt did not succeed. */
+  lastFailure: { at: Date; message: string | null } | null;
+  isStale: boolean;
+  /** Plain-English reason, when stale. */
+  staleReason: string | null;
+}
+
 export interface WeeklyHubData {
   seasonYear: number;
   seasonId: string;
   phase: SeasonPhaseInfo;
+  /** How current the underlying data is. */
+  sync: SyncState;
+  /** The featured game for this week, chosen deterministically. */
+  featured: FeaturedMatchupView | null;
   /** The week being shown; null before the season starts. */
   week: number | null;
   /** Every week with a scheduled matchup, ascending. */
@@ -101,6 +124,56 @@ function currentStreak(games: GameResult[]): { kind: "WIN" | "LOSS"; length: num
   return { kind: last.result === "W" ? "WIN" : "LOSS", length };
 }
 
+/**
+ * How long after a successful sync the data counts as stale.
+ *
+ * The cron runs weekly (Tuesdays at noon — see vercel.json). Ten days allows a
+ * full cycle plus a comfortable margin, so a single late run does not cry wolf,
+ * while a sync that has genuinely stopped is caught within a few days.
+ */
+const STALE_AFTER_MS = 10 * 24 * 60 * 60 * 1000;
+
+async function loadSyncState(): Promise<SyncState> {
+  const [lastSuccess, lastAttempt] = await Promise.all([
+    prisma.dataSyncLog.findFirst({
+      where: { status: "SUCCESS", finishedAt: { not: null } },
+      orderBy: { finishedAt: "desc" },
+      select: { finishedAt: true },
+    }),
+    prisma.dataSyncLog.findFirst({
+      // RUNNING rows are excluded: a sync in flight is not a failure, and one
+      // abandoned mid-run would otherwise read as the newest attempt forever.
+      where: { status: { in: ["SUCCESS", "FAILED", "PARTIAL"] } },
+      orderBy: { startedAt: "desc" },
+      select: { status: true, errorMessage: true, startedAt: true, finishedAt: true },
+    }),
+  ]);
+
+  const lastSuccessAt = lastSuccess?.finishedAt ?? null;
+  const failed = lastAttempt && lastAttempt.status !== "SUCCESS";
+  const lastFailure = failed
+    ? { at: lastAttempt.finishedAt ?? lastAttempt.startedAt, message: lastAttempt.errorMessage }
+    : null;
+
+  const age = lastSuccessAt ? Date.now() - lastSuccessAt.getTime() : null;
+  const overdue = age != null && age > STALE_AFTER_MS;
+
+  let staleReason: string | null = null;
+  if (failed) {
+    staleReason =
+      lastAttempt.status === "PARTIAL"
+        ? "The last automated sync only partly completed, so some figures below may be behind."
+        : "The last automated sync failed, so the figures below may be behind.";
+  } else if (overdue) {
+    const days = Math.floor((age as number) / (24 * 60 * 60 * 1000));
+    staleReason = `The last successful sync was ${days} days ago. The weekly job may have stopped.`;
+  } else if (lastSuccessAt == null) {
+    staleReason = "No automated sync has completed yet, so this is whatever was last imported by hand.";
+  }
+
+  return { lastSuccessAt, lastFailure, isStale: staleReason != null, staleReason };
+}
+
 export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubData | null> {
   const season =
     (await getCurrentSeason()) ??
@@ -127,7 +200,7 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
       ? requestedWeek
       : (phase.currentWeek ?? availableWeeks[0] ?? null);
 
-  const [standings, matchups, awards, power, transactions, verifiedGames, articles] =
+  const [standings, matchups, awards, power, transactions, verifiedGames, articles, sync, featured] =
     await Promise.all([
       getStandingsForSeason(season.id),
       week != null ? getMatchupsForWeek(season.id, week, season.year) : Promise.resolve([]),
@@ -149,6 +222,11 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
         orderBy: [{ season: { year: "desc" } }, { week: "desc" }, { publishedAt: "desc" }],
         take: 6,
       }),
+      loadSyncState(),
+      // The featured game is only meaningful once a week has a schedule.
+      week != null
+        ? getFeaturedMatchup(season.id, season.year, week)
+        : Promise.resolve(null),
     ]);
 
   // The week's own article, if one was published, becomes the headline.
@@ -245,6 +323,8 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     seasonYear: season.year,
     seasonId: season.id,
     phase,
+    sync,
+    featured,
     week,
     availableWeeks,
     headline,

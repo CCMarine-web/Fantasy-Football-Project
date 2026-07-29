@@ -110,13 +110,13 @@ export default async function HomePage() {
         ) : null}
       </section>
 
-      {/* Straight to the one-stop weekly view. */}
+      {/* Straight to the one-stop weekly view, now called Matchups. */}
       <div className="mt-6">
-        <Button render={<Link href="/weekly" />} nativeButton={false}>
+        <Button render={<Link href="/matchups" />} nativeButton={false}>
           <CalendarDays className="h-4 w-4" />
           {phase?.phase === "IN_SEASON"
             ? `This week in the league — ${phase.label}`
-            : "The Weekly League Hub"}
+            : "Matchups"}
         </Button>
       </div>
 

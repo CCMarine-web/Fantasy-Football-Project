@@ -7,7 +7,7 @@ import {
   getTransactionsPage,
   type TransactionView,
 } from "@/server/repositories/transaction-repository";
-import { WeeklyHubLink } from "@/components/shared/weekly-hub-link";
+import { MatchupsHubLink } from "@/components/shared/matchups-hub-link";
 import { positionLabel } from "@/lib/format";
 import { ArrowRightLeft, Info } from "lucide-react";
 import type { TransactionType } from "@/generated/prisma/client";
@@ -68,7 +68,7 @@ export default async function TransactionsPage({
         description="Every add, drop, claim and trade on record. A waiver claim that lost is shown as a claim that lost, not as an acquisition."
       />
 
-      <WeeklyHubLink what="transaction" />
+      <MatchupsHubLink what="transaction" />
 
       {/*
        * The filters are built from the periods that actually contain data, so
