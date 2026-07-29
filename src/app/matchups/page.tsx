@@ -316,12 +316,14 @@ export default async function MatchupsPage({
         >
           Standings
         </SectionHeading>
-        {hub.standings.length > 0 && hub.standings.some((r) => r.wins + r.losses + r.ties > 0) ? (
-          <StandingsTable rows={hub.standings} />
+        {/* Before week 1 the order is stated rather than presented as a
+            ranking — see standings-repository. */}
+        {hub.standings.length > 0 ? (
+          <StandingsTable rows={hub.standings} caption={hub.standingsOrderingLabel} />
         ) : (
           <EmptyState
-            title="No games played yet"
-            description="Standings populate once the season's first week is final."
+            title="No teams on record yet"
+            description="Standings populate once the season's rosters are synced."
           />
         )}
       </section>

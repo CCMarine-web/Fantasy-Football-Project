@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { excerpt } from "@/lib/excerpt";
 import {
   averageFinish,
   careerSummary,
@@ -652,14 +653,6 @@ export interface ManagerRow {
   isActive: boolean;
 }
 
-/** Words in a string, the way a reader would count them. */
-function wordCount(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
-const CARD_MIN_WORDS = 120;
-const CARD_MAX_WORDS = 180;
-
 /**
  * The 120-180 word summary shown on the Managers list.
  *
@@ -667,48 +660,10 @@ const CARD_MAX_WORDS = 180;
  * reason: two independently written texts about the same career will eventually
  * disagree, and the one on the list page is the one a reader sees first. The
  * profile prompt is told the opening 120-180 words must stand alone, so the
- * first paragraph is usually the whole card.
- *
- * Whole paragraphs are taken while they fit. If the first paragraph alone
- * overruns 180 words — which happens, prompts being advice rather than
- * contracts — it is cut at the last sentence boundary that fits, never
- * mid-sentence and never with an ellipsis: a card that ends "…and then he" reads
- * as a bug, whereas one that ends a sentence early just reads short.
+ * first paragraph is usually the whole card. See lib/excerpt.ts.
  */
 export function cardSummary(profile: string | null | undefined): string | null {
-  if (!profile) return null;
-  const paragraphs = profile
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean);
-  if (paragraphs.length === 0) return null;
-
-  const taken: string[] = [];
-  let words = 0;
-  for (const paragraph of paragraphs) {
-    const next = words + wordCount(paragraph);
-    // Always take the first paragraph; take later ones only while they keep the
-    // card inside the band.
-    if (taken.length > 0 && next > CARD_MAX_WORDS) break;
-    taken.push(paragraph);
-    words = next;
-    if (words >= CARD_MIN_WORDS) break;
-  }
-
-  const text = taken.join("\n\n");
-  if (wordCount(text) <= CARD_MAX_WORDS) return text;
-
-  // Too long on the first paragraph alone: keep whole sentences up to the cap.
-  const sentences = text.match(/[^.!?]+[.!?]+(?:["'”’)]+)?\s*/g) ?? [text];
-  const kept: string[] = [];
-  let n = 0;
-  for (const sentence of sentences) {
-    const next = n + wordCount(sentence);
-    if (kept.length > 0 && next > CARD_MAX_WORDS) break;
-    kept.push(sentence);
-    n = next;
-  }
-  return kept.join("").trim();
+  return excerpt(profile, { minWords: 120, maxWords: 180 });
 }
 
 /**

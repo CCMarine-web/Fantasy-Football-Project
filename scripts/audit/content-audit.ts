@@ -1,5 +1,6 @@
 import "../lib/load-env";
 import { prisma } from "@/lib/db";
+import { cardSummary } from "@/server/repositories/manager-repository";
 
 /**
  * Reads every piece of SAVED editorial copy the public site renders and reports
@@ -174,6 +175,32 @@ async function main() {
         });
       }
     }
+    /*
+     * The Managers-page card. Derived from the bio rather than generated, so
+     * this checks the derivation lands in the band a reader was promised — 120
+     * to 180 words. A card outside it means the opening paragraph of that bio is
+     * either too thin to stand alone or too long to be a card.
+     */
+    const card = cardSummary(bio);
+    if (bio && !card) {
+      findings.push({
+        where: "manager card",
+        subject: m.displayName,
+        problem: "bio exists but no card summary could be derived from it",
+        excerpt: bio.slice(0, 120),
+      });
+    } else if (card) {
+      const n = words(card);
+      if (n < 120 || n > 180) {
+        findings.push({
+          where: "manager card",
+          subject: m.displayName,
+          problem: `card summary is ${n} words, outside the 120-180 band`,
+          excerpt: card.slice(0, 120),
+        });
+      }
+    }
+
     if (m.performanceSummary?.isMock) {
       findings.push({
         where: "manager bio",
@@ -261,13 +288,22 @@ async function main() {
     );
   }
 
-  // --- league history sections (the /history previews) ----------------------
+  /*
+   * --- the commissioner's own history, preserved verbatim -------------------
+   *
+   * These are transcriptions of the commissioner's written recaps, kept as
+   * source. Only the SOURCE_LEAKS check applies: the whitespace and punctuation
+   * of somebody else's writing is not a defect to be corrected, and the
+   * transcription markers ("RECAP PART 2") are what the season articles are
+   * generated FROM rather than anything a reader sees — /history renders the
+   * generated articles and falls back to this only when none exist.
+   */
   const history = await prisma.leagueHistorySection.findMany({
     select: { year: true, title: true, body: true, sectionType: true },
   });
-  console.log(`history sections: ${history.length}`);
+  console.log(`history sections (verbatim source): ${history.length}`);
   for (const h of history) {
-    scan("history section", `${h.year ?? "?"} ${h.title}`, h.body, [...SOURCE_LEAKS, ...TYPOS]);
+    scan("history section", `${h.year ?? "?"} ${h.title}`, h.body, SOURCE_LEAKS);
   }
 
   // --- report ---------------------------------------------------------------

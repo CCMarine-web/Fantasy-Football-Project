@@ -9,10 +9,72 @@
 
 import { getAIProvider } from "../get-ai-provider";
 import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import {
+  findEditorialProblems,
+  findHindsight,
+  rewriteWithoutProblemsInstruction,
+  type EditorialProblem,
+} from "../editorial-guards";
 import type { ContentSafeguards } from "../types";
 
-export const DRAFT_GRADE_PROMPT_VERSION = "draft-grade-v1";
-export const DRAFT_REVISIT_PROMPT_VERSION = "draft-revisit-v1";
+export const DRAFT_GRADE_PROMPT_VERSION = "draft-grade-v2";
+export const DRAFT_REVISIT_PROMPT_VERSION = "draft-revisit-v2";
+
+/**
+ * Regenerates once, with the offending phrases named, when a draft comes back
+ * with something a reader would see.
+ *
+ * `checkHindsight` is on for the ORIGINAL grade and off for the revisited one:
+ * hindsight is the entire point of the second grade and a defect in the first.
+ * The published defects this catches were "the bench ended up full of
+ * low-ceiling veterans" under a heading reading "judged on draft day only", and
+ * "the model judges those starters as middling", which explains the machinery
+ * instead of the draft.
+ */
+async function writeWithGuard(args: {
+  promptVersion: string;
+  systemPrompt: string;
+  userPrompt: string;
+  humorLevel: number;
+  checkHindsight: boolean;
+}): Promise<DraftRationaleResult> {
+  const provider = getAIProvider();
+  const generate = (userPrompt: string) =>
+    provider.generate({
+      promptVersion: args.promptVersion,
+      systemPrompt: args.systemPrompt,
+      userPrompt,
+      humorLevel: args.humorLevel,
+      // A few sentences do not need deep reasoning, and left unset the provider
+      // was spending minutes per call: regenerating all 88 grades was on course
+      // for eight hours. 2200 leaves room for the prose after the reasoning,
+      // which at 900 it did not always have.
+      reasoningEffort: "low" as const,
+      maxOutputTokens: 2200,
+    });
+
+  let result = await generate(args.userPrompt);
+  if (result.providerName === "mock") return { text: result.text, providerName: result.providerName };
+
+  const problemsIn = (text: string): EditorialProblem[] => [
+    ...findEditorialProblems(text),
+    ...(args.checkHindsight ? findHindsight(text) : []),
+  ];
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const problems = problemsIn(result.text);
+    if (problems.length === 0) break;
+    result = await generate(
+      `${args.userPrompt}\n\n${rewriteWithoutProblemsInstruction(problems)}${
+        args.checkHindsight
+          ? "\n\nThis grade judges DRAFT DAY ONLY. You do not know how the season went and must not imply that you do."
+          : ""
+      }\n\nPrevious draft:\n${result.text}`,
+    );
+  }
+
+  return { text: result.text, providerName: result.providerName };
+}
 
 /** Structured facts the original draft-day rationale is written from. */
 export interface DraftRationaleInput {
@@ -94,44 +156,25 @@ export async function generateDraftRationale(
   input: DraftRationaleInput,
   safeguards: ContentSafeguards
 ): Promise<DraftRationaleResult> {
-  const systemPrompt = buildSystemPrompt(GRADE_SYSTEM_PROMPT, safeguards);
-  const userPrompt = `Structured draft data (grade "${input.derivedGrade}" already assigned — justify it):\n${formatStructuredInput(input)}`;
-
-  const result = await getAIProvider().generate({
+  return writeWithGuard({
     promptVersion: DRAFT_GRADE_PROMPT_VERSION,
-    systemPrompt,
-    userPrompt,
+    systemPrompt: buildSystemPrompt(GRADE_SYSTEM_PROMPT, safeguards),
+    userPrompt: `Structured draft data (grade "${input.derivedGrade}" already assigned — justify it):\n${formatStructuredInput(input)}`,
     humorLevel: safeguards.humorLevel,
-    // A two-sentence rationale does not need deep reasoning, and left unset the
-    // provider was spending minutes per call: regenerating all 88 grades was on
-    // course for eight hours. Bounded here to keep a full regeneration to
-    // something a person will actually wait for.
-    reasoningEffort: "low",
-    maxOutputTokens: 900,
+    checkHindsight: true,
   });
-
-  return { text: result.text, providerName: result.providerName };
 }
 
 export async function generateDraftRevisitRationale(
   input: DraftRevisitInput,
   safeguards: ContentSafeguards
 ): Promise<DraftRationaleResult> {
-  const systemPrompt = buildSystemPrompt(REVISIT_SYSTEM_PROMPT, safeguards);
-  const userPrompt = `Structured draft-vs-results data (revisited grade "${input.revisitedGrade}" already assigned — justify it):\n${formatStructuredInput(input)}`;
-
-  const result = await getAIProvider().generate({
+  return writeWithGuard({
     promptVersion: DRAFT_REVISIT_PROMPT_VERSION,
-    systemPrompt,
-    userPrompt,
+    systemPrompt: buildSystemPrompt(REVISIT_SYSTEM_PROMPT, safeguards),
+    userPrompt: `Structured draft-vs-results data (revisited grade "${input.revisitedGrade}" already assigned — justify it):\n${formatStructuredInput(input)}`,
     humorLevel: safeguards.humorLevel,
-    // A two-sentence rationale does not need deep reasoning, and left unset the
-    // provider was spending minutes per call: regenerating all 88 grades was on
-    // course for eight hours. Bounded here to keep a full regeneration to
-    // something a person will actually wait for.
-    reasoningEffort: "low",
-    maxOutputTokens: 900,
+    // Hindsight is the whole point of this grade.
+    checkHindsight: false,
   });
-
-  return { text: result.text, providerName: result.providerName };
 }

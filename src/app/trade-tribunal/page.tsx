@@ -290,6 +290,57 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
           </div>
         ) : null}
 
+        {/*
+          The lines every figure above is measured against. Without them "+41
+          above replacement" is unfalsifiable: a reader cannot tell whether the
+          bar was 6 points a game or 16. Per position, and for THIS season's
+          window — replacement level is not a constant across years.
+        */}
+        {t.benchmarks.length > 0 ? (
+          <details className="rounded-md border border-border/60 bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Replacement level used for this trade ({t.seasonYear})
+            </summary>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-muted-foreground">
+                  <tr>
+                    <th className="py-1 pr-4 text-left font-medium">Position</th>
+                    <th className="py-1 pr-4 text-right font-medium">Replacement</th>
+                    <th className="py-1 pr-4 text-right font-medium">Scarcity</th>
+                    <th className="py-1 text-right font-medium">Players</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/40">
+                  {t.benchmarks.map((b) => (
+                    <tr key={b.position}>
+                      <td className="py-1 pr-4">{positionLabel(b.position)}</td>
+                      <td className="py-1 pr-4 text-right font-mono tabular-nums">
+                        {b.replacementPpg.toFixed(1)} pts/gm
+                      </td>
+                      <td className="py-1 pr-4 text-right font-mono tabular-nums">
+                        {b.scarcity.toFixed(2)}×
+                      </td>
+                      <td className="py-1 text-right font-mono tabular-nums text-muted-foreground">
+                        {b.sampleSize}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              <strong className="text-foreground">Replacement</strong> is the per-game scoring of the
+              last player at that position who would still be starting somewhere in this league — the
+              bar a trade has to clear to be worth anything.{" "}
+              <strong className="text-foreground">Scarcity</strong> is how far the starters at that
+              position sit above that bar; the higher it is, the more each point above replacement is
+              worth. <strong className="text-foreground">Players</strong> is how many were on record
+              to draw the line from, so a thin sample is visible rather than hidden.
+            </p>
+          </details>
+        ) : null}
+
         {t.missingInputs.length > 0 ? (
           <p className="flex items-start gap-2 text-xs text-muted-foreground">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />

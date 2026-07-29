@@ -19,9 +19,20 @@ function FormBadge({ result }: { result: "W" | "L" | "T" }) {
   );
 }
 
-export function StandingsTable({ rows }: { rows: StandingsRow[] }) {
+/**
+ * `caption` states what the order means. It is not decoration: before week 1
+ * there are no standings, and a table that silently lists ten 0-0 teams as
+ * positions 1 to 10 is telling every reader something untrue. When a row has no
+ * recorded position the cell shows a dash rather than the row index.
+ */
+export function StandingsTable({ rows, caption }: { rows: StandingsRow[]; caption?: string }) {
   return (
     <div className="overflow-x-auto rounded-lg border border-border/60">
+      {caption ? (
+        <p className="border-b border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
+          {caption}
+        </p>
+      ) : null}
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
@@ -37,9 +48,9 @@ export function StandingsTable({ rows }: { rows: StandingsRow[] }) {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row, i) => (
+          {rows.map((row) => (
             <TableRow key={row.fantasyTeamId}>
-              <TableCell className="font-mono text-muted-foreground">{row.rank || i + 1}</TableCell>
+              <TableCell className="font-mono text-muted-foreground">{row.rank || "—"}</TableCell>
               <TableCell>
                 <Link
                   href={`/managers/${row.managerId}`}

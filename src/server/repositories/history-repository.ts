@@ -1,33 +1,58 @@
 import { prisma } from "@/lib/db";
+import { excerpt, paragraphsOf, wordCount } from "@/lib/excerpt";
+import { cached, CACHE_TAGS } from "@/server/cache";
 
-export async function getLeagueScoringTrend(): Promise<{ season: number; averageScore: number }[]> {
-  const seasons = await prisma.season.findMany({ orderBy: { year: "asc" } });
-  const results = await Promise.all(
-    seasons.map(async (season) => {
-      const agg = await prisma.matchupTeam.aggregate({
-        where: { matchup: { seasonId: season.id }, score: { not: null } },
-        _avg: { score: true },
-      });
-      return { season: season.year, averageScore: agg._avg.score ?? 0 };
-    }),
-  );
-  return results;
-}
+/**
+ * League-average score per season.
+ *
+ * VERIFIED scores only, like every other statistic on the site. Without the
+ * filter, a week a team abandoned contributed its run of zeros to the league
+ * average, so the chart showed scoring dipping in seasons where it had not — the
+ * same defect that put an abandoned team's 0.0 at the top of the Hall of Shame.
+ * Seasons with no verified score at all are omitted rather than plotted at zero.
+ */
+export const getLeagueScoringTrend = cached(
+  async (): Promise<{ season: number; averageScore: number }[]> => {
+    const seasons = await prisma.season.findMany({ orderBy: { year: "asc" } });
+    const results = await Promise.all(
+      seasons.map(async (season) => {
+        const agg = await prisma.matchupTeam.aggregate({
+          where: { matchup: { seasonId: season.id }, score: { not: null }, verifiedScore: true },
+          _avg: { score: true },
+          _count: { _all: true },
+        });
+        return {
+          season: season.year,
+          averageScore: agg._avg.score ?? 0,
+          scores: agg._count._all,
+        };
+      }),
+    );
+    return results
+      .filter((r) => r.scores > 0)
+      .map(({ season, averageScore }) => ({ season, averageScore }));
+  },
+  ["league-scoring-trend"],
+  { tags: [CACHE_TAGS.league] },
+);
 
-export async function listSeasonsWithChampions() {
-  return prisma.season.findMany({
-    orderBy: { year: "desc" },
-    include: {
-      championship: {
-        include: {
-          championFantasyTeam: true,
-          championManager: true,
-          runnerUpFantasyTeam: { include: { manager: true } },
+export const listSeasonsWithChampions = cached(
+  async () =>
+    prisma.season.findMany({
+      orderBy: { year: "desc" },
+      include: {
+        championship: {
+          include: {
+            championFantasyTeam: true,
+            championManager: true,
+            runnerUpFantasyTeam: { include: { manager: true } },
+          },
         },
       },
-    },
-  });
-}
+    }),
+  ["seasons-with-champions"],
+  { tags: [CACHE_TAGS.league] },
+);
 
 export async function getSeasonHistory(year: number) {
   const season = await prisma.season.findFirst({
@@ -119,6 +144,38 @@ export interface SeasonArticleView {
 }
 
 /**
+ * A season article trimmed for the /history index.
+ *
+ * The index used to print every season's article in full — nine complete
+ * retrospectives on one page, several thousand words, most of it restating the
+ * standings and champion that the tables immediately below already show. The
+ * complete recap still lives on /history/[year]; this is the 150-250 words that
+ * make somebody want to read it.
+ */
+export interface SeasonPreviewView extends SeasonArticleView {
+  /** 150-250 words, cut from `paragraphs` on a paragraph or sentence boundary. */
+  preview: string[];
+  /** True when the preview is shorter than the article it came from. */
+  isTruncated: boolean;
+  /** Words in the full article, so the link can say how much more there is. */
+  fullWordCount: number;
+}
+
+const PREVIEW_MIN_WORDS = 150;
+const PREVIEW_MAX_WORDS = 250;
+
+export function toSeasonPreview(article: SeasonArticleView): SeasonPreviewView {
+  const full = article.paragraphs.join("\n\n");
+  const trimmed = excerpt(full, { minWords: PREVIEW_MIN_WORDS, maxWords: PREVIEW_MAX_WORDS }) ?? "";
+  return {
+    ...article,
+    preview: paragraphsOf(trimmed),
+    isTruncated: wordCount(trimmed) < wordCount(full),
+    fullWordCount: wordCount(full),
+  };
+}
+
+/**
  * The published season retrospectives, newest first.
  *
  * These are written once by scripts/ai/generate-season-articles.ts and stored,
@@ -148,6 +205,20 @@ export async function getSeasonArticle(year: number): Promise<SeasonArticleView 
       .filter(Boolean),
   };
 }
+
+/**
+ * The /history index: every season's article, each trimmed to a preview.
+ *
+ * Cached along with the two other index loaders below. Nine published articles,
+ * the champion of every season and a league-wide scoring trend is the whole page,
+ * and none of it changes between syncs — it was rendering behind a skeleton for
+ * data that had been the same for weeks.
+ */
+export const listSeasonPreviews = cached(
+  async (): Promise<SeasonPreviewView[]> => (await listSeasonArticles()).map(toSeasonPreview),
+  ["season-previews"],
+  { tags: [CACHE_TAGS.league, CACHE_TAGS.content] },
+);
 
 export async function listSeasonArticles(): Promise<SeasonArticleView[]> {
   const articles = await prisma.article.findMany({

@@ -9,7 +9,7 @@ import {
   getLeagueScoringTrend,
   listSeasonsWithChampions,
   listApprovedHistorySections,
-  listSeasonArticles,
+  listSeasonPreviews,
 } from "@/server/repositories/history-repository";
 import { History as HistoryIcon, ScrollText, Trophy } from "lucide-react";
 
@@ -27,7 +27,7 @@ export default async function HistoryPage() {
     listSeasonsWithChampions(),
     getLeagueScoringTrend(),
     listApprovedHistorySections(),
-    listSeasonArticles(),
+    listSeasonPreviews(),
   ]);
 
   return (
@@ -49,7 +49,8 @@ export default async function HistoryPage() {
           <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
             The league&apos;s story season by season, built from the commissioner&apos;s own recaps and
             the verified record. Where a narrative detail and the numbers disagree, the season pages
-            below are the record of truth.
+            below are the record of truth. These are openings only — each season&apos;s full
+            retrospective is on its own page.
           </p>
           <div className="space-y-4">
             {articles.map((article) => (
@@ -64,10 +65,15 @@ export default async function HistoryPage() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {/* Real paragraphs with breathing room, rather than one wall
-                      of pre-line text. */}
+                  {/*
+                   * 150-250 words, cut from the full article on a paragraph or
+                   * sentence boundary. The index used to print all nine
+                   * retrospectives in full — several thousand words, most of it
+                   * restating the standings and champion shown in the tables
+                   * below. The complete recap is one click away.
+                   */}
                   <div className="max-w-3xl space-y-4">
-                    {article.paragraphs.map((paragraph, i) => (
+                    {article.preview.map((paragraph, i) => (
                       <p key={i} className="text-sm leading-relaxed text-foreground/90">
                         {paragraph}
                       </p>
@@ -77,7 +83,9 @@ export default async function HistoryPage() {
                     href={`/history/${article.year}`}
                     className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
                   >
-                    {article.year} standings, playoffs and draft →
+                    {article.isTruncated
+                      ? `Read the full ${article.year} retrospective, standings, playoffs and draft →`
+                      : `${article.year} standings, playoffs and draft →`}
                   </Link>
                 </CardContent>
               </Card>

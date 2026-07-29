@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { cached, CACHE_TAGS } from "@/server/cache";
 import { getBlurbs } from "@/server/ai/blurb-cache";
 import {
   buildPositionContext,
@@ -64,6 +65,24 @@ export interface TradeTribunalView {
   hindsightSummary: string;
   notable: boolean;
   notes: string | null;
+  /**
+   * The replacement line each position was measured against, in THIS season's
+   * window. Surfaced because every figure on the card is expressed as production
+   * above these numbers, and a reader had no way to see what they were — "+41
+   * above replacement" is unfalsifiable until you know where replacement sits.
+   * Only positions involved in this trade appear.
+   */
+  benchmarks: PositionBenchmark[];
+}
+
+export interface PositionBenchmark {
+  position: string;
+  /** Points per game of the last startable player at this position. */
+  replacementPpg: number;
+  /** Top starters' average divided by the replacement line. */
+  scarcity: number;
+  /** How many players at this position the line was drawn from. */
+  sampleSize: number;
 }
 
 interface AcquiredAsset {
@@ -73,7 +92,19 @@ interface AcquiredAsset {
   unpricedLabel: string | null;
 }
 
-export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
+/**
+ * Every trade, valued.
+ *
+ * Cached: this is the most expensive read on the site — every trade's post-trade
+ * player window, a replacement level and scarcity figure per position per season,
+ * and a percentile for every player involved. None of it depends on who is
+ * asking, and none of it changes between syncs.
+ */
+export const getTradeTribunal = cached(buildTradeTribunal, ["trade-tribunal"], {
+  tags: [CACHE_TAGS.league, CACHE_TAGS.content],
+});
+
+async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
   const trades = await prisma.transaction.findMany({
     where: { type: "TRADE" },
     include: {
@@ -339,6 +370,29 @@ export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
       hindsightSummary,
       notable: t.trade?.isNotable ?? false,
       notes: t.trade?.notes ?? null,
+      /*
+       * The replacement lines behind every number on this card, for the
+       * positions this trade actually involved. Sorted by position so the same
+       * trade always lists them in the same order.
+       */
+      benchmarks: [
+        ...new Set(
+          valuedSides.flatMap((s) => s.players.map((p) => p.position)),
+        ),
+      ]
+        .map((position) => {
+          const context = contexts.get(position);
+          return context
+            ? {
+                position,
+                replacementPpg: Number(context.replacementPpg.toFixed(1)),
+                scarcity: Number(context.scarcity.toFixed(2)),
+                sampleSize: context.sampleSize,
+              }
+            : null;
+        })
+        .filter((b): b is PositionBenchmark => b != null)
+        .sort((a, b) => a.position.localeCompare(b.position)),
     };
   });
 

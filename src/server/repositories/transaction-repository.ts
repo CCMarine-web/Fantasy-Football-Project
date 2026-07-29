@@ -80,7 +80,34 @@ export interface TransactionsPage {
   /** Seasons in the league that have no transaction data at all, and why. */
   seasonsWithoutData: number[];
   totalMatching: number;
+  /** The manager filter in force, if any. */
+  managerId: string | null;
+  /** The player-name search in force, if any. */
+  playerQuery: string | null;
+  /** Every manager who appears in a transaction, for the filter control. */
+  managerOptions: { id: string; displayName: string }[];
+  /** How many rows are being shown, and whether there are more behind them. */
+  shown: number;
+  hasMore: boolean;
 }
+
+/**
+ * Rows per page.
+ *
+ * The wire used to return 150 at once, which is a wall on a phone and a slow
+ * query for a reader who wanted the last five moves. 25 is one comfortable
+ * screenful; Load More adds another 25.
+ */
+export const TRANSACTIONS_PAGE_SIZE = 25;
+
+/**
+ * Ceiling on how much one request may load.
+ *
+ * Load More works by growing a `shown` count in the URL, which means the number
+ * is attacker-supplied. Without a cap, `?shown=999999` is a free full-table scan
+ * with every asset and manager joined.
+ */
+const MAX_SHOWN = 500;
 
 /**
  * The seven kinds of move the league actually makes.
@@ -125,8 +152,16 @@ export interface TransactionFilters {
   type?: TransactionType;
   managerId?: string;
   playerId?: string;
+  /** Free-text player search — matched against first and last name. */
+  playerQuery?: string;
   /** Hide failed claims. Default true — an unsuccessful bid is not a move. */
   successOnly?: boolean;
+  /**
+   * How many rows to return. Used by Load More, which grows this rather than
+   * paging with an offset: the wire is ordered by a timestamp that never changes,
+   * so growing a window cannot skip or duplicate a row the way an offset can
+   * when the underlying set shifts.
+   */
   limit?: number;
 }
 
@@ -238,21 +273,47 @@ export async function getTransactionsPage(
   const weeksInSeason = seasonYear ? (periodMap.get(seasonYear)?.weeks ?? new Set<number>()) : new Set<number>();
   const week = filters.week != null && weeksInSeason.has(filters.week) ? filters.week : null;
 
+  const playerQuery = filters.playerQuery?.trim() || null;
+
   const where: Prisma.TransactionWhereInput = {};
   if (seasonYear) where.season = { year: seasonYear };
   if (week != null) where.week = week;
   if (filters.type) where.type = filters.type;
   if (successOnly) where.status = { in: ["COMPLETE", "PENDING"] };
-  if (filters.managerId || filters.playerId) {
+  if (filters.managerId || filters.playerId || playerQuery) {
     where.assets = {
       some: {
         ...(filters.managerId ? { fantasyTeam: { managerId: filters.managerId } } : {}),
         ...(filters.playerId ? { playerId: filters.playerId } : {}),
+        /*
+         * A name search has to match a name that is stored in two columns, and
+         * "josh allen" spans both. Splitting on whitespace and requiring every
+         * token to hit one column or the other means "allen josh" works as well
+         * as "josh allen", and a single token ("mahomes") matches either.
+         */
+        ...(playerQuery
+          ? {
+              AND: playerQuery
+                .split(/\s+/)
+                .filter(Boolean)
+                .slice(0, 4)
+                .map((token) => ({
+                  player: {
+                    OR: [
+                      { firstName: { contains: token, mode: "insensitive" as const } },
+                      { lastName: { contains: token, mode: "insensitive" as const } },
+                    ],
+                  },
+                })),
+            }
+          : {}),
       },
     };
   }
 
-  const [rows, totalMatching] = await Promise.all([
+  const shown = Math.min(MAX_SHOWN, Math.max(TRANSACTIONS_PAGE_SIZE, filters.limit ?? TRANSACTIONS_PAGE_SIZE));
+
+  const [rows, totalMatching, managerRows] = await Promise.all([
     prisma.transaction.findMany({
       where,
       include: {
@@ -270,10 +331,19 @@ export async function getTransactionsPage(
           },
         },
       },
-      orderBy: [{ processedAt: "desc" }],
-      take: filters.limit ?? 150,
+      // processedAt then id: a season's rows can share a timestamp to the second,
+      // and without a stable second key the same row could appear on two pages.
+      orderBy: [{ processedAt: "desc" }, { id: "desc" }],
+      take: shown,
     }),
     prisma.transaction.count({ where }),
+    // Managers who appear anywhere in the wire, so the filter never offers one
+    // with nothing behind it.
+    prisma.manager.findMany({
+      where: { deletedAt: null, fantasyTeams: { some: { transactionAssets: { some: {} } } } },
+      select: { id: true, displayName: true },
+      orderBy: { displayName: "asc" },
+    }),
   ]);
 
   const transactions: TransactionView[] = rows.map((t) => {
@@ -305,6 +375,11 @@ export async function getTransactionsPage(
     successOnly,
     seasonsWithoutData,
     totalMatching,
+    managerId: filters.managerId ?? null,
+    playerQuery,
+    managerOptions: managerRows,
+    shown: transactions.length,
+    hasMore: transactions.length < totalMatching,
   };
 }
 

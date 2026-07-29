@@ -12,6 +12,7 @@
 
 import { getAIProvider } from "../get-ai-provider";
 import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { findEditorialProblems, rewriteWithoutProblemsInstruction } from "../editorial-guards";
 import type { ContentSafeguards } from "../types";
 
 export const SEASON_ARTICLE_PROMPT_VERSION = "season-article-v1";
@@ -132,12 +133,31 @@ export async function generateSeasonArticle(
   const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
   const userPrompt = `Season ${facts.year}. Write the retrospective.\n\n${formatStructuredInput(facts)}`;
 
-  const body = await provider.generate({
+  let body = await provider.generate({
     promptVersion: SEASON_ARTICLE_PROMPT_VERSION,
     systemPrompt,
     userPrompt,
     humorLevel: safeguards.humorLevel,
   });
+
+  /*
+   * One corrective pass. The 2017 retrospective shipped with "made for plenty of
+   * chatter" — ordinary English, and one of the words this site must never print,
+   * because it is how the imported archive gets described. Same gate as the
+   * manager profiles: the writer is shown its own phrase rather than reminded of
+   * a rule it has already read.
+   */
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    if (body.providerName === "mock") break;
+    const problems = findEditorialProblems(body.text);
+    if (problems.length === 0) break;
+    body = await provider.generate({
+      promptVersion: SEASON_ARTICLE_PROMPT_VERSION,
+      systemPrompt,
+      userPrompt: `${userPrompt}\n\n${rewriteWithoutProblemsInstruction(problems)}\n\nPrevious draft:\n${body.text}`,
+      humorLevel: safeguards.humorLevel,
+    });
+  }
 
   const titleResult = await provider.generate({
     promptVersion: `${SEASON_ARTICLE_PROMPT_VERSION}-title`,

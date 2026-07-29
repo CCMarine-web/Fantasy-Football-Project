@@ -196,3 +196,123 @@ test("the last-place table sits below the whole gallery and is not split", async
   await expect(table).toHaveCount(1);
   expect(await table.locator("tbody tr").count()).toBeGreaterThan(0);
 });
+
+test("the standings do not rank teams that have not played", async ({ page }) => {
+  await page.goto("/standings");
+  const rows = page.locator("tbody tr");
+  expect(await rows.count()).toBeGreaterThan(0);
+
+  const played = await page
+    .locator("tbody tr")
+    .evaluateAll((trs) =>
+      trs.some((tr) => {
+        const record = tr.querySelectorAll("td")[2]?.textContent ?? "";
+        return !/^\s*0-0\s*$/.test(record);
+      }),
+    );
+
+  if (played) {
+    // In season: positions are real and must start at 1.
+    await expect(rows.first().locator("td").first()).toHaveText("1");
+    return;
+  }
+
+  /*
+   * Preseason. Every position cell must be a dash — the table used to number ten
+   * 0-0 teams 1 to 10 from whatever order the database returned, telling every
+   * manager where they stood in a season nobody had played.
+   */
+  const positions = await rows
+    .locator("td:first-child")
+    .evaluateAll((tds) => tds.map((td) => (td.textContent ?? "").trim()));
+  expect(positions.every((p) => p === "—")).toBe(true);
+  await expect(page.getByText(/These are not rankings/i)).toBeVisible();
+  await expect(
+    page.getByText(/Listed by last season|Listed alphabetically/i).first(),
+  ).toBeVisible();
+});
+
+test("every published weight breakdown adds up to 100%", async ({ page }) => {
+  // The draft report cards published 30/24/18/15/12 — ninety-nine percent —
+  // because each weight was rounded on its own. See distributePercentages.
+  for (const route of ["/draft-report-cards", "/power-rankings"]) {
+    await page.goto(route);
+    const panel = page.locator("dl").first();
+    const percents = await panel
+      .locator("dt")
+      .evaluateAll((dts) => dts.map((dt) => Number((dt.textContent ?? "").replace("%", ""))));
+    expect(percents.length, `weights on ${route}`).toBeGreaterThan(0);
+    expect(percents.reduce((a, b) => a + b, 0), `weights on ${route} must total 100`).toBe(100);
+  }
+});
+
+test("the transaction wire pages, filters and searches", async ({ page }) => {
+  await page.goto("/transactions");
+
+  const cards = page.locator("article, [data-slot='card']");
+  const firstPage = await cards.count();
+  expect(firstPage).toBeGreaterThan(0);
+  // 25 a page, plus the methodology/filter panel which is also a card.
+  expect(firstPage).toBeLessThanOrEqual(30);
+
+  const loadMore = page.getByRole("link", { name: /Load \d+ more/ });
+  if (await loadMore.count()) {
+    await loadMore.first().click();
+    await expect(page).toHaveURL(/shown=/);
+    expect(await cards.count()).toBeGreaterThan(firstPage);
+  }
+
+  // Player search puts the query in the URL so the result is shareable.
+  await page.goto("/transactions");
+  await page.getByPlaceholder(/Search by player name/i).fill("jefferson");
+  await page.getByRole("button", { name: /^Search$/ }).click();
+  await expect(page).toHaveURL(/player=jefferson/);
+  await expect(page.getByText(/matching/i).first()).toBeVisible();
+});
+
+test("official rivalry statistics never appear below the Other Pairings divider", async ({
+  page,
+}) => {
+  await page.goto("/rivalries");
+  const officialHeading = page.getByRole("heading", { name: /official rivalries/i });
+  const othersHeading = page.getByRole("heading", { name: /other heated pairings/i });
+  if ((await officialHeading.count()) === 0 || (await othersHeading.count()) === 0) return;
+
+  const dividerY = (await othersHeading.boundingBox())!.y;
+
+  /*
+   * Each rivalry renders as ONE self-contained card. The defect was a card's
+   * metric grid spilling past the divider, so official-rivalry numbers appeared
+   * under a heading that says these are not official. Every card must sit
+   * entirely on one side of the divider.
+   */
+  const officialSection = page.locator("section").filter({ has: officialHeading });
+  const officialCards = officialSection.locator("[data-slot='card']");
+  const count = await officialCards.count();
+  expect(count).toBeGreaterThan(0);
+  for (let i = 0; i < count; i += 1) {
+    const box = (await officialCards.nth(i).boundingBox())!;
+    expect(box.y + box.height, `official rivalry card ${i} crosses the divider`).toBeLessThan(
+      dividerY,
+    );
+  }
+});
+
+test("season retrospectives are previews on the index and complete on the season page", async ({
+  page,
+}) => {
+  await page.goto("/history");
+  const firstCard = page.locator("[data-slot='card']").first();
+  const indexWords = ((await firstCard.innerText()) ?? "").trim().split(/\s+/).length;
+  // 150-250 words plus the heading and link furniture; nowhere near the ~600 of
+  // a full retrospective, which is what the index used to print for every season.
+  expect(indexWords).toBeLessThan(340);
+
+  const link = page.getByRole("link", { name: /Read the full \d{4} retrospective/ }).first();
+  if (await link.count()) {
+    await link.click();
+    await expect(page).toHaveURL(/\/history\/\d{4}/);
+    const body = await page.locator("main, body").innerText();
+    expect(body.trim().split(/\s+/).length).toBeGreaterThan(indexWords);
+  }
+});

@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import type { MatchupCardData, StandingsRow } from "@/types/view-models";
 import { getCurrentSeason } from "./season-repository";
 import { getSeasonPhase, type SeasonPhaseInfo } from "./season-phase";
-import { getStandingsForSeason } from "./standings-repository";
+import { getStandingsView, type StandingsOrdering } from "./standings-repository";
 import { getMatchupsForWeek } from "./matchup-repository";
 import { getTransactionsPage, type TransactionView } from "./transaction-repository";
 import {
@@ -82,6 +82,9 @@ export interface WeeklyHubData {
   headline: { title: string; excerpt: string; href: string } | null;
   matchups: MatchupCardData[];
   standings: StandingsRow[];
+  /** What the standings order means — see standings-repository. */
+  standingsOrdering: StandingsOrdering;
+  standingsOrderingLabel: string;
   awards: WeeklyAwardView[];
   powerRankings: PowerRankingView[];
   powerRankingsTitle: string;
@@ -200,9 +203,9 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
       ? requestedWeek
       : (phase.currentWeek ?? availableWeeks[0] ?? null);
 
-  const [standings, matchups, awards, power, transactions, verifiedGames, articles, sync, featured] =
+  const [standingsView, matchups, awards, power, transactions, verifiedGames, articles, sync, featured] =
     await Promise.all([
-      getStandingsForSeason(season.id),
+      getStandingsView(season.id),
       week != null ? getMatchupsForWeek(season.id, week, season.year) : Promise.resolve([]),
       week != null ? getWeeklyAwards(season.id, week) : Promise.resolve([]),
       getPowerRankingsPreview(5),
@@ -329,7 +332,9 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     availableWeeks,
     headline,
     matchups,
-    standings,
+    standings: standingsView.rows,
+    standingsOrdering: standingsView.ordering,
+    standingsOrderingLabel: standingsView.orderingLabel,
     awards,
     powerRankings: power?.rows ?? [],
     powerRankingsTitle: powerRankingsTitleFor(power?.mode ?? "MANAGER_BASELINE", power?.throughWeek ?? 0),

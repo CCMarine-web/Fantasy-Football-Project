@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { cached, CACHE_TAGS } from "@/server/cache";
 
 /**
  * Rivalries, read straight from the persisted Rivalry / RivalryMeeting tables.
@@ -151,16 +152,31 @@ function toView(r: RivalryRow, meetings: RivalryMeetingView[] = []): RivalryView
 }
 
 /** Official (commissioner-declared) rivalries, strongest first. */
-export async function getOfficialRivalries(): Promise<RivalryView[]> {
-  const rows = await fetchRivalries({ isOfficial: true });
-  return rows.map((r) => toView(r));
-}
+export const getOfficialRivalries = cached(
+  async (): Promise<RivalryView[]> => {
+    const rows = await fetchRivalries({ isOfficial: true });
+    return rows.map((r) => toView(r));
+  },
+  ["official-rivalries"],
+  { tags: [CACHE_TAGS.league, CACHE_TAGS.managers, CACHE_TAGS.content] },
+);
 
-/** Every pairing that has met, official first then by rivalry score. */
-export async function getComputedRivalries(): Promise<RivalryView[]> {
-  const rows = await fetchRivalries({});
-  return rows.map((r) => toView(r));
-}
+/**
+ * Every pairing that has met, official first then by rivalry score.
+ *
+ * Cached: forty-five pairings, each with its stored numbers and persisted
+ * commentary, is the whole Rivalries page, and none of it depends on who is
+ * asking. The page was rendering behind a skeleton for a set of rows that had
+ * not changed since the last sync.
+ */
+export const getComputedRivalries = cached(
+  async (): Promise<RivalryView[]> => {
+    const rows = await fetchRivalries({});
+    return rows.map((r) => toView(r));
+  },
+  ["computed-rivalries"],
+  { tags: [CACHE_TAGS.league, CACHE_TAGS.managers, CACHE_TAGS.content] },
+);
 
 /** One rivalry with its full season-by-season meeting log. */
 export async function getRivalryDetail(id: string): Promise<RivalryView | null> {

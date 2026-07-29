@@ -137,6 +137,47 @@ export function findEditorialProblems(text: string): EditorialProblem[] {
   return problems;
 }
 
+/**
+ * Hindsight, in a piece of copy that is only allowed to know what was knowable
+ * at the time.
+ *
+ * The ORIGINAL draft grade judges draft day. One rationale read "the bench ended
+ * up full of low-ceiling veterans", which is a verdict on the season, printed
+ * under a heading that says "judged on draft day only". The revisited grade is
+ * where hindsight belongs and this check is not applied to it.
+ */
+const HINDSIGHT: { label: string; pattern: RegExp }[] = [
+  {
+    label: "outcome language",
+    pattern:
+      /\b(?:turned out|in hindsight|with hindsight|ended up|wound up|as it happened|proved to be|went on to|would (?:go on to|finish|end))\b/i,
+  },
+  {
+    label: "the season's result",
+    pattern:
+      /\bfinished the (?:season|year)\b|\bmissed the playoffs\b|\bmade the playoffs\b|\bwon the (?:title|championship|league)\b|\bfinal standings\b|\bfinished \d+(?:st|nd|rd|th)\b/i,
+  },
+  { label: "later transactions", pattern: /\b(?:on waivers|waiver pickups?|later traded|midseason trade)\b/i },
+];
+
+/** Hindsight found in copy that is supposed to be a draft-day judgement. */
+export function findHindsight(text: string): EditorialProblem[] {
+  const problems: EditorialProblem[] = [];
+  for (const { label, pattern } of HINDSIGHT) {
+    const match = pattern.exec(text);
+    if (!match) continue;
+    const at = match.index ?? 0;
+    problems.push({
+      label: `hindsight in a draft-day judgement: ${label}`,
+      excerpt: text
+        .slice(Math.max(0, at - 45), at + match[0].length + 45)
+        .replace(/\s+/g, " ")
+        .trim(),
+    });
+  }
+  return problems;
+}
+
 /** The corrective instruction for a draft with mechanical or disclosure defects. */
 export function rewriteWithoutProblemsInstruction(problems: EditorialProblem[]): string {
   return [
