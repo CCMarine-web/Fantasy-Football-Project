@@ -47,14 +47,26 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Expected a JSON body." }, { status: 400 });
   }
 
-  const { displayName, body } = (payload ?? {}) as { displayName?: unknown; body?: unknown };
+  const { displayName, body, chatCode } = (payload ?? {}) as {
+    displayName?: unknown;
+    body?: unknown;
+    chatCode?: unknown;
+  };
 
   try {
-    const result = await postPublicMessage(displayName, body, clientAddress(request));
+    const result = await postPublicMessage(displayName, body, clientAddress(request), chatCode);
     if (!result.ok) {
-      // 429 for the rate-limit refusals so clients can back off correctly.
+      // 429 for the rate-limit refusals so clients can back off correctly; 403
+      // when the poster is muted or the name belongs to somebody real, so the
+      // client can tell "slow down" apart from "not allowed".
       const isRateLimit = /too quickly|Slow down|busy right now/i.test(result.error);
-      return NextResponse.json({ error: result.error }, { status: isRateLimit ? 429 : 400 });
+      const isForbidden = /belongs to a manager|not being accepted|has been blocked/i.test(
+        result.error,
+      );
+      return NextResponse.json(
+        { error: result.error },
+        { status: isRateLimit ? 429 : isForbidden ? 403 : 400 },
+      );
     }
     return NextResponse.json({ message: result.message }, { status: 201 });
   } catch {

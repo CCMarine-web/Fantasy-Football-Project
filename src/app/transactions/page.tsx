@@ -7,6 +7,8 @@ import {
   getTransactionsPage,
   type TransactionView,
 } from "@/server/repositories/transaction-repository";
+import { WeeklyHubLink } from "@/components/shared/weekly-hub-link";
+import { positionLabel } from "@/lib/format";
 import { ArrowRightLeft, Info } from "lucide-react";
 import type { TransactionType } from "@/generated/prisma/client";
 
@@ -65,6 +67,8 @@ export default async function TransactionsPage({
         title="Transactions"
         description="Every add, drop, claim and trade on record. A waiver claim that lost is shown as a claim that lost, not as an acquisition."
       />
+
+      <WeeklyHubLink what="transaction" />
 
       {/*
        * The filters are built from the periods that actually contain data, so
@@ -204,11 +208,13 @@ export default async function TransactionsPage({
             <Card key={tx.id} className={tx.outcome === "FAILED" ? "border-dashed opacity-80" : undefined}>
               <CardContent className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{tx.kindLabel}</Badge>
-                  {/* A failed claim is labelled a failed claim. These used to
-                      render identically to successful ones, so seven managers
-                      all appeared to have signed the same player. */}
-                  {tx.outcome !== "SUCCESSFUL" || tx.type === "WAIVER" ? (
+                  {/* The kind label already says whether a claim succeeded, so
+                      the outcome badge only appears for the moves whose label
+                      does not carry it. These used to render identically, so
+                      seven managers all appeared to have signed the same
+                      player. */}
+                  <Badge className={`border ${OUTCOME_STYLE[tx.outcome]}`}>{tx.kindLabel}</Badge>
+                  {tx.type !== "WAIVER" && tx.outcome !== "SUCCESSFUL" ? (
                     <Badge className={`border ${OUTCOME_STYLE[tx.outcome]}`}>{tx.outcomeLabel}</Badge>
                   ) : null}
                   {tx.faabSpent != null && tx.faabSpent > 0 ? (
@@ -231,7 +237,7 @@ export default async function TransactionsPage({
                           {tx.added
                             .map(
                               (a) =>
-                                `${a.playerName ?? a.otherAsset ?? "unnamed"}${a.position ? ` (${a.position})` : ""} → ${a.managerName}`,
+                                `${a.playerName ?? a.otherAsset ?? "unnamed"}${a.position ? ` (${positionLabel(a.position)})` : ""} → ${a.managerName}`,
                             )
                             .join(", ")}
                         </span>
@@ -244,7 +250,7 @@ export default async function TransactionsPage({
                           {tx.dropped
                             .map(
                               (a) =>
-                                `${a.playerName ?? a.otherAsset ?? "unnamed"}${a.position ? ` (${a.position})` : ""} ← ${a.managerName}`,
+                                `${a.playerName ?? a.otherAsset ?? "unnamed"}${a.position ? ` (${positionLabel(a.position)})` : ""} ← ${a.managerName}`,
                             )
                             .join(", ")}
                         </span>

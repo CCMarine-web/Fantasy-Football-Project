@@ -7,11 +7,13 @@ import { LUCK_CLOSE_GAME_MARGIN, LUCK_WEIGHTS, type LuckScore } from "@/server/s
  * anything, it just renders what the maths produced.
  */
 
+// Tones follow the published label bands exactly, so the colour and the word
+// can never disagree. Neutral grey is reserved for a score of exactly 50.
 function toneFor(score: number): string {
-  if (score >= 65) return "border-field/50 bg-field/15 text-field";
-  if (score >= 56) return "border-field/30 bg-field/10 text-field";
-  if (score > 44) return "border-border/60 bg-muted text-muted-foreground";
-  if (score > 35) return "border-destructive/30 bg-destructive/10 text-destructive";
+  if (score >= 66) return "border-field/50 bg-field/15 text-field";
+  if (score >= 51) return "border-field/30 bg-field/10 text-field";
+  if (score === 50) return "border-border/60 bg-muted text-muted-foreground";
+  if (score >= 35) return "border-destructive/30 bg-destructive/10 text-destructive";
   return "border-destructive/50 bg-destructive/15 text-destructive";
 }
 
@@ -39,8 +41,59 @@ export function LuckScoreBadge({ luck, prefix }: { luck: LuckScore; prefix?: str
       className={`border ${toneFor(luck.score)}`}
       title={`${luck.label}. ${CONFIDENCE_TEXT[luck.confidence]}. Measured over ${luck.gamesConsidered} regular-season games.`}
     >
-      {prefix ? `${prefix} ` : ""}Luck {luck.score} · {luck.label}
+      {prefix ? `${prefix} ` : ""}Luck Score: {luck.score} — {luck.label}
     </Badge>
+  );
+}
+
+/**
+ * The headline reading: a big number, the exact published label, and one line
+ * saying what it does and does not mean. Sits next to a manager's name.
+ */
+export function LuckScoreHeadline({
+  luck,
+  seasonLuck,
+  seasonYear,
+}: {
+  luck: LuckScore;
+  seasonLuck?: LuckScore | null;
+  seasonYear?: number | null;
+}) {
+  // A current-season score with too few games is not shown at all. In July it
+  // would read "not enough games" beside a career number, which invites the
+  // reader to treat the absence as a result.
+  const showSeason = seasonLuck != null && seasonLuck.score != null;
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-card/40 px-4 py-3">
+      <p className="text-[11px] tracking-wide text-muted-foreground uppercase">Career Luck Score</p>
+      {luck.score == null ? (
+        <p className="font-heading text-lg font-semibold text-muted-foreground">
+          Not enough games yet
+        </p>
+      ) : (
+        <>
+          <p className="font-heading text-2xl leading-tight font-semibold tabular-nums">
+            <span className={toneFor(luck.score).split(" ").at(-1)}>{luck.score}</span>
+            <span className="ml-2 text-base font-medium text-foreground/90">— {luck.label}</span>
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Measures how much the schedule helped, not how good the manager is. 50 is neutral.
+          </p>
+          <p className="text-[11px] text-muted-foreground/80">
+            {CONFIDENCE_TEXT[luck.confidence]} · {luck.gamesConsidered} regular-season games
+          </p>
+        </>
+      )}
+      {showSeason ? (
+        <p className="mt-2 border-t border-border/40 pt-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {seasonYear ?? "This season"}: {seasonLuck!.score} — {seasonLuck!.label}
+          </span>{" "}
+          ({seasonLuck!.gamesConsidered} games)
+        </p>
+      ) : null}
+    </div>
   );
 }
 
@@ -69,7 +122,13 @@ export function LuckScorePanel({
         </div>
         <div className="flex items-center gap-4">
           <LuckNumber label="Career" luck={career} />
-          {season ? <LuckNumber label={seasonYear ? String(seasonYear) : "Season"} luck={season} /> : null}
+          {/* A current-season score is only shown once enough of the season has
+              been played for it to mean anything. Rendering "—" beside the
+              career number in July invites the reader to treat the absence of a
+              number as a result. */}
+          {season && season.score != null ? (
+            <LuckNumber label={seasonYear ? String(seasonYear) : "Season"} luck={season} />
+          ) : null}
         </div>
       </div>
 

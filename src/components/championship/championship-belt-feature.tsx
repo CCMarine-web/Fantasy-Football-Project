@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { DaysAsChampion } from "@/components/championship/days-as-champion";
+import { initialElapsed } from "@/lib/countdown";
 import type { CurrentChampion } from "@/server/repositories/championship-belt-repository";
 
 /**
@@ -16,9 +17,12 @@ import type { CurrentChampion } from "@/server/repositories/championship-belt-re
 export function ChampionshipBeltFeature({
   champion,
   summary,
+  nowMs,
 }: {
   champion: CurrentChampion;
   summary?: string | null;
+  /** Server-read clock, so the reign counter is present on first paint. */
+  nowMs?: number;
 }) {
   const record = `${champion.wins}-${champion.losses}${champion.ties ? `-${champion.ties}` : ""}`;
   return (
@@ -102,7 +106,10 @@ export function ChampionshipBeltFeature({
             ) : null}
 
             <div className="flex items-center gap-4 pt-1">
-              <DaysAsChampion isoStart={champion.championSince} />
+              <DaysAsChampion
+                isoStart={champion.championSince}
+                initial={nowMs != null ? initialElapsed(champion.championSince, nowMs) : null}
+              />
               <Link href="/championship-belt" className="text-sm text-primary hover:underline">
                 Belt history →
               </Link>

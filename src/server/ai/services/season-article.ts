@@ -28,6 +28,13 @@ export interface SeasonArticleFacts {
   /** Best regular-season record, which is often not the champion. */
   regularSeasonLeader: string | null;
   regularSeasonLeaderRecord: string | null;
+  /**
+   * Bottom of the REGULAR-SEASON standings — the league's only definition of
+   * last place. Not the consolation-bracket loser, who is frequently somebody
+   * else entirely.
+   */
+  lastPlace: string | null;
+  lastPlaceRecord: string | null;
   highestScoringTeam: string | null;
   highestScoringPoints: number | null;
   lowestScoringTeam: string | null;
@@ -77,7 +84,13 @@ YOUR SOURCE MATERIAL
 2. The verified record for that season: standings, champion, scoring, playoff results.
 
 WHAT TO PRODUCE
-One flowing article of FOUR to SIX paragraphs, roughly 350-500 words. Plain paragraphs separated by a blank line. No headings, no bullet points, no labels, no "RECAP" markers, no year stamp at the start — the page already shows the year.
+One flowing article of THREE to FOUR paragraphs, between 330 and 380 words — aim for the middle of that range, and do not go under 330. Plain paragraphs separated by a blank line. No headings, no bullet points, no labels, no "RECAP" markers, no year stamp at the start — the page already shows the year.
+
+BE TIGHT
+The article sits directly above the season's full standings table, its playoff results and its trade list, so anything the reader can already see does not need restating. Do not walk the standings from first to last. Do not set the scene before starting — open on the season's actual story. Do not close by summarising what you just said. Every sentence should carry a fact, a judgement or a joke; cut any that only carries transition.
+
+WHAT MUST SURVIVE THE CUT
+The champion and how they won it; the runner-up; the regular-season leader where that was somebody else; the season's defining scoring storyline; the decisive playoff result; the most notable trade if there was one; the rivalry or manager storyline that mattered; and whatever the commissioner's own account makes clear was the point of the season.
 
 HOW TO HANDLE THE FRAGMENTS
 - Stitch them into continuous prose in their original order.
@@ -94,8 +107,12 @@ TRADES
 
 Write these as sentences. Never paste an entry verbatim: a line reading "Week 10: Blake Mire got Terry McLaurin (WR) and Khalil Shakir (WR); Michael Barkemeyer got Amon-Ra St. Brown (WR). Tribunal verdict: Highway Robbery." is a data dump with a label on it, not writing. Say who got fleeced and why it mattered.
 
-POSTSEASON LANGUAGE
-Round names in "playoffResults" are the brackets' own. A game named as consolation, a toilet bowl or a placement game is NOT a playoff game and never decides third place — the third-place game is in the championship bracket. Do not promote a consolation result into the playoff narrative, and do not call the championship bracket's third-place game a consolation final.
+POSTSEASON AND LAST PLACE
+"playoffResults" contains championship-bracket games only — the games that decided the title. The league's consolation bracket (the "Toilet Bowl") is not in this packet at all. Never mention a toilet bowl, a consolation bracket, a placement game or a loser's bracket: you have no data on any of them.
+
+"lastPlace" is the manager who finished BOTTOM OF THE REGULAR-SEASON STANDINGS, and that is the league's only definition of last place. Do not name anyone else as the season's loser, and never infer last place from a postseason result.
+
+Never use the words "consolation" or "placement game" anywhere in the article, in any sense — not even the ordinary English "the consolation of third place". Those words name a bracket this league runs and does not count, and a reader cannot tell which meaning you intended. A third-place game and a fifth-place game in "playoffResults" ARE championship-bracket games between teams that made the playoffs; describe them as what they are ("the third-place game", "for fifth") without reaching for either word.
 
 "bestWeek", "closestGame" and "biggestBlowout" are season-wide and each names its own week. Do not fold them into a sentence about the playoffs unless the week they name is one of the weeks in "playoffResults" — a one-point thriller in week 8 is not a playoff thriller.
 

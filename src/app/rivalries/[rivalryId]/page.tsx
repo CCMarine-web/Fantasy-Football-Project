@@ -48,7 +48,13 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
   const nameFor = (id: string | null) =>
     id === r.managerAId ? r.managerAName : id === r.managerBId ? r.managerBName : null;
 
-  const playoffMeetings = r.meetings.filter((m) => m.isPlayoff);
+  /*
+   * Championship bracket only. A consolation meeting is a real game and stays
+   * in the season-by-season log below, but it is not postseason history: the
+   * teams in it were already eliminated, so listing it here under "Postseason
+   * meetings" gave a placement game the weight of a semifinal.
+   */
+  const playoffMeetings = r.meetings.filter((m) => m.isPlayoff && m.bracketType === "WINNERS");
   const aWinPct = r.gamesPlayed ? r.managerAWins / r.gamesPlayed : null;
   const bWinPct = r.gamesPlayed ? r.managerBWins / r.gamesPlayed : null;
 
@@ -143,30 +149,16 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
       {playoffMeetings.length > 0 ? (
         <Card className="mt-6">
           <CardContent>
-            <h2 className="mb-3 font-heading text-lg font-semibold">Postseason meetings</h2>
+            <h2 className="mb-3 font-heading text-lg font-semibold">Playoff meetings</h2>
             <ul className="space-y-2">
               {playoffMeetings.map((m) => (
                 <li key={`${m.seasonYear}-${m.week}`} className="flex flex-wrap items-center gap-2 text-sm">
-                  {/* Three distinct things, three distinct labels. A toilet-bowl
-                      game used to be badged "Playoff" like a semifinal. */}
                   {m.isChampionship ? (
                     <Badge className="bg-gold text-gold-foreground">
                       <Trophy className="h-3 w-3" /> Title game
                     </Badge>
-                  ) : m.bracketType === "CONSOLATION" ? (
-                    <Badge
-                      variant="outline"
-                      className="text-muted-foreground"
-                      title="Toilet bowl or placement game — postseason, but not a playoff game"
-                    >
-                      Consolation
-                    </Badge>
-                  ) : m.bracketType === "WINNERS" ? (
-                    <Badge variant="outline">Playoff</Badge>
                   ) : (
-                    <Badge variant="outline" className="border-dashed text-muted-foreground" title="Postseason game with no bracket on record">
-                      Postseason
-                    </Badge>
+                    <Badge variant="outline">Playoff</Badge>
                   )}
                   <span className="font-mono tabular-nums">
                     {m.seasonYear} wk {m.week}: {m.managerAScore.toFixed(1)} – {m.managerBScore.toFixed(1)}
@@ -202,9 +194,12 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
                     <TableCell className="font-mono tabular-nums">{m.seasonYear}</TableCell>
                     <TableCell className="font-mono tabular-nums">
                       {m.week}
+                      {/* Only the championship bracket earns a postseason
+                          badge. A "PO" beside a placement game claimed a
+                          playoff meeting that never happened. */}
                       {m.isChampionship ? (
                         <Badge className="ml-2 bg-gold text-gold-foreground">Title</Badge>
-                      ) : m.isPlayoff ? (
+                      ) : m.isPlayoff && m.bracketType === "WINNERS" ? (
                         <Badge variant="outline" className="ml-2">
                           PO
                         </Badge>

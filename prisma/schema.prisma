@@ -142,6 +142,12 @@ model Manager {
   isActive       Boolean   @default(true)
   /// Per-manager AI-safeguard opt-out (spec: "per-manager no-roast settings").
   noRoast        Boolean   @default(false)
+  /// SHA-256 of this manager's personal public-chat code, salted with
+  /// AUTH_SECRET. Presenting the code is what lets someone post under this
+  /// manager's real name and earn the Verified Manager badge; without it the
+  /// name is reserved and nobody may use it. The plaintext code is shown to an
+  /// admin exactly once, when it is generated, and is never stored.
+  chatCodeHash   String?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
@@ -169,6 +175,7 @@ model Manager {
   historySections    LeagueHistorySection[]
   knowledgeLinks     LeagueKnowledgeManager[]
   mediaAssets        MediaAsset[]
+  publicChatMessages PublicChatMessage[]        @relation("PublicChatVerifiedManager")
   performanceSummary ManagerPerformanceSummary?
   commProfile        ManagerCommunicationProfile?
   relationshipsAsA   ManagerRelationship[]      @relation("RelationshipManagerA")
@@ -1486,12 +1493,20 @@ model ManagerRelationship {
 /// IP is never stored, so the table holds no personal technical data.
 model PublicChatMessage {
   id          String   @id @default(cuid())
-  /// Self-entered, unverified. Capped and sanitised on write.
+  /// Self-entered. Unverified UNLESS `verifiedManagerId` is set — see below.
+  /// Capped and sanitised on write.
   displayName String
   body        String
   /// Salted, truncated digest of the poster's network address. One-way; used
-  /// solely to rate-limit and to let an admin block a spam source. Never shown.
+  /// solely to rate-limit, to mute a source, and to let an admin block a spam
+  /// source. Never shown.
   authorHash  String
+  /// Set only when the poster presented that manager's personal chat code.
+  /// This is the ONLY thing that earns the Verified Manager badge, and the only
+  /// way a real manager's name may be used at all — every manager name, team
+  /// name and known alias is otherwise reserved and refused.
+  verifiedManagerId String?
+  verifiedManager   Manager? @relation("PublicChatVerifiedManager", fields: [verifiedManagerId], references: [id])
   /// Soft delete so moderation is reversible and auditable.
   hiddenAt    DateTime?
   hiddenBy    String?
@@ -1502,4 +1517,33 @@ model PublicChatMessage {
   @@index([createdAt])
   @@index([authorHash, createdAt])
   @@index([hiddenAt, createdAt])
+  @@index([verifiedManagerId])
+}
+
+enum ChatModerationKind {
+  /// A display name nobody may post under. Stored normalised (lowercase,
+  /// alphanumerics only) so "Mike Shea", "mikeshea" and "M I K E S H E A"
+  /// are the same rule.
+  BLOCKED_NAME
+  /// A silenced poster, keyed by the same salted address digest used for rate
+  /// limiting. Never reversible to an IP.
+  MUTED_AUTHOR
+}
+
+/// Admin moderation rules for the PUBLIC shoutbox. Deliberately a table rather
+/// than an env var: blocking a name at 11pm should not need a deploy, and every
+/// rule carries who added it and why.
+model ChatModerationRule {
+  id        String             @id @default(cuid())
+  kind      ChatModerationKind
+  /// Normalised name, or an author digest. Never a raw IP.
+  value     String
+  reason    String?
+  createdBy String?
+  /// Null means indefinite. Used for temporary mutes.
+  expiresAt DateTime?
+  createdAt DateTime           @default(now())
+
+  @@unique([kind, value])
+  @@index([kind])
 }

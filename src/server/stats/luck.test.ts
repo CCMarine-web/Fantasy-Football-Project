@@ -40,13 +40,39 @@ function game(part: Partial<LuckGame>): LuckGame {
 }
 
 describe("luckLabel", () => {
-  it("puts 50 in the neutral band and the extremes outside it", () => {
+  it("reserves Neutral for exactly 50", () => {
     expect(luckLabel(50)).toBe("Neutral");
-    expect(luckLabel(45)).toBe("Neutral");
-    expect(luckLabel(44)).toBe("Slightly unlucky");
-    expect(luckLabel(56)).toBe("Slightly lucky");
-    expect(luckLabel(0)).toBe("Very unlucky");
-    expect(luckLabel(100)).toBe("Very lucky");
+    // The old bands called anything from 45 to 55 neutral, which claimed the
+    // luck had evened out when the maths had found a lean.
+    expect(luckLabel(49)).toBe("Slightly Unlucky");
+    expect(luckLabel(51)).toBe("Slightly Lucky");
+  });
+
+  it("matches the published band boundaries exactly", () => {
+    expect(luckLabel(100)).toBe("Extremely Lucky");
+    expect(luckLabel(81)).toBe("Extremely Lucky");
+    expect(luckLabel(80)).toBe("Very Lucky");
+    expect(luckLabel(66)).toBe("Very Lucky");
+    expect(luckLabel(65)).toBe("Slightly Lucky");
+    expect(luckLabel(51)).toBe("Slightly Lucky");
+    expect(luckLabel(50)).toBe("Neutral");
+    expect(luckLabel(49)).toBe("Slightly Unlucky");
+    expect(luckLabel(35)).toBe("Slightly Unlucky");
+    expect(luckLabel(34)).toBe("Very Unlucky");
+    expect(luckLabel(20)).toBe("Very Unlucky");
+    expect(luckLabel(19)).toBe("Extremely Unlucky");
+    expect(luckLabel(0)).toBe("Extremely Unlucky");
+  });
+
+  it("covers every whole score from 0 to 100 with no gaps", () => {
+    for (let score = 0; score <= 100; score += 1) {
+      expect(luckLabel(score)).not.toBe("");
+    }
+    // Exactly one score is Neutral.
+    const neutral = Array.from({ length: 101 }, (_, i) => luckLabel(i)).filter(
+      (l) => l === "Neutral",
+    );
+    expect(neutral).toHaveLength(1);
   });
 });
 

@@ -12,7 +12,7 @@ import {
   gradeLetterToDisplay,
 } from "@/server/repositories/draft-grade-repository";
 import type { DraftFactor } from "@/server/stats/draft-quality";
-import { GraduationCap, Info } from "lucide-react";
+import { ChevronDown, GraduationCap, Info } from "lucide-react";
 
 export const metadata = { title: "Draft Report Cards" };
 
@@ -180,6 +180,78 @@ export default async function DraftReportCardsPage({
         </p>
       ) : null}
 
+      {/*
+       * The whole season at a glance, before any of the long-form cards. The
+       * page previously opened with ten stacked report cards, so answering
+       * "who drafted best" meant scrolling past nine of them.
+       */}
+      {view.cards.length > 0 ? (
+        <section className="mt-8">
+          <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
+            {view.seasonYear} Draft Rankings
+          </h2>
+          <div className="overflow-x-auto rounded-lg border border-border/60">
+            <table className="w-full text-sm">
+              <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
+                <tr>
+                  <th className="px-2 py-2 text-left sm:px-4">#</th>
+                  <th className="px-2 py-2 text-left sm:px-4">Manager</th>
+                  <th className="px-2 py-2 text-center sm:px-4">Grade</th>
+                  <th className="px-2 py-2 text-right sm:px-4">Score</th>
+                  {isComplete && view.revisitAvailable ? (
+                    <th className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">Revisited</th>
+                  ) : null}
+                  <th className="hidden px-2 py-2 text-left sm:px-4 md:table-cell">Strongest</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {view.cards.map((card, index) => {
+                  const best = [...card.factors].sort((a, b) => b.value - a.value)[0];
+                  return (
+                    <tr key={card.managerId}>
+                      <td className="px-2 py-2 font-mono tabular-nums text-muted-foreground sm:px-4">
+                        {index + 1}
+                      </td>
+                      <td className="px-2 py-2 sm:px-4">
+                        <Link
+                          href={`/managers/${card.managerId}`}
+                          className="font-medium hover:text-primary"
+                        >
+                          {card.managerName}
+                        </Link>
+                      </td>
+                      <td className="px-2 py-2 text-center sm:px-4">
+                        <span
+                          className={`inline-flex h-7 min-w-9 items-center justify-center rounded px-1.5 font-heading text-sm font-bold ${gradeColorClasses(card.grade)}`}
+                        >
+                          {gradeLetterToDisplay(card.grade)}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground sm:px-4">
+                        {card.score != null ? card.score.toFixed(1) : "—"}
+                      </td>
+                      {isComplete && view.revisitAvailable ? (
+                        <td className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">
+                          <span className="font-heading text-sm font-semibold text-muted-foreground">
+                            {card.revisitedGrade ? gradeLetterToDisplay(card.revisitedGrade) : "—"}
+                          </span>
+                        </td>
+                      ) : null}
+                      <td className="hidden px-2 py-2 text-xs text-muted-foreground sm:px-4 md:table-cell">
+                        {best ? best.label : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Full report cards below — open one to see its factor breakdown and commentary.
+          </p>
+        </section>
+      ) : null}
+
       <div className="mt-8">
         {view.cards.length === 0 ? (
           <EmptyState
@@ -188,22 +260,44 @@ export default async function DraftReportCardsPage({
             description="Grades generate once a season's draft has been synced and graded."
           />
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {view.cards.map((card, index) => {
               const showRevisited = isComplete && card.revisitedGrade;
               return (
-                <Card key={card.managerId}>
-                  <CardContent>
-                    <div className="mb-4 flex items-center gap-3">
-                      <span className="font-heading text-xl font-semibold tabular-nums text-muted-foreground">
-                        {index + 1}
-                      </span>
-                      <TeamAvatar name={card.managerName} imageUrl={card.avatarUrl} className="shrink-0" />
+                <Card key={card.managerId} className="py-0">
+                  <CardContent className="p-0">
+                    <details className="group">
+                      <summary className="flex cursor-pointer list-none items-center gap-3 px-6 py-4 hover:bg-muted/30">
+                        <span className="font-heading text-xl font-semibold tabular-nums text-muted-foreground">
+                          {index + 1}
+                        </span>
+                        <TeamAvatar
+                          name={card.managerName}
+                          imageUrl={card.avatarUrl}
+                          className="shrink-0"
+                        />
+                        <span className="min-w-0 flex-1 truncate font-heading text-lg font-semibold">
+                          {card.managerName}
+                        </span>
+                        <span
+                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-heading text-base font-bold tabular-nums ${gradeColorClasses(card.grade)}`}
+                        >
+                          {gradeLetterToDisplay(card.grade)}
+                        </span>
+                        <ChevronDown
+                          className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
+                          aria-hidden
+                        />
+                        <span className="sr-only">Show full report card</span>
+                      </summary>
+
+                      <div className="border-t border-border/50 px-6 py-4">
+                    <div className="mb-4 flex flex-wrap items-center gap-3">
                       <Link
                         href={`/managers/${card.managerId}`}
-                        className="min-w-0 truncate font-heading text-lg font-semibold hover:text-primary"
+                        className="min-w-0 truncate text-sm font-medium hover:text-primary"
                       >
-                        {card.managerName}
+                        View {card.managerName}&rsquo;s profile
                       </Link>
                       {/* How much the data behind this particular grade
                           supports it — a letter reads as equally authoritative
@@ -285,6 +379,8 @@ export default async function DraftReportCardsPage({
                         </div>
                       </div>
                     ) : null}
+                      </div>
+                    </details>
                   </CardContent>
                 </Card>
               );

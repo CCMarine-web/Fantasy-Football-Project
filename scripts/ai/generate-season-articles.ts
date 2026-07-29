@@ -2,6 +2,7 @@ import "../lib/load-env";
 import { prisma } from "@/lib/db";
 import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
 import { LOPSIDEDNESS_LABEL } from "@/server/stats/trade-value";
+import { findLastPlace } from "@/server/stats/last-place";
 import { isAIConfigured } from "@/lib/env";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import {
@@ -87,23 +88,44 @@ async function buildFacts(seasonId: string, year: number): Promise<SeasonArticle
   const regularLeader = [...teams].sort(
     (a, b) => (a.regularSeasonRank ?? 99) - (b.regularSeasonRank ?? 99),
   )[0];
+  // Last place from the REGULAR-SEASON standings, using the same shared rule as
+  // the Hall of Shame so the recap and the table can never name two people.
+  const lastPlace = findLastPlace(
+    year,
+    teams.map((t) => ({
+      managerId: t.manager.id,
+      managerName: t.manager.displayName,
+      teamName: t.teamName,
+      wins: t.wins,
+      losses: t.losses,
+      ties: t.ties,
+      pointsFor: t.pointsFor,
+      pointsAgainst: 0,
+      regularSeasonRank: t.regularSeasonRank,
+    })),
+  );
 
-  // Weekly extremes and the notable single games.
-  const matchupTeams = await prisma.matchupTeam.findMany({
-    where: { matchup: { seasonId }, score: { not: null } },
-    select: {
-      score: true,
-      fantasyTeamId: true,
-      matchup: {
-        select: {
-          week: true,
-          isPlayoff: true,
-          roundName: true,
-          teams: { select: { fantasyTeamId: true, score: true } },
+  // Weekly extremes and the notable single games. Verified scores only, so an
+  // abandoned team's 0.0 is never handed to the writer as the season's lowest
+  // score or its biggest blowout.
+  const matchupTeams = (
+    await prisma.matchupTeam.findMany({
+      where: { matchup: { seasonId }, score: { not: null }, verifiedScore: true },
+      select: {
+        score: true,
+        fantasyTeamId: true,
+        matchup: {
+          select: {
+            week: true,
+            isPlayoff: true,
+            bracketType: true,
+            roundName: true,
+            teams: { select: { fantasyTeamId: true, score: true, verifiedScore: true } },
+          },
         },
       },
-    },
-  });
+    })
+  ).filter((mt) => mt.matchup.teams.every((t) => t.verifiedScore));
   const nameOf = new Map(teams.map((t) => [t.id, t.manager.displayName]));
 
   let bestWeek: string | null = null;
@@ -133,10 +155,17 @@ async function buildFacts(seasonId: string, year: number): Promise<SeasonArticle
     }
   }
 
+  /*
+   * Championship bracket ONLY. Consolation games were being handed to the
+   * writer alongside the semifinals, and a run of them read as a playoff run —
+   * which is how a manager who missed the postseason ended up described as
+   * having gone deep in it. A game with no bracket on record is also left out:
+   * an unlabelled game cannot be asserted to be a playoff game.
+   */
   const playoffResults: string[] = [];
   const seenPlayoff = new Set<string>();
   for (const mt of matchupTeams) {
-    if (!mt.matchup.isPlayoff || mt.score == null) continue;
+    if (!mt.matchup.isPlayoff || mt.matchup.bracketType !== "WINNERS" || mt.score == null) continue;
     const opponent = mt.matchup.teams.find((t) => t.fantasyTeamId !== mt.fantasyTeamId);
     if (!opponent || opponent.score == null) continue;
     if (mt.score < opponent.score) continue;
@@ -236,6 +265,8 @@ async function buildFacts(seasonId: string, year: number): Promise<SeasonArticle
     regularSeasonLeaderRecord: regularLeader
       ? `${regularLeader.wins}-${regularLeader.losses}${regularLeader.ties ? `-${regularLeader.ties}` : ""}`
       : null,
+    lastPlace: lastPlace?.managerName ?? null,
+    lastPlaceRecord: lastPlace?.record ?? null,
     highestScoringTeam: byPoints[0]?.manager.displayName ?? null,
     highestScoringPoints: byPoints[0] ? Number(byPoints[0].pointsFor.toFixed(1)) : null,
     lowestScoringTeam: byPoints.at(-1)?.manager.displayName ?? null,

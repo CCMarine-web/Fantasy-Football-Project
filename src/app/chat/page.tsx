@@ -32,16 +32,22 @@ export default async function ChatPage() {
       />
 
       {/*
-        Required disclaimer: names are self-entered and prove nothing. Stated
-        plainly rather than buried, because the whole page is anonymous.
+        The disclaimer now has to be precise rather than blanket: an unbadged
+        name really is self-entered and proves nothing, but a badged one has
+        been checked against a code only that manager holds. Saying "treat
+        everything as anonymous" would understate the badge; saying "names are
+        verified" would wildly overstate the rest.
       */}
       <div className="border-border/60 bg-muted/30 text-muted-foreground mt-6 flex items-start gap-2 rounded-md border px-4 py-3 text-sm">
         <Info className="text-primary mt-0.5 h-4 w-4 shrink-0" aria-hidden />
         <p>
-          Names here are <strong className="text-foreground">self-entered and unverified</strong>
-          {" — "}anyone can type anything, so treat every message as anonymous. Be decent; the
-          commissioner can remove posts. This is a public room and has nothing to do with the
-          league&apos;s private group chat.
+          Most names here are <strong className="text-foreground">self-entered</strong> and prove
+          nothing — treat them as anonymous. Only a{" "}
+          <strong className="text-foreground">Verified Manager</strong> badge means anything: it is
+          shown when someone posted with the personal code the commissioner issued them. Manager
+          names, team names and known aliases are reserved, so nobody can post as a league member
+          without it. Be decent; the commissioner can hide, delete and mute. This is a public room
+          and has nothing to do with the league&apos;s private group chat.
         </p>
       </div>
 

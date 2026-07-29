@@ -4,6 +4,7 @@ import { MatchupCard } from "@/components/shared/matchup-card";
 import { getCurrentSeason } from "@/server/repositories/season-repository";
 import { getMatchupsForWeek } from "@/server/repositories/matchup-repository";
 import { prisma } from "@/lib/db";
+import { WeeklyHubLink } from "@/components/shared/weekly-hub-link";
 import { Swords } from "lucide-react";
 
 export const metadata = { title: "Matchups" };
@@ -43,6 +44,7 @@ export default async function MatchupsPage() {
         title="Matchups"
         description="Every matchup this season — projections before kickoff, final scores after."
       />
+      <WeeklyHubLink what="matchup" />
       <div className="mt-8 space-y-10">
         {weeksData.length === 0 ? (
           <EmptyState icon={Swords} title="No matchups scheduled yet" />

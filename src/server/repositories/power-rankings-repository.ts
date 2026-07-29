@@ -7,7 +7,8 @@ import {
   type TeamRankingInput,
   type WeeklyLine,
 } from "@/server/stats/weekly-power-rankings";
-import { getBlurbs, hashInputs } from "@/server/ai/blurb-cache";
+import { getBlurbs, hashInputs, POWER_BLURB_VERSION } from "@/server/ai/blurb-cache";
+import { cached, CACHE_TAGS } from "@/server/cache";
 
 /**
  * Power rankings for the league's CURRENT season — a running measure of team
@@ -64,14 +65,19 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
       },
     }),
     // Regular season only: playoff teams play more games, so including the
-    // postseason would quietly reward having made it.
+    // postseason would quietly reward having made it. Verified scores only, so
+    // a week a team abandoned neither drags its own ranking nor inflates the
+    // opponent who was scheduled against it.
     prisma.matchupTeam.findMany({
-      where: { matchup: { seasonId, isPlayoff: false }, score: { not: null } },
+      where: { matchup: { seasonId, isPlayoff: false }, score: { not: null }, verifiedScore: true },
       select: {
         score: true,
         fantasyTeamId: true,
         matchup: {
-          select: { week: true, teams: { select: { fantasyTeamId: true, score: true } } },
+          select: {
+            week: true,
+            teams: { select: { fantasyTeamId: true, score: true, verifiedScore: true } },
+          },
         },
       },
     }),
@@ -101,7 +107,7 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
   for (const mt of matchupTeams) {
     if (mt.score == null) continue;
     const opponent = mt.matchup.teams.find((t) => t.fantasyTeamId !== mt.fantasyTeamId);
-    if (!opponent || opponent.score == null) continue;
+    if (!opponent || opponent.score == null || !opponent.verifiedScore) continue;
     linesByTeam.get(mt.fantasyTeamId)?.set(mt.matchup.week, {
       week: mt.matchup.week,
       pointsFor: mt.score,
@@ -147,6 +153,7 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
   const priorScores = await prisma.matchupTeam.findMany({
     where: {
       score: { not: null },
+      verifiedScore: true,
       matchup: { isPlayoff: false, season: { year: { lt: seasonYear } } },
       fantasyTeam: { managerId: { in: managerIds } },
     },
@@ -356,7 +363,10 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
     "POWER_RANKING",
     result.rows.map((r) => ({
       subjectKey: `${seasonYear}:${r.fantasyTeamId}`,
+      // Must stay identical to the hash in scripts/ai/backfill-blurbs.ts, or
+      // every blurb reads as stale and nothing is ever shown.
       inputHash: hashInputs({
+        promptVersion: POWER_BLURB_VERSION,
         rank: r.rank,
         score: r.score,
         ppg: r.weightedPointsPerGame,
@@ -394,7 +404,11 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
  * that has any teams. An UPCOMING season is included on purpose — that is what
  * produces the preseason projection rather than an empty page.
  */
-export async function getPowerRankings(): Promise<PowerRankingsView | null> {
+export const getPowerRankings = cached(buildCurrentPowerRankings, ["power-rankings"], {
+  tags: [CACHE_TAGS.league, CACHE_TAGS.content],
+});
+
+async function buildCurrentPowerRankings(): Promise<PowerRankingsView | null> {
   const season =
     (await prisma.season.findFirst({ where: { isCurrent: true }, select: { id: true, year: true } })) ??
     (await prisma.season.findFirst({

@@ -58,11 +58,10 @@ async function main() {
     for (const era of profile.eraStats) {
       validRecords.add(`${era.wins}-${era.losses}`);
       if (era.ties) validRecords.add(`${era.wins}-${era.losses}-${era.ties}`);
-      // Championship bracket and consolation are shown as separate columns,
-      // so both are quotable — but their SUM is not, because the page never
-      // presents one combined postseason record.
+      // The championship-bracket record is the only postseason record the page
+      // shows, so it is the only one quotable. Consolation results are not
+      // displayed anywhere and must not appear in a bio.
       validRecords.add(`${era.playoffWins}-${era.playoffLosses}`);
-      validRecords.add(`${era.consolationWins}-${era.consolationLosses}`);
     }
     for (const line of played) {
       validRecords.add(`${line.wins}-${line.losses}`);

@@ -6,7 +6,7 @@ import { buildSystemPrompt } from "@/server/ai/prompt-helpers";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import { buildLeagueVoiceGuidance } from "@/server/ai/research-packet";
 import { getRecentlyUsedMaterial, avoidRepetitionInstruction, recordContentUsage } from "@/server/ai/content-memory";
-import { hashInputs, putBlurb } from "@/server/ai/blurb-cache";
+import { hashInputs, putBlurb, POWER_BLURB_VERSION } from "@/server/ai/blurb-cache";
 import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
 import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
 import type { AIUsage } from "@/server/ai/types";
@@ -119,13 +119,32 @@ async function backfillPowerRankings(ctx: Ctx, limit: number | null) {
   const rows = limit ? data.rows.slice(0, limit) : data.rows;
   console.log(`[power] ${data.seasonYear} (${data.mode}, through week ${data.throughWeek}): ${rows.length} team(s)`);
 
+  /*
+   * The factors that actually carried weight this run, and nothing else.
+   *
+   * The blurbs were praising keeper value in a league with no keeper data and
+   * calling drafts strong before a draft had happened, because the prompt named
+   * every possible factor whether or not it had been measured. A factor that
+   * was dropped or scored zero weight is not mentioned at all now — it is not
+   * in the packet to mention.
+   */
+  const BASIS: Record<typeof data.mode, string> = {
+    MANAGER_BASELINE:
+      "before the draft — this ranks MANAGERS on previous seasons only. There is no roster, no draft board and no keeper information for this year, so nothing about this year's team can be characterised",
+    PRESEASON:
+      "after the draft, before week 1 — this ranks the freshly drafted rosters. No games have been played this season",
+    IN_SEASON: `through week ${data.throughWeek} of live results`,
+  };
+
   for (const r of rows) {
+    const usedFactors = r.factors.filter((f) => f.weight > 0);
+    const inSeason = data.mode === "IN_SEASON";
     // Only figures the rating actually used, so the copy cannot cite a stat the
     // page doesn't show. Record is passed as context and explicitly labelled as
     // not being an input.
     const facts = {
       season: data.seasonYear,
-      basis: data.mode === "PRESEASON" ? "preseason projection, no games played" : `through week ${data.throughWeek}`,
+      basis: BASIS[data.mode],
       rank: r.rank,
       of: data.rows.length,
       previousRank: r.previousRank,
@@ -133,14 +152,30 @@ async function backfillPowerRankings(ctx: Ctx, limit: number | null) {
       manager: r.managerName,
       powerScore: r.score,
       pointsPerGame: r.weightedPointsPerGame,
-      allPlay: `${r.allPlayWins}-${r.allPlayLosses}`,
-      expectedWins: r.expectedWins,
-      actualRecordForContextOnly: r.record,
-      lineupEfficiencyPct: r.lineupEfficiency,
-      strongest: [...r.factors].sort((a, b) => b.value - a.value)[0]?.label,
-      weakest: [...r.factors].sort((a, b) => a.value - b.value)[0]?.label,
+      // In-season-only measures. Before week 1 these are zeros and an empty
+      // all-play record, which reads as a real 0-0 rather than as "not yet".
+      ...(inSeason
+        ? {
+            allPlay: `${r.allPlayWins}-${r.allPlayLosses}`,
+            expectedWins: r.expectedWins,
+            actualRecordForContextOnly: r.record,
+            lineupEfficiencyPct: r.lineupEfficiency,
+          }
+        : {}),
+      factorsThatDecidedThisRanking: usedFactors.map((f) => ({
+        factor: f.label,
+        shareOfScore: `${Math.round(f.weight * 100)}%`,
+        scoreOutOf100: f.value,
+        detail: f.raw,
+      })),
+      strongest: [...usedFactors].sort((a, b) => b.value - a.value)[0]?.label ?? null,
+      weakest: [...usedFactors].sort((a, b) => a.value - b.value)[0]?.label ?? null,
     };
     const inputHash = hashInputs({
+      // Bumped when the prompt changed, so blurbs written from the old one —
+      // the ones discussing keepers and drafts that did not exist — are
+      // regenerated rather than served forever from an unchanged score.
+      promptVersion: POWER_BLURB_VERSION,
       rank: r.rank,
       score: r.score,
       ppg: r.weightedPointsPerGame,
@@ -151,7 +186,18 @@ async function backfillPowerRankings(ctx: Ctx, limit: number | null) {
     });
     const subjectKey = `${data.seasonYear}:${r.fantasyTeamId}`;
 
-    const prompt = `Write ONE sentence (max 32 words) about this team's current standing in the ${data.seasonYear} power rankings.\n\nThese rankings measure team QUALITY, not results: win-loss record is NOT an input. Do not claim the ranking is based on wins, championships or playoff finish, and do not restate the record as if it drove the rating.\n\nVerified facts:\n${JSON.stringify(facts, null, 2)}`;
+    const prompt = [
+      `Write ONE sentence (max 32 words) about this team's standing in the ${data.seasonYear} rankings.`,
+      ``,
+      `These rankings measure team QUALITY, not results: win-loss record is NOT an input. Do not claim the ranking is based on wins, championships or playoff finish, and do not restate the record as if it drove the rating.`,
+      ``,
+      `"factorsThatDecidedThisRanking" is the COMPLETE list of what went into this number. You may only characterise factors on that list. A factor that is not listed was not measured and carried no weight — say nothing about it, in any direction. In particular: never mention keepers, keeper value, a draft, draft picks, draft capital or roster construction unless a factor about it appears in that list. Praising a draft that has not happened, or keeper value that was never recorded, has been printed on this page before.`,
+      ``,
+      `The "basis" field says what stage of the season this is. Do not imply games have been played when they have not.`,
+      ``,
+      `Verified facts:`,
+      JSON.stringify(facts, null, 2),
+    ].join("\n");
     const out = await write(ctx, prompt, 900);
     if (!out) {
       console.log(`  [dry/mock] ${r.managerName}`);
@@ -177,7 +223,6 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
     select: {
       id: true, isOfficial: true, gamesPlayed: true, managerAWins: true, managerBWins: true, ties: true,
       managerAPoints: true, managerBPoints: true, averageMargin: true, playoffMeetings: true,
-      consolationMeetings: true,
       championshipMeetings: true, closestGameMargin: true, largestBlowoutMargin: true,
       currentStreakManagerId: true, currentStreakCount: true, longestStreakCount: true,
       lastMeetingSeason: true, summaryInputHash: true,
@@ -198,11 +243,11 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
       averageMargin: r.averageMargin,
       closestMargin: r.closestGameMargin,
       biggestMargin: r.largestBlowoutMargin,
-      // Championship bracket only. Toilet-bowl meetings are counted separately
-      // and must never be described as playoff meetings — four summaries did
-      // exactly that before the two were split apart.
+      // Championship bracket only. Consolation meetings are not supplied at
+      // all: four summaries described toilet-bowl games as playoff history
+      // when the two were merely labelled differently, so the writer now has
+      // no consolation data to reach for.
       playoffMeetings: r.playoffMeetings,
-      consolationMeetings: r.consolationMeetings,
       titleGameMeetings: r.championshipMeetings,
       // Structured rather than pre-formatted. A previous version supplied the
       // string "Michael Shea x7", and sixteen of the forty-five summaries
@@ -264,7 +309,7 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
       ``,
       `Every figure you do cite is printed on the same card, so it must match exactly. Do not round a record, do not flip who leads, and do not claim a playoff or title meeting that is not in the facts.`,
       ``,
-      `"playoffMeetings" counts championship-bracket games only. "consolationMeetings" counts toilet-bowl and placement games, which are postseason games and are NOT playoff games. If playoffMeetings is 0, this pair has NEVER met in the playoffs no matter how many consolation meetings there are — do not write "they have met twice in the postseason" and leave a reader to assume it mattered. A toilet-bowl meeting is fair game as a joke, never as a credential.`,
+      `"playoffMeetings" counts championship-bracket games only. If it is 0, this pair has NEVER met in the playoffs — do not write "they have met in the postseason" and leave a reader to assume it mattered. Never mention a toilet bowl, a consolation bracket or a placement game: those results are not in your facts, so anything you say about one is invented.`,
       ``,
       `Verified head-to-head facts:`,
       JSON.stringify(facts, null, 2),

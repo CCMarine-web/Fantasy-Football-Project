@@ -385,11 +385,20 @@ interface FactorSpec {
 function blend(specs: FactorSpec[]): { score: number; factors: RankingFactor[]; dropped: FactorKey[] } {
   const usable = specs.filter((s) => s.value != null);
   const totalWeight = usable.reduce((sum, s) => sum + s.weight, 0);
-  const factors: RankingFactor[] = specs.map((s) => ({
+  /*
+   * A dropped factor is OMITTED from the breakdown, not returned at 0%.
+   *
+   * It used to be listed with an empty bar and "Keeper value 0%", which reads
+   * as "this team has no keeper value" rather than "this league has no keeper
+   * data". It also invited the blurb writer to comment on the zero, and it did
+   * — praising and criticising keeper hauls that did not exist. The notes above
+   * the table already name every category that was dropped and why.
+   */
+  const factors: RankingFactor[] = usable.map((s) => ({
     key: s.key,
     label: FACTOR_META[s.key].label,
-    value: s.value == null ? 0 : round(s.value),
-    weight: s.value == null || totalWeight === 0 ? 0 : s.weight / totalWeight,
+    value: round(s.value as number),
+    weight: totalWeight === 0 ? 0 : s.weight / totalWeight,
     raw: s.raw,
   }));
   const score =

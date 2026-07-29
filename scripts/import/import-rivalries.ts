@@ -119,8 +119,15 @@ function pairKey(a: string, b: string): string {
 }
 
 async function collectMeetings(): Promise<Map<string, Meeting[]>> {
+  /*
+   * Verified scores only, on BOTH sides. Ethan Jones's three abandoned weeks in
+   * 2022 were counted as head-to-head wins for whoever happened to be scheduled
+   * against him, which inflated their records, their points totals and their
+   * biggest-win margins, and put a 100-point "blowout" at the top of two
+   * rivalry pages. See scripts/import/audit-suspect-scores.ts.
+   */
   const rows = await prisma.matchupTeam.findMany({
-    where: { score: { not: null } },
+    where: { score: { not: null }, verifiedScore: true },
     select: {
       score: true,
       fantasyTeam: { select: { managerId: true } },
@@ -132,7 +139,13 @@ async function collectMeetings(): Promise<Map<string, Meeting[]>> {
           bracketType: true,
           roundName: true,
           season: { select: { year: true, dataSource: true } },
-          teams: { select: { score: true, fantasyTeam: { select: { managerId: true } } } },
+          teams: {
+            select: {
+              score: true,
+              verifiedScore: true,
+              fantasyTeam: { select: { managerId: true } },
+            },
+          },
         },
       },
     },
@@ -166,6 +179,9 @@ async function collectMeetings(): Promise<Map<string, Meeting[]>> {
     const b = t2.fantasyTeam.managerId;
     if (!a || !b || a === b) continue;
     if (t1.score == null || t2.score == null) continue;
+    // A contest needs two real results. Filtering only the queried side left
+    // the opponent's row in, so the abandoned team still appeared as a loss.
+    if (!t1.verifiedScore || !t2.verifiedScore) continue;
 
     const year = m.season.year;
     const champion = championByYear.get(year);

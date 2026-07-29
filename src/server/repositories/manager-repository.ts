@@ -10,7 +10,15 @@ import {
   playoffAppearances,
 } from "@/server/stats";
 import type { GameDataSource, GameResult, SeasonFinish } from "@/server/stats/types";
+import {
+  groupByManager,
+  loadVerifiedGames,
+  loadVerifiedTeamWeeks,
+  toGameResult,
+} from "@/server/repositories/verified-games";
 import { getManagerLuck } from "@/server/repositories/luck-repository";
+import { getLastPlaceBySeason } from "@/server/repositories/hall-of-shame-repository";
+import { cached, CACHE_TAGS } from "@/server/cache";
 import type { ManagerSummary } from "@/types/view-models";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import { generateScoutingReport } from "@/server/ai/services/scouting-report";
@@ -24,34 +32,20 @@ import {
 const CLOSE_GAME_MARGIN = 5; // games decided by < 5 points
 const BLOWOUT_MARGIN = 40; // games decided by >= 40 points
 
-// `opponentId` is the opponent MANAGER's id (not fantasy team id), so career-vs-career
-// head-to-head lookups can filter directly by manager without an extra team->manager join.
+/**
+ * One manager's game log.
+ *
+ * `opponentId` is the opponent MANAGER's id (not fantasy team id), so
+ * career-vs-career head-to-head lookups can filter directly by manager without
+ * an extra team->manager join.
+ *
+ * Only verified games are included — see server/repositories/verified-games.ts.
+ * Without that filter an abandoned team's run of zeros counted as three losses
+ * in its opponents' head-to-head records and dragged their average margins.
+ */
 export async function buildManagerGameLog(managerId: string): Promise<GameResult[]> {
-  const matchupTeams = await prisma.matchupTeam.findMany({
-    where: { fantasyTeam: { managerId }, score: { not: null } },
-    include: {
-      matchup: { include: { teams: { include: { fantasyTeam: true } }, season: true } },
-    },
-  });
-
-  const games: GameResult[] = [];
-  for (const mt of matchupTeams) {
-    const opponent = mt.matchup.teams.find((t) => t.id !== mt.id);
-    if (!opponent || mt.score == null || opponent.score == null) continue;
-    const result: GameResult["result"] = mt.isWinner === true ? "W" : mt.isWinner === false ? "L" : "T";
-    games.push({
-      week: mt.matchup.week,
-      season: mt.matchup.season.year,
-      isPlayoff: mt.matchup.isPlayoff,
-      bracket: mt.matchup.bracketType,
-      pointsFor: mt.score,
-      pointsAgainst: opponent.score,
-      opponentId: opponent.fantasyTeam.managerId,
-      result,
-      dataSource: mt.matchup.season.dataSource,
-    });
-  }
-  return games;
+  const rows = await loadVerifiedGames();
+  return rows.filter((r) => r.managerId === managerId).map(toGameResult);
 }
 
 const buildGameLog = buildManagerGameLog;
@@ -138,7 +132,46 @@ export interface HeadToHeadLine {
   wins: number;
   losses: number;
   ties: number;
+  games: number;
   pointsForAvg: number;
+  pointsAgainstAvg: number;
+}
+
+/**
+ * One unbroken run of seasons under the same team name.
+ *
+ * The TeamNameHistory table stores a row per season, so a manager who kept the
+ * same name for six years produced six identical badges in a row — the page
+ * read as one long concatenated string. It also only covers the ESPN era,
+ * which meant the Sleeper-era names were missing entirely. Both are fixed by
+ * deriving the runs from the FantasyTeam rows, which exist for every season.
+ */
+export interface TeamNameRun {
+  name: string;
+  firstYear: number;
+  lastYear: number;
+  /** "2020" or "2020–2022". */
+  years: string;
+}
+
+/** Collapses a season-by-season name list into runs, trimming stray whitespace. */
+export function buildTeamNameRuns(
+  seasons: { year: number; teamName: string }[],
+): TeamNameRun[] {
+  const clean = (s: string) => s.replace(/\s+/g, " ").trim();
+  const runs: TeamNameRun[] = [];
+  for (const season of [...seasons].sort((a, b) => a.year - b.year)) {
+    const name = clean(season.teamName);
+    if (!name) continue;
+    const last = runs[runs.length - 1];
+    if (last && last.name.toLowerCase() === name.toLowerCase() && season.year === last.lastYear + 1) {
+      last.lastYear = season.year;
+      last.years = `${last.firstYear}–${last.lastYear}`;
+      continue;
+    }
+    runs.push({ name, firstYear: season.year, lastYear: season.year, years: `${season.year}` });
+  }
+  return runs.reverse();
 }
 
 /**
@@ -165,20 +198,12 @@ export interface ManagerEraStats {
   winningPercentage: number;
   /**
    * Championship-bracket record — the games that decide the title, and the only
-   * ones the site calls a playoff record. Consolation is reported separately
-   * below, because going 2-0 in a toilet bowl is not a playoff run.
+   * postseason record the site keeps. Consolation games are not counted here or
+   * anywhere else: going 2-0 in a Toilet Bowl is not a playoff run, and the
+   * site no longer keeps a public record of it.
    */
   playoffWins: number;
   playoffLosses: number;
-  /** Toilet-bowl and placement games: postseason, but not for the title. */
-  consolationWins: number;
-  consolationLosses: number;
-  /**
-   * Postseason games whose bracket is not recorded, so they are in neither
-   * split above. Non-zero means the two splits do not sum to the postseason
-   * total, and the page says so rather than quietly dropping them.
-   */
-  unclassifiedPostseasonGames: number;
   pointsFor: number;
   pointsAgainst: number;
   /** Regular-season points per game — the only fair way to compare unequal eras. */
@@ -212,18 +237,7 @@ interface EraSeasonFacts {
 function buildEraStats(games: GameResult[], seasons: EraSeasonFacts[]): ManagerEraStats[] {
   const build = (key: ManagerEraStats["key"], label: string, scopedGames: GameResult[], scopedSeasons: EraSeasonFacts[]): ManagerEraStats => {
     const regular = careerSummary(scopedGames, "regularSeason");
-    const postseason = careerSummary(scopedGames, "playoffs");
     const title = careerSummary(scopedGames, "championshipBracket");
-    const consolation = careerSummary(scopedGames, "consolation");
-    const postseasonGames =
-      postseason.record.wins + postseason.record.losses + postseason.record.ties;
-    const classified =
-      title.record.wins +
-      title.record.losses +
-      title.record.ties +
-      consolation.record.wins +
-      consolation.record.losses +
-      consolation.record.ties;
     // High/low single-game marks read across every game played, postseason
     // included — a career-best score is a career-best score.
     const allGames = careerSummary(scopedGames);
@@ -243,9 +257,6 @@ function buildEraStats(games: GameResult[], seasons: EraSeasonFacts[]): ManagerE
       winningPercentage: Number(regular.winningPercentage.toFixed(3)),
       playoffWins: title.record.wins,
       playoffLosses: title.record.losses,
-      consolationWins: consolation.record.wins,
-      consolationLosses: consolation.record.losses,
-      unclassifiedPostseasonGames: postseasonGames - classified,
       pointsFor: Number(regular.totalPointsFor.toFixed(1)),
       pointsAgainst: Number(regular.totalPointsAgainst.toFixed(1)),
       pointsForPerGame: gameCount ? Number((regular.totalPointsFor / gameCount).toFixed(1)) : null,
@@ -290,28 +301,26 @@ export async function getManagerProfileDetailed(managerId: string) {
   });
   if (!manager) return null;
 
-  // Every scored regular-season + playoff game in the league, with each side's
-  // manager id, so we can compute all-play and finish distribution league-wide.
-  const allMatchupTeams = await prisma.matchupTeam.findMany({
-    where: { score: { not: null } },
-    include: {
-      fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } },
-      matchup: { select: { week: true, isPlayoff: true, season: { select: { year: true } } } },
-    },
-  });
+  // Every VERIFIED weekly score in the league, so all-play and the weekly
+  // finish distribution are measured against real contests only. Reading an
+  // abandoned team's 0.0 as a beatable score inflated everyone else's all-play
+  // record for those weeks.
+  const [allTeamWeeks, allGames] = await Promise.all([
+    loadVerifiedTeamWeeks(),
+    loadVerifiedGames(),
+  ]);
 
   // Group scores by (season, week) for all-play + finish distribution.
   const weekKey = (year: number, week: number) => `${year}-${week}`;
   const scoresByWeek = new Map<string, { managerId: string; points: number }[]>();
-  for (const mt of allMatchupTeams) {
-    if (mt.score == null) continue;
-    const key = weekKey(mt.matchup.season.year, mt.matchup.week);
+  for (const tw of allTeamWeeks) {
+    const key = weekKey(tw.year, tw.week);
     const list = scoresByWeek.get(key) ?? [];
-    list.push({ managerId: mt.fantasyTeam.managerId, points: mt.score });
+    list.push({ managerId: tw.managerId, points: tw.points });
     scoresByWeek.set(key, list);
   }
 
-  const games = await buildManagerGameLog(managerId);
+  const games = allGames.filter((r) => r.managerId === managerId).map(toGameResult);
   /*
    * Two summaries, deliberately. `regular` is the record the page quotes and
    * the one every other surface agrees with. `summary` spans every game played
@@ -410,10 +419,8 @@ export async function getManagerProfileDetailed(managerId: string) {
   // Head-to-head vs every other manager.
   const byOpp = new Map<string, GameResult[]>();
   const oppName = new Map<string, string>();
-  for (const mt of allMatchupTeams) {
-    if (mt.fantasyTeam.managerId !== managerId) {
-      oppName.set(mt.fantasyTeam.managerId, mt.fantasyTeam.manager.displayName);
-    }
+  for (const row of allGames) {
+    if (row.managerId !== managerId) oppName.set(row.managerId, row.managerName);
   }
   for (const g of games) {
     const list = byOpp.get(g.opponentId) ?? [];
@@ -421,18 +428,24 @@ export async function getManagerProfileDetailed(managerId: string) {
     byOpp.set(g.opponentId, list);
   }
   const headToHead: HeadToHeadLine[] = [...byOpp.entries()]
+    // An opponent id with no name behind it is a deleted or unmerged manager
+    // row. Such an entry rendered as a nameless row showing only "14g", which
+    // reads as a broken record rather than as missing data.
+    .filter(([opponentId]) => opponentId && oppName.has(opponentId))
     .map(([opponentId, log]) => {
       const rec = headToHeadRecord(log);
       return {
         opponentId,
-        opponentName: oppName.get(opponentId) ?? "Unknown",
+        opponentName: oppName.get(opponentId) as string,
         wins: rec.wins,
         losses: rec.losses,
         ties: rec.ties,
+        games: rec.wins + rec.losses + rec.ties,
         pointsForAvg: Number(avg(log.map((g) => g.pointsFor)).toFixed(1)),
+        pointsAgainstAvg: Number(avg(log.map((g) => g.pointsAgainst)).toFixed(1)),
       };
     })
-    .sort((a, b) => b.wins + b.losses + b.ties - (a.wins + a.losses + a.ties) || a.opponentName.localeCompare(b.opponentName));
+    .sort((a, b) => b.games - a.games || a.opponentName.localeCompare(b.opponentName));
 
   const champs = await prisma.championship.count({ where: { championManagerId: managerId } });
 
@@ -456,13 +469,22 @@ export async function getManagerProfileDetailed(managerId: string) {
   );
 
   // The Luck Score, computed from recorded scores; see server/stats/luck.ts.
-  const luck = await getManagerLuck(managerId);
+  const [luck, lastPlaceAll] = await Promise.all([
+    getManagerLuck(managerId),
+    getLastPlaceBySeason(),
+  ]);
+  const lastPlaceYears = lastPlaceAll.filter((l) => l.managerId === managerId).map((l) => l.year);
 
   return {
     manager,
     seasonLines,
     eraStats,
     luck,
+    /** Seasons finished bottom of the REGULAR-SEASON standings, newest first. */
+    lastPlaceYears,
+    teamNameRuns: buildTeamNameRuns(
+      manager.fantasyTeams.map((t) => ({ year: t.season.year, teamName: t.teamName })),
+    ),
     stats: {
       ...summary,
       /** Regular-season record — the one the tables on the page show. */
@@ -610,15 +632,15 @@ export interface ManagerRow {
   /** Championship bracket only — the games that decide the title. */
   playoffWins: number;
   playoffLosses: number;
-  /** Toilet bowl and placement games, which decide nothing about the title. */
-  consolationWins: number;
-  consolationLosses: number;
   championships: number;
   finalsAppearances: number;
   currentWins: number;
   currentLosses: number;
   currentTies: number;
   bestFinish: number | null;
+  /** Seasons finished bottom of the REGULAR-SEASON standings. */
+  lastPlaceFinishes: number;
+  lastPlaceYears: number[];
   statsComplete: boolean;
   performanceSummary: string | null;
   /** False for managers who no longer play in the league (retired). */
@@ -634,7 +656,11 @@ export interface ManagerRow {
  * ESPN era (2017-2022) sits alongside the Sleeper era; `getStatsCoverage()`
  * is what the UI uses to state the covered range.
  */
-export async function listManagerRows(): Promise<ManagerRow[]> {
+export const listManagerRows = cached(buildManagerRows, ["manager-rows"], {
+  tags: [CACHE_TAGS.league, CACHE_TAGS.managers, CACHE_TAGS.content],
+});
+
+async function buildManagerRows(): Promise<ManagerRow[]> {
   const [managers, earliestSeason, league] = await Promise.all([
     prisma.manager.findMany({
       where: { deletedAt: null },
@@ -653,7 +679,7 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
   // Previously this loop ran three sequential queries PER manager (a full game
   // log plus two championship counts) — ~30 round-trips for ten managers. All
   // three are now answered by one query each, up front.
-  const [gameLogs, championships] = await Promise.all([
+  const [gameLogs, championships, lastPlace] = await Promise.all([
     buildAllManagerGameLogs(),
     prisma.championship.findMany({
       select: {
@@ -661,7 +687,15 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
         runnerUpFantasyTeam: { select: { managerId: true } },
       },
     }),
+    getLastPlaceBySeason(),
   ]);
+
+  const lastPlaceYears = new Map<string, number[]>();
+  for (const finish of lastPlace) {
+    const list = lastPlaceYears.get(finish.managerId) ?? [];
+    list.push(finish.year);
+    lastPlaceYears.set(finish.managerId, list);
+  }
 
   const champCount = new Map<string, number>();
   const finalsCount = new Map<string, number>();
@@ -680,7 +714,6 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
     const games = gameLogs.get(m.id) ?? [];
     const summary = careerSummary(games, "regularSeason");
     const title = careerSummary(games, "championshipBracket");
-    const consolation = careerSummary(games, "consolation");
     const champs = champCount.get(m.id) ?? 0;
     const finals = finalsCount.get(m.id) ?? 0;
 
@@ -703,14 +736,14 @@ export async function listManagerRows(): Promise<ManagerRow[]> {
       winningPercentage: Number(summary.winningPercentage.toFixed(3)),
       playoffWins: title.record.wins,
       playoffLosses: title.record.losses,
-      consolationWins: consolation.record.wins,
-      consolationLosses: consolation.record.losses,
       championships: champs,
       finalsAppearances: finals,
       currentWins: current?.wins ?? 0,
       currentLosses: current?.losses ?? 0,
       currentTies: current?.ties ?? 0,
       bestFinish: finishes.length ? Math.min(...finishes) : null,
+      lastPlaceFinishes: (lastPlaceYears.get(m.id) ?? []).length,
+      lastPlaceYears: [...(lastPlaceYears.get(m.id) ?? [])].sort((a, b) => a - b),
       statsComplete: !historyIncomplete,
       performanceSummary: m.performanceSummary?.summary ?? null,
       isActive: m.isActive,
@@ -771,45 +804,12 @@ export async function getStatsCoverage(): Promise<StatsCoverage> {
 }
 
 /**
- * Builds every manager's game log from a single query. Same shape as
- * buildManagerGameLog, just batched — used by the list pages so they don't
- * issue one query per manager.
+ * Builds every manager's game log from a single query. Same shape and same
+ * verified-only rule as buildManagerGameLog, just batched — used by the list
+ * pages so they don't issue one query per manager.
  */
 async function buildAllManagerGameLogs(): Promise<Map<string, GameResult[]>> {
-  const rows = await prisma.matchupTeam.findMany({
-    where: { score: { not: null } },
-    include: {
-      matchup: {
-        include: {
-          teams: { include: { fantasyTeam: { select: { managerId: true } } } },
-          season: { select: { year: true } },
-        },
-      },
-      fantasyTeam: { select: { managerId: true } },
-    },
-  });
-
-  const byManager = new Map<string, GameResult[]>();
-  for (const mt of rows) {
-    const managerId = mt.fantasyTeam.managerId;
-    if (!managerId) continue;
-    const opponent = mt.matchup.teams.find((t) => t.fantasyTeamId !== mt.fantasyTeamId);
-    if (!opponent || mt.score == null || opponent.score == null) continue;
-
-    const list = byManager.get(managerId) ?? [];
-    list.push({
-      week: mt.matchup.week,
-      season: mt.matchup.season.year,
-      isPlayoff: mt.matchup.isPlayoff,
-      bracket: mt.matchup.bracketType,
-      pointsFor: mt.score,
-      pointsAgainst: opponent.score,
-      opponentId: opponent.fantasyTeam.managerId ?? "",
-      result: mt.isWinner === true ? "W" : mt.isWinner === false ? "L" : "T",
-    });
-    byManager.set(managerId, list);
-  }
-  return byManager;
+  return groupByManager(await loadVerifiedGames());
 }
 
 async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | null> {
@@ -830,9 +830,9 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
    * the same number, and the page's is the one a reader can check.
    */
   const summary = careerSummary(games, "regularSeason");
-  // Split, because the writer must never call a toilet-bowl win a playoff win.
+  // Championship bracket only. Consolation games are not in the packet at all:
+  // the writer cannot call a Toilet Bowl result anything if it never sees one.
   const titleBracket = careerSummary(games, "championshipBracket");
-  const consolation = careerSummary(games, "consolation");
   const finishes = await buildSeasonFinishes(managerId);
   const champs = await prisma.championship.count({ where: { championManagerId: managerId } });
   const finals = await prisma.championship.count({
@@ -1034,10 +1034,7 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
       titleBracket.record.wins + titleBracket.record.losses > 0
         ? `${titleBracket.record.wins}-${titleBracket.record.losses}`
         : "no championship-bracket games played",
-    consolationRecord:
-      consolation.record.wins + consolation.record.losses > 0
-        ? `${consolation.record.wins}-${consolation.record.losses}`
-        : "no consolation games played",
+    lastPlaceYears: detailed?.lastPlaceYears ?? [],
     championships: champs,
     finalsAppearances: finals,
     playoffAppearances: playoffAppearances(finishes),

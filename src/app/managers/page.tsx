@@ -7,11 +7,20 @@ import { Badge } from "@/components/ui/badge";
 import { getStatsCoverage, listManagerRows } from "@/server/repositories/manager-repository";
 import { getCareerLuck } from "@/server/repositories/luck-repository";
 import { LuckScoreBadge } from "@/components/managers/luck-score";
-import { LUCK_CLOSE_GAME_MARGIN, LUCK_WEIGHTS } from "@/server/stats/luck";
+import { LUCK_BANDS, LUCK_CLOSE_GAME_MARGIN, LUCK_WEIGHTS } from "@/server/stats/luck";
+import { LAST_PLACE_METHODOLOGY } from "@/server/stats/last-place";
 import { Trophy, Users, ChevronRight, Info } from "lucide-react";
 import { BRAND } from "@/lib/branding";
 
 export const metadata = { title: "Managers" };
+
+/*
+ * Server-rendered. The active/retired tab is a search param, which makes the
+ * route dynamic, so the caching that matters happens at the data layer:
+ * listManagerRows() and getCareerLuck() are both cached (server/cache.ts).
+ * Re-deriving ten managers' whole careers per visitor bought nothing but a
+ * loading skeleton.
+ */
 
 export default async function ManagersPage({
   searchParams,
@@ -55,9 +64,11 @@ export default async function ManagersPage({
       ) : null}
 
       {/*
-       * What each record on this page counts. Three different postseason
-       * records used to be presented as one "career record", so a manager who
-       * went 2-0 in a toilet bowl read as having won two playoff games.
+       * What each record on this page counts. Postseason records used to be
+       * presented as one "career record", so a manager who went 2-0 in a
+       * consolation bracket read as having won two playoff games. Consolation
+       * results are no longer shown at all: they decide nothing and the site
+       * does not keep a public record of them.
        */}
       <details className="mt-4 rounded-md border border-border/60 bg-card/30 px-4 py-3 text-sm">
         <summary className="cursor-pointer font-medium">
@@ -79,10 +90,10 @@ export default async function ManagersPage({
             </dd>
           </div>
           <div>
-            <dt className="inline font-medium text-foreground">Consolation (consol.) — </dt>
+            <dt className="inline font-medium text-foreground">Last place — </dt>
             <dd className="inline">
-              the toilet bowl and the placement games below it. These are postseason games and the
-              site never calls them playoff games.
+              seasons finished bottom of the <strong>regular-season</strong> standings.{" "}
+              {LAST_PLACE_METHODOLOGY}
             </dd>
           </div>
           <div>
@@ -94,9 +105,11 @@ export default async function ManagersPage({
               {(LUCK_WEIGHTS.opponentScoring * 100).toFixed(0)}%, record in games under{" "}
               {LUCK_CLOSE_GAME_MARGIN} points {(LUCK_WEIGHTS.closeGames * 100).toFixed(0)}%, schedule
               strength {(LUCK_WEIGHTS.scheduleStrength * 100).toFixed(0)}%, championship-bracket draw{" "}
-              {(LUCK_WEIGHTS.postseasonDraw * 100).toFixed(0)}%. Computed from recorded scores; a
-              manager with too few games shows &ldquo;not enough games&rdquo; rather than
-              &ldquo;neutral&rdquo;. Full breakdown is on each manager&rsquo;s page.
+              {(LUCK_WEIGHTS.postseasonDraw * 100).toFixed(0)}%. Consolation games are never an
+              input. Computed from recorded scores; a manager with too few games shows &ldquo;not
+              enough games&rdquo; rather than &ldquo;neutral&rdquo;. Labels:{" "}
+              {LUCK_BANDS.map((b) => `${b.min === b.max ? b.min : `${b.min}–${b.max}`} ${b.label}`).join(", ")}.
+              Full breakdown is on each manager&rsquo;s page.
             </dd>
           </div>
         </dl>
@@ -160,8 +173,9 @@ export default async function ManagersPage({
                     </div>
 
                     {/* Stats. Every record here is labelled with the games it
-                        covers — a career record, a championship-bracket record
-                        and a consolation record are three different facts. */}
+                        covers — a career record and a championship-bracket
+                        record are two different facts. Consolation games are
+                        not counted or shown. */}
                     <div className="flex flex-1 flex-wrap items-center gap-2">
                       <Badge variant="secondary" title="Career regular-season record">
                         {m.careerWins}-{m.careerLosses}
@@ -179,15 +193,6 @@ export default async function ManagersPage({
                           {m.playoffWins}-{m.playoffLosses} playoffs
                         </Badge>
                       ) : null}
-                      {m.consolationWins + m.consolationLosses > 0 ? (
-                        <Badge
-                          variant="outline"
-                          title="Toilet-bowl and placement games — postseason, but not playoff games"
-                          className="font-mono text-muted-foreground"
-                        >
-                          {m.consolationWins}-{m.consolationLosses} consol.
-                        </Badge>
-                      ) : null}
                       {m.championships > 0 ? (
                         <Badge className="gap-1 bg-gold text-gold-foreground">
                           <Trophy className="h-3 w-3" />
@@ -202,10 +207,27 @@ export default async function ManagersPage({
                           Best: {m.bestFinish === 1 ? "🏆 1st" : `#${m.bestFinish}`}
                         </Badge>
                       ) : null}
-                      <Badge variant="outline" title="Current season, regular season" className="font-mono">
-                        {m.currentWins}-{m.currentLosses}
-                        {m.currentTies ? `-${m.currentTies}` : ""} now
-                      </Badge>
+                      {m.lastPlaceFinishes > 0 ? (
+                        <Badge
+                          variant="outline"
+                          title={`Finished last in the regular-season standings in ${m.lastPlaceYears.join(", ")}. ${LAST_PLACE_METHODOLOGY}`}
+                          className="text-destructive"
+                        >
+                          {m.lastPlaceFinishes}× last
+                        </Badge>
+                      ) : null}
+                      {/* A 0-0 "now" record in the preseason is not information;
+                          it reads as though everyone has played and drawn. */}
+                      {m.currentWins + m.currentLosses + m.currentTies > 0 ? (
+                        <Badge
+                          variant="outline"
+                          title="Current season, regular season"
+                          className="font-mono"
+                        >
+                          {m.currentWins}-{m.currentLosses}
+                          {m.currentTies ? `-${m.currentTies}` : ""} now
+                        </Badge>
+                      ) : null}
                       {luckByManager.get(m.managerId) ? (
                         <LuckScoreBadge luck={luckByManager.get(m.managerId)!} />
                       ) : null}

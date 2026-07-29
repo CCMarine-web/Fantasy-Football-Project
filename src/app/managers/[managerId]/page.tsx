@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BRAND } from "@/lib/branding";
-import { LuckScoreBadge, LuckScorePanel } from "@/components/managers/luck-score";
+import { LuckScoreHeadline, LuckScorePanel } from "@/components/managers/luck-score";
+import { LAST_PLACE_METHODOLOGY } from "@/server/stats/last-place";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
@@ -79,8 +80,19 @@ export default async function ManagerProfilePage({
   ]);
   if (!profile) notFound();
 
-  const { manager, stats, seasonLines, eraStats, luck, bestSeason, worstSeason, finishDistribution, headToHead } =
-    profile;
+  const {
+    manager,
+    stats,
+    seasonLines,
+    eraStats,
+    luck,
+    lastPlaceYears,
+    teamNameRuns,
+    bestSeason,
+    worstSeason,
+    finishDistribution,
+    headToHead,
+  } = profile;
   const currentTeam = manager.fantasyTeams[manager.fantasyTeams.length - 1];
   const photo = manager.photoUrl ?? manager.avatarUrl;
   const teamCount = finishDistribution.length || 10;
@@ -121,11 +133,31 @@ export default async function ManagerProfilePage({
             {stats.finalsAppearances > 0 ? (
               <Badge variant="secondary">{stats.finalsAppearances} Finals</Badge>
             ) : null}
+            {lastPlaceYears.length > 0 ? (
+              <Badge
+                variant="outline"
+                className="text-destructive"
+                title={`Finished bottom of the regular-season standings in ${lastPlaceYears.join(", ")}. ${LAST_PLACE_METHODOLOGY}`}
+              >
+                {lastPlaceYears.length}&times; Last Place
+              </Badge>
+            ) : null}
             {!manager.isActive ? <Badge variant="outline">Retired</Badge> : null}
-            {luck.career ? <LuckScoreBadge luck={luck.career} prefix="Career" /> : null}
             {manager.noRoast ? <Badge variant="outline">No-Roast</Badge> : null}
           </div>
         </div>
+
+        {/* The Luck Score sits beside the name, as a number and its label, so a
+            reader meets it before the tables rather than three sections down. */}
+        {luck.career ? (
+          <div className="w-full sm:ml-auto sm:w-auto sm:min-w-56">
+            <LuckScoreHeadline
+              luck={luck.career}
+              seasonLuck={luck.season}
+              seasonYear={luck.seasonYear}
+            />
+          </div>
+        ) : null}
       </div>
 
       <Separator className="my-8" />
@@ -138,17 +170,10 @@ export default async function ManagerProfilePage({
           career totals. <strong className="text-foreground">Record</strong> is the regular season
           only, so it matches the season-by-season table below.{" "}
           <strong className="text-foreground">Playoffs</strong> counts championship-bracket games —
-          the ones that decide the title — and nothing else.{" "}
-          <strong className="text-foreground">Consol.</strong> is the toilet bowl and the placement
-          games below it, which are postseason games but not playoff games. Points per game is the
-          fair comparison between eras of different lengths.
+          the ones that decide the title — and nothing else. Consolation-bracket games are not
+          counted anywhere on this page. Points per game is the fair comparison between eras of
+          different lengths.
         </p>
-        {eraStats.some((e) => e.unclassifiedPostseasonGames > 0) ? (
-          <p className="mb-3 text-xs text-muted-foreground">
-            Some postseason games have no bracket recorded and appear in neither column, so the two
-            do not sum to every game played after the regular season.
-          </p>
-        ) : null}
         {/* Eleven columns cannot fit a phone, and dropping any of them would
             defeat the point of the table, so this one genuinely scrolls. The
             note below is the affordance — without it a phone user sees a
@@ -178,16 +203,9 @@ export default async function ManagerProfilePage({
                 <th
                   scope="col"
                   className="px-3 py-2 text-right"
-                  title="Championship-bracket record — the games that decide the title. Consolation games are counted in the next column, not here."
+                  title="Championship-bracket record — the games that decide the title. Consolation games are not counted."
                 >
                   Playoffs
-                </th>
-                <th
-                  scope="col"
-                  className="px-3 py-2 text-right"
-                  title="Toilet-bowl and placement games. Postseason, but nothing to do with the title."
-                >
-                  Consol.
                 </th>
                 <th scope="col" className="px-3 py-2 text-right">PF/G</th>
                 <th scope="col" className="px-3 py-2 text-right">PA/G</th>
@@ -223,11 +241,6 @@ export default async function ManagerProfilePage({
                   <td className="px-3 py-2 text-right font-mono">{(era.winningPercentage * 100).toFixed(1)}%</td>
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
                     {era.playoffWins + era.playoffLosses > 0 ? `${era.playoffWins}-${era.playoffLosses}` : "—"}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-muted-foreground">
-                    {era.consolationWins + era.consolationLosses > 0
-                      ? `${era.consolationWins}-${era.consolationLosses}`
-                      : "—"}
                   </td>
                   <td className="px-3 py-2 text-right font-mono">{era.pointsForPerGame?.toFixed(1) ?? "—"}</td>
                   <td className="px-3 py-2 text-right font-mono text-muted-foreground">
@@ -410,24 +423,26 @@ export default async function ManagerProfilePage({
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             {headToHead.map((h) => {
-              const total = h.wins + h.losses + h.ties;
               const winning = h.wins > h.losses;
               const losing = h.wins < h.losses;
               return (
                 <Link
                   key={h.opponentId}
                   href={`/managers/${h.opponentId}`}
-                  className="flex items-center justify-between rounded-md border border-border/60 bg-card/30 px-3 py-2 text-sm transition-colors hover:border-primary/60"
+                  className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/30 px-3 py-2 text-sm transition-colors hover:border-primary/60"
                 >
-                  <span className="truncate">{h.opponentName}</span>
-                  <span className="flex items-center gap-2">
-                    <span className="text-xs text-muted-foreground">{total}g</span>
-                    <span
-                      className={`font-mono font-semibold ${winning ? "text-field" : losing ? "text-destructive" : ""}`}
-                    >
-                      {h.wins}-{h.losses}
-                      {h.ties ? `-${h.ties}` : ""}
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-medium">{h.opponentName}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {h.games} {h.games === 1 ? "meeting" : "meetings"} · {h.pointsForAvg} scored,{" "}
+                      {h.pointsAgainstAvg} allowed per game
                     </span>
+                  </span>
+                  <span
+                    className={`shrink-0 font-mono text-base font-semibold ${winning ? "text-field" : losing ? "text-destructive" : ""}`}
+                  >
+                    {h.wins}-{h.losses}
+                    {h.ties ? `-${h.ties}` : ""}
                   </span>
                 </Link>
               );
@@ -441,17 +456,29 @@ export default async function ManagerProfilePage({
       {/* Team name history */}
       <section>
         <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Team Name History</h2>
-        <div className="flex flex-wrap gap-2">
-          {manager.teamNameHistory.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No name changes on record.</p>
-          ) : (
-            manager.teamNameHistory.map((h) => (
-              <Badge key={h.id} variant="outline">
-                {h.seasonYear}: {h.name}
-              </Badge>
-            ))
-          )}
-        </div>
+        {/*
+         * Consecutive seasons under the same name are collapsed into one entry.
+         * The old list printed a badge per season, so six years of "Team I am
+         * Messi" rendered as six identical badges running into each other, and
+         * it covered only the ESPN era because that is all TeamNameHistory
+         * holds. This reads from the season rows instead, so every year is
+         * present and each name appears once per spell.
+         */}
+        {teamNameRuns.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No team names on record.</p>
+        ) : (
+          <ul className="divide-y divide-border/50 rounded-lg border border-border/60">
+            {teamNameRuns.map((run) => (
+              <li
+                key={`${run.name}-${run.firstYear}`}
+                className="flex items-baseline justify-between gap-4 px-3 py-2 text-sm"
+              >
+                <span className="min-w-0 break-words font-medium">{run.name}</span>
+                <span className="shrink-0 font-mono text-xs text-muted-foreground">{run.years}</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {/* Weekly award tally */}

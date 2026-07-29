@@ -88,32 +88,29 @@ export function OffseasonPanel({
         </Card>
       </section>
 
-      {data?.defendingChampionName ? (
+      {/*
+       * Last season's story — NOT another champion announcement.
+       *
+       * The Championship Belt sits directly above this on the homepage with the
+       * champion's name, record, title run and reign counter. Repeating "X holds
+       * the belt" here made the page say the same thing twice within one screen,
+       * so this now leads on what the season was about and links to the full
+       * retrospective.
+       */}
+      {recap && data?.defendingChampionYear ? (
         <section>
           <div className="mb-3 flex items-center gap-2">
             <Crown className="h-4 w-4 text-gold" />
             <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-              Defending Champion
+              How {data.defendingChampionYear} Went
             </h2>
           </div>
           <Card className="border-gold/30">
             <CardContent className="space-y-2">
-              <p className="text-sm">
-                <Link
-                  href={`/managers/${data.defendingChampionId}`}
-                  className="font-semibold hover:text-primary"
-                >
-                  {data.defendingChampionName}
-                </Link>{" "}
-                holds the belt after winning the {data.defendingChampionYear} title with{" "}
-                {data.defendingChampionTeam}.
+              <p className="text-sm leading-relaxed text-foreground/90">
+                {recap.slice(0, 400)}
+                {recap.length > 400 ? "…" : ""}
               </p>
-              {recap ? (
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  {recap.slice(0, 320)}
-                  {recap.length > 320 ? "…" : ""}
-                </p>
-              ) : null}
               <Link
                 href={`/history/${data.defendingChampionYear}`}
                 className="inline-block text-sm text-primary hover:underline"

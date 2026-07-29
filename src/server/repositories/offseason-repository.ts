@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { OffseasonData, OffseasonSpotlight } from "@/components/home/offseason-panel";
+import { findLastPlace } from "@/server/stats/last-place";
 
 /**
  * The facts the homepage shows between seasons: who holds the belt, the draft
@@ -44,6 +45,7 @@ export async function getOffseasonData(seasonId: string, year: number): Promise<
             pointsFor: true,
             finalRank: true,
             regularSeasonRank: true,
+            madePlayoffs: true,
             manager: { select: { id: true, displayName: true, photoUrl: true, avatarUrl: true } },
           },
         },
@@ -57,8 +59,16 @@ export async function getOffseasonData(seasonId: string, year: number): Promise<
 
   /*
    * Three spotlights, each chosen because a recorded number makes them
-   * interesting: the highest scorer who did not win it, the biggest gap between
-   * regular-season finish and final placing, and the team that scored least.
+   * interesting: the highest scorer who did not win it, the biggest swing
+   * through the PLAYOFFS, and whoever finished bottom of the regular season.
+   *
+   * The swing is restricted to teams that actually made the playoffs. It used
+   * to run over everybody, and `finalRank` for a team that missed the playoffs
+   * is a consolation-bracket placing — so the homepage was telling readers that
+   * Blake Mire "was #7 after the regular season and finished #10" on the
+   * strength of two games in a bracket the site does not count. And the bottom
+   * spotlight is now last place as the league defines it, not merely the lowest
+   * points total.
    */
   const spotlights: OffseasonSpotlight[] = [];
   const teams = lastSeason?.fantasyTeams.filter((t) => t.wins + t.losses + t.ties > 0) ?? [];
@@ -67,12 +77,27 @@ export async function getOffseasonData(seasonId: string, year: number): Promise<
     const topScorer = byPoints.find((t) => t.finalRank !== 1) ?? byPoints[0];
     const lowScorer = byPoints[byPoints.length - 1];
     const biggestMover = [...teams]
-      .filter((t) => t.finalRank != null && t.regularSeasonRank != null)
+      .filter((t) => t.madePlayoffs && t.finalRank != null && t.regularSeasonRank != null)
       .sort(
         (a, b) =>
-          (a.regularSeasonRank! - a.finalRank!) * -1 - (b.regularSeasonRank! - b.finalRank!) * -1,
-      )
-      .reverse()[0];
+          Math.abs(b.regularSeasonRank! - b.finalRank!) -
+          Math.abs(a.regularSeasonRank! - a.finalRank!),
+      )[0];
+
+    const lastPlace = findLastPlace(
+      lastSeason.year,
+      teams.map((t) => ({
+        managerId: t.manager.id,
+        managerName: t.manager.displayName,
+        teamName: t.teamName,
+        wins: t.wins,
+        losses: t.losses,
+        ties: t.ties,
+        pointsFor: t.pointsFor,
+        pointsAgainst: 0,
+        regularSeasonRank: t.regularSeasonRank,
+      })),
+    );
 
     const push = (
       team: (typeof teams)[number] | undefined,
@@ -90,9 +115,16 @@ export async function getOffseasonData(seasonId: string, year: number): Promise<
     };
 
     if (topScorer) {
+      // A finish is only quoted when the team played the bracket that produced
+      // it; otherwise the record says the same thing without borrowing a number
+      // from a game that decided nothing.
+      const finish =
+        topScorer.madePlayoffs && topScorer.finalRank
+          ? `finished #${topScorer.finalRank}`
+          : `went ${topScorer.wins}-${topScorer.losses} and missed the playoffs`;
       push(
         topScorer,
-        `Led ${lastSeason.year} with ${topScorer.pointsFor.toFixed(0)} points and finished ${topScorer.finalRank ? `#${topScorer.finalRank}` : `${topScorer.wins}-${topScorer.losses}`}.`,
+        `Led ${lastSeason.year} with ${topScorer.pointsFor.toFixed(0)} points and ${finish}.`,
       );
     }
     if (biggestMover?.regularSeasonRank != null && biggestMover.finalRank != null) {
@@ -101,10 +133,17 @@ export async function getOffseasonData(seasonId: string, year: number): Promise<
         push(
           biggestMover,
           swing > 0
-            ? `Went into the ${lastSeason.year} postseason #${biggestMover.regularSeasonRank} and came out #${biggestMover.finalRank}.`
-            : `Was #${biggestMover.regularSeasonRank} after the ${lastSeason.year} regular season and finished #${biggestMover.finalRank}.`,
+            ? `Entered the ${lastSeason.year} playoffs as the #${biggestMover.regularSeasonRank} seed and came out #${biggestMover.finalRank}.`
+            : `Was the #${biggestMover.regularSeasonRank} seed in ${lastSeason.year} and finished #${biggestMover.finalRank}.`,
         );
       }
+    }
+    if (lastPlace) {
+      const bottom = teams.find((t) => t.manager.id === lastPlace.managerId);
+      push(
+        bottom,
+        `Finished bottom of the ${lastSeason.year} regular season at ${lastPlace.record}.`,
+      );
     }
     if (lowScorer) {
       push(

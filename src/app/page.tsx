@@ -1,5 +1,12 @@
 import Link from "next/link";
-import { Trophy, Newspaper, TrendingUp, ArrowRightLeft, Quote as QuoteIcon } from "lucide-react";
+import {
+  Trophy,
+  Newspaper,
+  TrendingUp,
+  ArrowRightLeft,
+  CalendarDays,
+  Quote as QuoteIcon,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -73,14 +80,6 @@ export default async function HomePage() {
     historicalFact,
   } = data;
 
-  // Trim the AI season-review to a short preview so it never dominates the
-  // page. Placeholder (mock) copy is suppressed entirely — the champion facts
-  // below are verified and stand on their own without invented narrative.
-  const reviewPreview =
-    seasonNarrative && !seasonNarrative.isMock
-      ? seasonNarrative.text.replace(/\s+/g, " ").trim().slice(0, 280)
-      : null;
-
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       {/* 1 — League title + current week + draft countdown */}
@@ -111,7 +110,27 @@ export default async function HomePage() {
         ) : null}
       </section>
 
-      {/* 2 — Championship Belt (prominent) */}
+      {/* Straight to the one-stop weekly view. */}
+      <div className="mt-6">
+        <Button render={<Link href="/weekly" />} nativeButton={false}>
+          <CalendarDays className="h-4 w-4" />
+          {phase?.phase === "IN_SEASON"
+            ? `This week in the league — ${phase.label}`
+            : "The Weekly League Hub"}
+        </Button>
+      </div>
+
+      {/*
+       * 2 — Championship Belt.
+       *
+       * The ONE champion feature on this page. The champion used to be
+       * announced three times over: here, again in a "Season in Review" card,
+       * and a third time inside the offseason panel's "Defending Champion"
+       * section. The belt carries the reign counter, the title run and the
+       * victory speech, so it is the one that stays; the season-review card
+       * below now leads on the season's story rather than restating the winner,
+       * and the offseason panel's duplicate has been removed.
+       */}
       {champion ? (
         <section className="mt-8">
           <div className="mb-3 flex items-center gap-2">
@@ -120,7 +139,10 @@ export default async function HomePage() {
               The Championship Belt
             </h2>
           </div>
-          <ChampionshipBeltFeature champion={champion} />
+          {/* No `summary` here on purpose: the season's prose belongs to the
+              "How <year> Went" panel below, and passing it here printed the
+              same paragraph twice within one screen. */}
+          <ChampionshipBeltFeature champion={champion} nowMs={phase?.nowMs ?? undefined} />
         </section>
       ) : null}
 
@@ -184,15 +206,22 @@ export default async function HomePage() {
             <OffseasonPanel phase={phase} narrative={seasonNarrative} data={offseason} />
           )}
 
-          {/* 6 — Recent AI content: weekly headline + short season-review preview */}
-          <section>
-            <div className="mb-3 flex items-center gap-2">
-              <Newspaper className="h-4 w-4 text-primary" />
-              <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-                Weekly Headline
-              </h2>
-            </div>
-            {latestArticle ? (
+          {/*
+           * 6 — The week's headline, ONLY when there is one.
+           *
+           * This used to render "No articles published yet" every day of the
+           * offseason: a heading, a bordered box and an apology, occupying the
+           * best space on the page to say nothing. A section with no content is
+           * not shown at all.
+           */}
+          {latestArticle ? (
+            <section>
+              <div className="mb-3 flex items-center gap-2">
+                <Newspaper className="h-4 w-4 text-primary" />
+                <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+                  Weekly Headline
+                </h2>
+              </div>
               <Card>
                 <CardContent>
                   <p className="text-xs tracking-wide text-muted-foreground uppercase">
@@ -209,39 +238,6 @@ export default async function HomePage() {
                       {latestArticle.sections[0].body}
                     </p>
                   ) : null}
-                </CardContent>
-              </Card>
-            ) : (
-              <EmptyState title="No articles published yet" />
-            )}
-          </section>
-
-          {reviewPreview ? (
-            <section>
-              <div className="mb-3 flex items-center gap-2">
-                <Newspaper className="h-4 w-4 text-primary" />
-                <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-                  {seasonNarrative!.seasonYear} Season in Review
-                </h2>
-              </div>
-              <Card>
-                <CardContent className="space-y-2">
-                  <p className="text-sm">
-                    <span className="font-semibold">{seasonNarrative!.championName}</span> won the{" "}
-                    {seasonNarrative!.seasonYear} title with {seasonNarrative!.championTeam}.
-                  </p>
-                  {reviewPreview ? (
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      {reviewPreview}
-                      {seasonNarrative!.text.length > 280 ? "…" : ""}
-                    </p>
-                  ) : null}
-                  <Link
-                    href={`/history/${seasonNarrative!.seasonYear}`}
-                    className="inline-block text-sm text-primary hover:underline"
-                  >
-                    Read the full {seasonNarrative!.seasonYear} recap →
-                  </Link>
                 </CardContent>
               </Card>
             </section>

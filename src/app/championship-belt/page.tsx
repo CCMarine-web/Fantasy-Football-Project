@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { DaysAsChampion } from "@/components/championship/days-as-champion";
 import { DaysSinceCounter } from "@/components/championship/days-since-counter";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
+import { initialElapsed } from "@/lib/countdown";
+import { readServerClock } from "@/server/clock";
 import {
   getCurrentChampion,
   getChampionLineage,
@@ -23,11 +25,13 @@ function recordLine(w: number, l: number, t: number): string {
 }
 
 export default async function ChampionshipBeltPage() {
-  const [champion, lineage, session, narrative] = await Promise.all([
+  const [champion, lineage, session, narrative, nowMs] = await Promise.all([
     getCurrentChampion(),
     getChampionLineage(),
     auth(),
     getLastSeasonNarrative(),
+    // Read outside the component body — see server/clock.ts.
+    readServerClock(),
   ]);
   const isAdmin = session?.user?.role === "ADMIN";
   const shame = LEAGUE_CONFIG.shameCounter;
@@ -96,7 +100,10 @@ export default async function ChampionshipBeltPage() {
                   <p className="mt-1 text-sm text-muted-foreground">{champion.teamName}</p>
 
                   <div className="mt-4">
-                    <DaysAsChampion isoStart={champion.championSince} />
+                    <DaysAsChampion
+                      isoStart={champion.championSince}
+                      initial={initialElapsed(champion.championSince, nowMs)}
+                    />
                   </div>
 
                   {/* Title-run stat line */}
@@ -189,6 +196,7 @@ export default async function ChampionshipBeltPage() {
                     <DaysSinceCounter
                       isoStart={shame.sinceDate}
                       label={`since ${shame.managerName} ${shame.eventLabel}`}
+                      initial={initialElapsed(shame.sinceDate, nowMs)}
                     />
                   </div>
                 </CardContent>

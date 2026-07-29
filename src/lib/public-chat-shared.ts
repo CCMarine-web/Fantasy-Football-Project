@@ -21,11 +21,21 @@ export const MIN_NAME_LENGTH = 2;
 /** How many messages the feed shows. */
 export const FEED_LIMIT = 100;
 
+/** Longest a manager chat code may be. */
+export const MAX_CHAT_CODE_LENGTH = 64;
+
 /** A message as it is sent to the browser — no author hash, no moderation fields. */
 export interface PublicChatMessageView {
   id: string;
   displayName: string;
   body: string;
+  /**
+   * True only when the poster presented a manager's personal chat code. The
+   * browser shows the Verified Manager badge from this and nothing else — it is
+   * never inferred from the name, because inferring it is exactly the hole this
+   * closes.
+   */
+  isVerifiedManager: boolean;
   /** ISO 8601. */
   createdAt: string;
 }

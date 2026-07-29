@@ -8,6 +8,7 @@
 // can call these repeatedly without regenerating (or paying for) existing grades.
 
 import { prisma } from "@/lib/db";
+import { positionLabel } from "@/lib/format";
 import { GradeLetter, type Prisma } from "@/generated/prisma/client";
 import {
   computeDraftQuality,
@@ -89,8 +90,10 @@ function pickLine(pick: {
   isKeeper: boolean;
   player: { firstName: string; lastName: string; position: string; nflTeam: string | null } | null;
 }): string {
+  // `positionLabel` so a defence reaches the writer as "Team D/ST" rather than
+  // the platform's "DEF", which was being repeated verbatim into the copy.
   const name = pick.player
-    ? `${pick.player.firstName} ${pick.player.lastName} (${pick.player.position}${
+    ? `${pick.player.firstName} ${pick.player.lastName} (${positionLabel(pick.player.position)}${
         pick.player.nflTeam ? `, ${pick.player.nflTeam}` : ""
       })`
     : "(empty pick)";
@@ -597,8 +600,32 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
   });
 
   const adpAvailable = grades.some((g) => g.adpAvailable);
-  const activeKeys = (Object.keys(DRAFT_WEIGHTS) as DraftFactorKey[]).filter((k) =>
-    k === "valueVsAdp" ? adpAvailable : true,
+
+  /*
+   * The methodology panel reads its weights from the factors actually STORED
+   * against the grades, not from the static weight table.
+   *
+   * It used to rebuild the list itself and only knew how to drop the ADP
+   * factor, so when bye-week spread and risk concentration were also dropped
+   * the panel advertised seven factors at 27/22/16/14/11/5/5 while every card
+   * below it showed five at 30/24/18/15/12. Two different sets of weights on
+   * one page, both claiming to be the ones used. Deriving from the stored
+   * breakdown makes disagreement impossible.
+   */
+  const storedFactors =
+    grades
+      .map((g) =>
+        Array.isArray(g.originalFactors) ? (g.originalFactors as unknown as DraftFactor[]) : null,
+      )
+      .find((f): f is DraftFactor[] => f != null && f.length > 0) ?? null;
+
+  const activeKeys: DraftFactorKey[] = storedFactors
+    ? storedFactors.map((f) => f.key)
+    : (Object.keys(DRAFT_WEIGHTS) as DraftFactorKey[]).filter((k) =>
+        k === "valueVsAdp" ? adpAvailable : true,
+      );
+  const weightByKey = new Map<DraftFactorKey, number>(
+    storedFactors ? storedFactors.map((f) => [f.key, f.weight]) : [],
   );
   const weightTotal = activeKeys.reduce((sum, k) => sum + DRAFT_WEIGHTS[k], 0);
 
@@ -682,7 +709,7 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
       key,
       label: DRAFT_FACTOR_META[key].label,
       description: DRAFT_FACTOR_META[key].description,
-      weight: DRAFT_WEIGHTS[key] / weightTotal,
+      weight: weightByKey.get(key) ?? DRAFT_WEIGHTS[key] / weightTotal,
     })),
     confidence: worst,
     confidenceReasons: seasonReasons,

@@ -269,6 +269,22 @@ async function coreSyncWeek(
 
   let count = 0;
   const rosterByFantasyTeam = new Map<string, string>(); // fantasyTeamId -> rosterId
+
+  /*
+   * `verifiedScore` is a human judgement, not synced data: it marks a score
+   * that is on record but is not the result of a real contest (an abandoned
+   * team, an unplayed week). This function replaces the week wholesale, which
+   * silently reset every such flag back to true — so the weekly cron would
+   * quietly re-admit an abandoned team's zeros to the record books a week after
+   * an admin excluded them. The flags are read first and reapplied below.
+   */
+  const preservedVerification = new Map<string, boolean>();
+  const priorTeams = await prisma.matchupTeam.findMany({
+    where: { matchup: { seasonId, week }, verifiedScore: false },
+    select: { fantasyTeamId: true },
+  });
+  for (const t of priorTeams) preservedVerification.set(t.fantasyTeamId, false);
+
   await prisma.$transaction(async (tx) => {
     const existing = await tx.matchup.findMany({ where: { seasonId, week }, select: { id: true } });
     if (existing.length > 0) {
@@ -302,6 +318,7 @@ async function coreSyncWeek(
             fantasyTeamId,
             score: m.points,
             isWinner: group.length > 1 ? (m.points ?? 0) === topScore : null,
+            verifiedScore: preservedVerification.get(fantasyTeamId) ?? true,
           },
         });
         count += 1;

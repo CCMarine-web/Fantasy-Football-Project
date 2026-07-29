@@ -6,11 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   MAX_BODY_LENGTH,
+  MAX_CHAT_CODE_LENGTH,
   MAX_NAME_LENGTH,
   MIN_NAME_LENGTH,
   type PublicChatMessageView,
 } from "@/lib/public-chat-shared";
-import { AlertCircle, Send } from "lucide-react";
+import { AlertCircle, BadgeCheck, Send } from "lucide-react";
 
 /**
  * The public shoutbox.
@@ -29,6 +30,13 @@ import { AlertCircle, Send } from "lucide-react";
 
 const POLL_INTERVAL_MS = 5_000;
 const NAME_STORAGE_KEY = "rat-trap-chat-name";
+/*
+ * The manager code is remembered so a manager does not retype it every message.
+ * It is a name-claiming token, not a password: it grants exactly one ability —
+ * posting under one's own name — and nothing else on the site accepts it. It is
+ * never sent anywhere but this site's own chat endpoint.
+ */
+const CODE_STORAGE_KEY = "rat-trap-chat-code";
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -71,6 +79,20 @@ export function ChatRoom({ initialMessages }: { initialMessages: PublicChatMessa
   const [sending, setSending] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
+  const codeRef = useRef<HTMLInputElement>(null);
+  /*
+   * The manager-code field lives inside a <details>, opened imperatively rather
+   * than through state.
+   *
+   * It has to open in two situations that both happen outside render: a code
+   * was remembered from a previous visit (known only after mount, because
+   * localStorage does not exist on the server), and the server just refused a
+   * reserved name. Driving that with `useState` means calling setState inside
+   * an effect, which cascades a render for no benefit; seeding the state
+   * instead would produce a hydration mismatch. Setting `.open` is DOM
+   * synchronisation, which is exactly what a ref and an effect are for.
+   */
+  const codeDetailsRef = useRef<HTMLDetailsElement>(null);
   const shouldStickToBottom = useRef(true);
 
   /*
@@ -90,6 +112,13 @@ export function ChatRoom({ initialMessages }: { initialMessages: PublicChatMessa
     const saved = window.localStorage.getItem(NAME_STORAGE_KEY);
     if (saved && nameRef.current && !nameRef.current.value) {
       nameRef.current.value = saved.slice(0, MAX_NAME_LENGTH);
+    }
+    const savedCode = window.localStorage.getItem(CODE_STORAGE_KEY);
+    if (savedCode) {
+      if (codeDetailsRef.current) codeDetailsRef.current.open = true;
+      if (codeRef.current && !codeRef.current.value) {
+        codeRef.current.value = savedCode.slice(0, MAX_CHAT_CODE_LENGTH);
+      }
     }
   }, []);
 
@@ -158,19 +187,32 @@ export function ChatRoom({ initialMessages }: { initialMessages: PublicChatMessa
       return;
     }
 
+    const trimmedCode = (codeRef.current?.value ?? "").trim();
+
     setSending(true);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayName: trimmedName, body: trimmedBody }),
+        body: JSON.stringify({
+          displayName: trimmedName,
+          body: trimmedBody,
+          ...(trimmedCode ? { chatCode: trimmedCode } : {}),
+        }),
       });
       const data = (await res.json()) as { message?: PublicChatMessageView; error?: string };
       if (!res.ok) {
         setError(data.error ?? "Could not post that.");
+        // A refused name is the one case where opening the code field is the
+        // fix, so offer it rather than leaving the manager stuck.
+        if (res.status === 403 && /belongs to a manager/i.test(data.error ?? "")) {
+          if (codeDetailsRef.current) codeDetailsRef.current.open = true;
+          codeRef.current?.focus();
+        }
         return;
       }
       window.localStorage.setItem(NAME_STORAGE_KEY, trimmedName);
+      if (trimmedCode) window.localStorage.setItem(CODE_STORAGE_KEY, trimmedCode);
       setBody("");
       shouldStickToBottom.current = true;
       if (data.message) setMessages((prev) => [...prev, data.message as PublicChatMessageView]);
@@ -208,6 +250,18 @@ export function ChatRoom({ initialMessages }: { initialMessages: PublicChatMessa
                       <span className={`font-semibold ${nameColor(message.displayName)}`}>
                         {message.displayName}
                       </span>
+                      {/* The badge comes from the server's verification flag
+                          alone. It is never inferred from the name — inferring
+                          it is exactly the hole this closes. */}
+                      {message.isVerifiedManager ? (
+                        <span
+                          className="inline-flex items-center gap-0.5 rounded-sm bg-field/15 px-1 py-0.5 text-[10px] font-semibold tracking-wide text-field uppercase"
+                          title="Verified with this manager's league code"
+                        >
+                          <BadgeCheck className="h-3 w-3" aria-hidden />
+                          Verified manager
+                        </span>
+                      ) : null}
                       <time
                         dateTime={message.createdAt}
                         className="text-muted-foreground text-[11px]"
@@ -249,6 +303,34 @@ export function ChatRoom({ initialMessages }: { initialMessages: PublicChatMessa
                 {sending ? "Sending…" : "Send"}
               </Button>
             </div>
+            {/*
+             * The manager-code field, collapsed until it is needed. Managers'
+             * names are reserved, so posting as yourself requires the code the
+             * commissioner issued you; everyone else can pick any name that
+             * isn't somebody's.
+             */}
+            <details ref={codeDetailsRef} className="mt-2">
+              <summary className="cursor-pointer text-[11px] font-medium text-primary hover:underline">
+                Are you a league manager? Enter your code
+              </summary>
+              <div className="mt-2 flex flex-col gap-1">
+                <Input
+                  ref={codeRef}
+                  placeholder="Manager code (e.g. ABCD-EFGH-JKMN-PQRS)"
+                  maxLength={MAX_CHAT_CODE_LENGTH}
+                  aria-label="Manager code"
+                  className="font-mono sm:w-80"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Manager names and team names are reserved. Enter the code the commissioner gave you
+                  to post under your own name and get the Verified Manager badge. Leave this blank to
+                  post anonymously under any other name.
+                </p>
+              </div>
+            </details>
+
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
               <p className="text-muted-foreground text-[11px]">
                 {remaining < 80

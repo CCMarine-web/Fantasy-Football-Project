@@ -8,6 +8,7 @@ import {
   getHeadToHeadGameLog,
 } from "@/server/repositories/manager-repository";
 import { getMatchupById, getRosterForTeamWeek } from "@/server/repositories/matchup-repository";
+import { positionLabel } from "@/lib/format";
 import { getMatchupAIContent } from "@/server/ai/weekly-pipeline";
 import {
   closestMeeting,
@@ -59,7 +60,9 @@ function LineupTable({
                 </td>
                 <td className="px-3 py-1.5">
                   {p.player.firstName} {p.player.lastName}
-                  <span className="ml-1 text-xs text-muted-foreground">{p.player.position}</span>
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    {positionLabel(p.player.position)}
+                  </span>
                 </td>
                 <td className="px-3 py-1.5 text-right font-mono tabular-nums">
                   {fmt(p.points)}
@@ -76,7 +79,7 @@ function LineupTable({
                 <td className="w-16 px-3 py-1.5 font-mono text-xs">BN</td>
                 <td className="px-3 py-1.5">
                   {p.player.firstName} {p.player.lastName}
-                  <span className="ml-1 text-xs">{p.player.position}</span>
+                  <span className="ml-1 text-xs">{positionLabel(p.player.position)}</span>
                 </td>
                 <td className="px-3 py-1.5 text-right font-mono tabular-nums">
                   {fmt(p.points)}

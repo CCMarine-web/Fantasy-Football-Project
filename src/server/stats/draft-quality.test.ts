@@ -213,13 +213,50 @@ describe("computeDraftQuality", () => {
     expect(risk("stacked")).toBeLessThan(risk("spread"));
   });
 
-  it("scores bye-week spread neutrally when byes are unknown", () => {
+  it("drops bye-week spread entirely when byes are unknown, rather than scoring it neutrally", () => {
     const board = snakeBoard(2, 6);
     const result = computeDraftQuality(board.map((p, i) => team(`t${i}`, p)));
     for (const t of result.teams) {
-      expect(t.factors.find((f) => f.key === "byeWeekSpread")!.value).toBe(50);
+      expect(t.factors.find((f) => f.key === "byeWeekSpread")).toBeUndefined();
     }
+    expect(result.weights.some((w) => w.key === "byeWeekSpread")).toBe(false);
     expect(result.notes.join(" ")).toMatch(/bye weeks/i);
+  });
+
+  it("renormalises the surviving weights to 1 when factors are dropped", () => {
+    const board = snakeBoard(4, 8);
+    const result = computeDraftQuality(board.map((p, i) => team(`t${i}`, p)));
+    const total = result.weights.reduce((sum, w) => sum + w.weight, 0);
+    expect(total).toBeGreaterThan(0.99);
+    expect(total).toBeLessThan(1.01);
+    for (const t of result.teams) {
+      const factorTotal = t.factors.reduce((sum, f) => sum + f.weight, 0);
+      expect(factorTotal).toBeCloseTo(total, 2);
+    }
+  });
+
+  it("does not grade an incidental same-team stack as concentration risk", () => {
+    // Every roster takes at most RISK_FREE_STACK players from one club, which
+    // is what a draft of this length picks up by accident.
+    const board = snakeBoard(3, 6);
+    const teams = board.map((picks, t) => ({
+      ...team(`t${t}`, picks),
+      picks: picks.map((overallPickNumber, i) => ({
+        overallPickNumber,
+        round: i + 1,
+        isKeeper: false,
+        position: LINEUP[i % LINEUP.length],
+        // Rotates across four clubs, so nobody exceeds three from one.
+        nflTeam: ["KC", "SF", "BUF", "DAL"][i % 4],
+        adp: null,
+        byeWeek: null,
+      })),
+    }));
+    const result = computeDraftQuality(teams);
+    for (const t of result.teams) {
+      expect(t.factors.find((f) => f.key === "riskConcentration")).toBeUndefined();
+    }
+    expect(result.notes.join(" ")).toMatch(/concentration/i);
   });
 
   it("returns an empty result for no teams", () => {

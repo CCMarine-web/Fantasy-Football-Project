@@ -137,14 +137,30 @@ function mean(values: number[]): number {
   return values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
 }
 
+/**
+ * The published label bands. The score is always a whole number, so these
+ * cover 0-100 with no gaps and no overlap.
+ *
+ * "Neutral" is reserved for EXACTLY 50. A band of 45-55 called neutral was
+ * claiming the luck had evened out when the maths had actually found a lean;
+ * anything either side of dead centre is now named as the lean it is.
+ */
+export const LUCK_BANDS = [
+  { min: 81, max: 100, label: "Extremely Lucky" },
+  { min: 66, max: 80, label: "Very Lucky" },
+  { min: 51, max: 65, label: "Slightly Lucky" },
+  { min: 50, max: 50, label: "Neutral" },
+  { min: 35, max: 49, label: "Slightly Unlucky" },
+  { min: 20, max: 34, label: "Very Unlucky" },
+  { min: 0, max: 19, label: "Extremely Unlucky" },
+] as const;
+
 export function luckLabel(score: number): string {
-  if (score >= 80) return "Very lucky";
-  if (score >= 65) return "Lucky";
-  if (score >= 56) return "Slightly lucky";
-  if (score > 44) return "Neutral";
-  if (score > 35) return "Slightly unlucky";
-  if (score > 20) return "Unlucky";
-  return "Very unlucky";
+  const rounded = Math.round(score);
+  const band = LUCK_BANDS.find((b) => rounded >= b.min && rounded <= b.max);
+  // Only reachable if a caller passes something outside 0-100, which the
+  // computation clamps against.
+  return band?.label ?? (rounded > 50 ? "Extremely Lucky" : "Extremely Unlucky");
 }
 
 /**

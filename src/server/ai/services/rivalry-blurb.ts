@@ -19,7 +19,11 @@ export interface RivalryBlurbInput {
   currentStreak: string; // e.g. "A has won 3 straight"
 }
 
-const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper. Given the facts of a rivalry between two managers, write ONE punchy sentence (max ~30 words) with attitude that characterizes it — is it lopsided, a dead heat, a playoff grudge, a blowout festival? Plain prose, no JSON, no preamble.`;
+const SYSTEM_PROMPT = `You are the staff writer for "The Rat Trap", a fantasy football league's own newspaper. Given the facts of a rivalry between two managers, write ONE punchy sentence (max ~30 words) with attitude that characterizes it — is it lopsided, a dead heat, a playoff grudge, a blowout festival? Plain prose, no JSON, no preamble.
+
+RULES
+- Use only the supplied numbers. "Playoff meetings" counts championship-bracket games only; if it is zero, these two have never met in the playoffs, whatever else the meeting count says.
+- Never mention a toilet bowl, a consolation bracket or a placement game. Those results are not in your input and anything you say about them is invented.`;
 
 export async function generateRivalryBlurb(
   input: RivalryBlurbInput,

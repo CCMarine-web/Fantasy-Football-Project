@@ -40,3 +40,36 @@ export function initialRemaining(isoDate: string, nowMs: number): Remaining | nu
   if (Number.isNaN(targetMs)) return null;
   return computeRemaining(targetMs, nowMs);
 }
+
+export interface Elapsed {
+  days: number;
+  hours: number;
+  minutes: number;
+  seconds: number;
+}
+
+/** Time since a point in the past, in the same shape as `Remaining`. */
+export function computeElapsed(startMs: number, nowMs: number): Elapsed {
+  const seconds = Math.floor(Math.max(0, nowMs - startMs) / 1000);
+  return {
+    days: Math.floor(seconds / 86400),
+    hours: Math.floor((seconds % 86400) / 3600),
+    minutes: Math.floor((seconds % 3600) / 60),
+    seconds: seconds % 60,
+  };
+}
+
+/**
+ * The server-rendered starting figure for a count-UP timer, for the same reason
+ * `initialRemaining` exists.
+ *
+ * The reign counter used to render nothing at all until the first client tick,
+ * so the Championship Belt page showed a blank where the headline number should
+ * be — and showed nothing whatsoever to a reader with JavaScript disabled or a
+ * slow first paint. Seeding it from the server means the number is in the HTML.
+ */
+export function initialElapsed(isoStart: string, nowMs: number): Elapsed | null {
+  const startMs = new Date(isoStart).getTime();
+  if (Number.isNaN(startMs)) return null;
+  return computeElapsed(startMs, nowMs);
+}

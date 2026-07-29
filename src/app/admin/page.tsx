@@ -117,7 +117,10 @@ export default async function AdminPage() {
             <CardTitle className="flex items-center gap-2 uppercase">
               <RefreshCw className="h-4 w-4" /> Data Synchronization
             </CardTitle>
-            <CardDescription>Recent sync runs, most recent first.</CardDescription>
+            <CardDescription>
+              Recent sync runs, most recent first. The weekly refresh runs every Tuesday at 12:00
+              UTC and can be rerun by hand.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {overview.recentSyncLogs.length === 0 ? (
@@ -135,8 +138,13 @@ export default async function AdminPage() {
                 </div>
               ))
             )}
-            <Button size="sm" className="mt-2" disabled>
-              Run New Sync
+            <Button
+              render={<Link href="/admin/refresh" />}
+              nativeButton={false}
+              size="sm"
+              className="mt-2"
+            >
+              Weekly refresh &amp; manual rerun
             </Button>
           </CardContent>
         </Card>

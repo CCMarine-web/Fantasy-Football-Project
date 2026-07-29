@@ -2,42 +2,38 @@
 
 import { useEffect, useState } from "react";
 import { Crown } from "lucide-react";
-
-interface Elapsed {
-  days: number;
-  hours: number;
-  minutes: number;
-  seconds: number;
-}
-
-function computeElapsed(startMs: number): Elapsed {
-  const diff = Math.max(0, Date.now() - startMs);
-  const seconds = Math.floor(diff / 1000);
-  return {
-    days: Math.floor(seconds / 86400),
-    hours: Math.floor((seconds % 86400) / 3600),
-    minutes: Math.floor((seconds % 3600) / 60),
-    seconds: seconds % 60,
-  };
-}
+import { computeElapsed, type Elapsed } from "@/lib/countdown";
 
 /**
- * Live "N days as champion" counter, counting UP from the reign-start ISO date
- * (passed in as a string so this stays a pure client component). Follows the
- * draft-countdown effect pattern — schedules the first tick asynchronously via
- * setTimeout so state is only ever set from a timer callback (keeps the
- * react-hooks/set-state-in-effect lint rule happy) and clears on unmount.
- * Renders nothing until mounted to avoid a server/client time mismatch.
+ * Live "N days as champion" counter, counting UP from the reign-start ISO date.
+ *
+ * `initial` is computed on the SERVER and passed in, so the real number is in
+ * the HTML on first paint. Without it the component rendered nothing until the
+ * first client tick, which on the Championship Belt page left a blank where the
+ * headline figure belongs — and left nothing at all for a reader whose
+ * JavaScript never arrived.
+ *
+ * The ticking follows the draft-countdown pattern: the first tick is scheduled
+ * asynchronously via setTimeout so state is only ever set from a timer callback
+ * (keeping the react-hooks/set-state-in-effect rule satisfied), and the timer is
+ * cleared on unmount. `suppressHydrationWarning` covers the one-second window in
+ * which the server's figure and the client's can legitimately differ.
  */
-export function DaysAsChampion({ isoStart }: { isoStart: string }) {
+export function DaysAsChampion({
+  isoStart,
+  initial = null,
+}: {
+  isoStart: string;
+  initial?: Elapsed | null;
+}) {
   const startMs = new Date(isoStart).getTime();
-  const [elapsed, setElapsed] = useState<Elapsed | null>(null);
+  const [elapsed, setElapsed] = useState<Elapsed | null>(initial);
 
   useEffect(() => {
     if (Number.isNaN(startMs)) return;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
-      setElapsed(computeElapsed(startMs));
+      setElapsed(computeElapsed(startMs, Date.now()));
       timer = setTimeout(tick, 1000);
     };
     timer = setTimeout(tick, 0);
@@ -47,7 +43,7 @@ export function DaysAsChampion({ isoStart }: { isoStart: string }) {
   if (Number.isNaN(startMs) || !elapsed) return null;
 
   return (
-    <div className="inline-flex items-baseline gap-2">
+    <div className="inline-flex items-baseline gap-2" suppressHydrationWarning>
       <Crown className="h-6 w-6 shrink-0 translate-y-1 text-primary" aria-hidden />
       <span className="font-heading text-4xl font-semibold tabular-nums text-primary sm:text-5xl">
         {elapsed.days.toLocaleString()}

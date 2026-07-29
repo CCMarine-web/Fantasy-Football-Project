@@ -40,10 +40,13 @@ export interface RivalryView {
   managerAAvg: number | null;
   managerBAvg: number | null;
   averageMargin: number | null;
-  /** Championship-bracket meetings only. */
+  /**
+   * Championship-bracket meetings only — the games that decide the title.
+   * Consolation-bracket meetings are deliberately absent from this view: they
+   * decide nothing, the site does not count them, and keeping the number here
+   * only invited it back onto the page.
+   */
   playoffMeetings: number;
-  /** Toilet-bowl and placement meetings — postseason, but not playoff games. */
-  consolationMeetings: number;
   championshipMeetings: number;
   closestGameMargin: number | null;
   closestGameSeason: number | null;
@@ -76,7 +79,6 @@ const SELECT = {
   managerBPoints: true,
   averageMargin: true,
   playoffMeetings: true,
-  consolationMeetings: true,
   championshipMeetings: true,
   closestGameMargin: true,
   closestGameSeason: true,
@@ -128,7 +130,6 @@ function toView(r: RivalryRow, meetings: RivalryMeetingView[] = []): RivalryView
     managerBAvg: games ? Number((r.managerBPoints / games).toFixed(1)) : null,
     averageMargin: r.averageMargin,
     playoffMeetings: r.playoffMeetings,
-    consolationMeetings: r.consolationMeetings,
     championshipMeetings: r.championshipMeetings,
     closestGameMargin: r.closestGameMargin,
     closestGameSeason: r.closestGameSeason,

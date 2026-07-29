@@ -1,10 +1,11 @@
-import { prisma } from "@/lib/db";
 import {
   computeLuckScore,
   type LeagueWeekScore,
   type LuckGame,
   type LuckScore,
 } from "@/server/stats/luck";
+import { loadVerifiedGames, loadVerifiedTeamWeeks } from "./verified-games";
+import { cached, CACHE_TAGS } from "@/server/cache";
 
 /**
  * Loads the league-wide game data the Luck Score needs and computes it for
@@ -19,69 +20,43 @@ interface Loaded {
   league: LeagueWeekScore[];
 }
 
+/**
+ * Both halves come from the verified-games loader, so a week a team abandoned
+ * neither counts against its opponent's luck nor drags the league average that
+ * everybody else's opponent-scoring component is measured against.
+ *
+ * A one-sided row (a bye, or an eliminated team still being scored) appears in
+ * `league` but never in a game log: it counts toward the week's scoring but is
+ * not a game anyone won or lost.
+ */
 async function load(year?: number): Promise<Loaded> {
-  const rows = await prisma.matchupTeam.findMany({
-    where: {
-      score: { not: null },
-      ...(year ? { matchup: { season: { year } } } : {}),
-    },
-    select: {
-      score: true,
-      isWinner: true,
-      fantasyTeamId: true,
-      fantasyTeam: { select: { managerId: true } },
-      matchup: {
-        select: {
-          week: true,
-          isPlayoff: true,
-          bracketType: true,
-          season: { select: { year: true } },
-          teams: {
-            select: {
-              fantasyTeamId: true,
-              score: true,
-              fantasyTeam: { select: { managerId: true } },
-            },
-          },
-        },
-      },
-    },
-  });
+  const [teamWeeks, rows] = await Promise.all([
+    loadVerifiedTeamWeeks(year ? { year } : {}),
+    loadVerifiedGames(year ? { year } : {}),
+  ]);
 
-  const league: LeagueWeekScore[] = [];
+  const league: LeagueWeekScore[] = teamWeeks.map((tw) => ({
+    season: tw.year,
+    week: tw.week,
+    managerId: tw.managerId,
+    points: tw.points,
+    isPlayoff: tw.isPlayoff,
+  }));
+
   const gamesByManager = new Map<string, LuckGame[]>();
-
-  for (const mt of rows) {
-    if (mt.score == null) continue;
-    const managerId = mt.fantasyTeam.managerId;
-    if (!managerId) continue;
-
-    league.push({
-      season: mt.matchup.season.year,
-      week: mt.matchup.week,
-      managerId,
-      points: mt.score,
-      isPlayoff: mt.matchup.isPlayoff,
-    });
-
-    // A one-sided postseason row is a bye or an eliminated team still being
-    // scored. It counts toward the league's weekly scoring but is not a game
-    // anyone won or lost, so it never enters a manager's game log.
-    const opponent = mt.matchup.teams.find((t) => t.fantasyTeamId !== mt.fantasyTeamId);
-    if (!opponent || opponent.score == null || !opponent.fantasyTeam.managerId) continue;
-
-    const list = gamesByManager.get(managerId) ?? [];
+  for (const row of rows) {
+    const list = gamesByManager.get(row.managerId) ?? [];
     list.push({
-      season: mt.matchup.season.year,
-      week: mt.matchup.week,
-      isPlayoff: mt.matchup.isPlayoff,
-      bracket: mt.matchup.bracketType,
-      pointsFor: mt.score,
-      pointsAgainst: opponent.score,
-      result: mt.isWinner === true ? "W" : mt.isWinner === false ? "L" : "T",
-      opponentId: opponent.fantasyTeam.managerId,
+      season: row.year,
+      week: row.week,
+      isPlayoff: row.isPlayoff,
+      bracket: row.bracket,
+      pointsFor: row.score,
+      pointsAgainst: row.opponentScore,
+      result: row.isWinner === true ? "W" : row.isWinner === false ? "L" : "T",
+      opponentId: row.opponentManagerId,
     });
-    gamesByManager.set(managerId, list);
+    gamesByManager.set(row.managerId, list);
   }
 
   return { gamesByManager, league };
@@ -95,10 +70,20 @@ function scoreAll({ gamesByManager, league }: Loaded): Map<string, LuckScore> {
   return out;
 }
 
-/** Career Luck Score for every manager who has played a game. */
-export async function getCareerLuck(): Promise<Map<string, LuckScore>> {
-  return scoreAll(await load());
-}
+/**
+ * Career Luck Score for every manager who has played a game.
+ *
+ * Cached as a serialisable array and rebuilt into a Map on the way out — the
+ * Next data cache round-trips through JSON, and a Map serialises to `{}`.
+ */
+export const getCareerLuck = async (): Promise<Map<string, LuckScore>> =>
+  new Map(await loadCareerLuckEntries());
+
+const loadCareerLuckEntries = cached(
+  async (): Promise<[string, LuckScore][]> => [...scoreAll(await load()).entries()],
+  ["career-luck"],
+  { tags: [CACHE_TAGS.league, CACHE_TAGS.managers] },
+);
 
 /** Luck Score for a single season, for every manager who played in it. */
 export async function getSeasonLuck(year: number): Promise<Map<string, LuckScore>> {

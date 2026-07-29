@@ -22,18 +22,41 @@
  *   Bye-week spread      4%  starters not stacked on one bye
  *   Risk concentration   4%  not betting the season on one team or one player
  *
- * ── When ADP is unavailable ────────────────────────────────────────────────
- * Historical ADP is not retrievable for this league's ESPN era, and Sleeper
- * does not publish per-season ADP through the endpoints in use. When it is
- * missing, the "value vs ADP" factor is DROPPED and its weight redistributed
- * across the remaining factors, and the result is flagged so the page can say
- * so plainly. Draft position within the draft itself is still used — where a
- * player went relative to the other 159 picks in the same room is real,
- * observed information, and does not need an outside market to be meaningful.
+ * ── When a factor cannot be measured ───────────────────────────────────────
+ * Any factor with no data behind it is DROPPED and its weight redistributed
+ * across the rest, and the result is flagged so the page can say so plainly. A
+ * factor that scores every team 50 is not neutral — it is a quarter of the
+ * grade decided by nothing, and it invites the writer to comment on data that
+ * does not exist. Three factors can drop:
+ *
+ *   Value vs ADP        Historical ADP is not retrievable for this league's
+ *                       ESPN era, and Sleeper does not publish per-season ADP
+ *                       through the endpoints in use.
+ *   Bye-week spread     NFL bye weeks are not stored per season.
+ *   Risk concentration  Dropped when no team stacked more than
+ *                       RISK_FREE_STACK players from one NFL team, because
+ *                       below that there is no concentration to grade.
+ *
+ * Draft position within the draft itself is still used — where a player went
+ * relative to the other 159 picks in the same room is real, observed
+ * information, and does not need an outside market to be meaningful.
  *
  * Nothing here looks at the season that followed. The revisited grade does,
  * and lives separately.
  */
+
+import { ordinal } from "@/lib/format";
+
+/**
+ * Players from one NFL team a draft can hold before it counts as a stack.
+ *
+ * A 16-round draft out of 32 NFL teams puts two or three players from the same
+ * club on most rosters by accident. Grading that as "risk concentration" made
+ * the report cards accuse managers of a strategy they had not chosen, so only
+ * the excess above this line is measured, and when no team exceeds it the
+ * factor is dropped entirely.
+ */
+export const RISK_FREE_STACK = 3;
 
 export const DRAFT_WEIGHTS = {
   valueVsAdp: 0.26,
@@ -76,7 +99,8 @@ export const DRAFT_FACTOR_META: Record<DraftFactorKey, { label: string; descript
   },
   capitalEfficiency: {
     label: "Draft capital used",
-    description: "Value extracted relative to the draft slot the manager actually had.",
+    description:
+      "Starter quality obtained per unit of draft capital spent, where capital sums 100/√(pick number) across every pick a manager owned — so an early slot is worth more than a late one and the score rewards converting the slot rather than merely having it. The raw figure is that ratio; only its position within the league is graded.",
   },
   byeWeekSpread: {
     label: "Bye-week spread",
@@ -84,9 +108,10 @@ export const DRAFT_FACTOR_META: Record<DraftFactorKey, { label: string; descript
   },
   riskConcentration: {
     label: "Risk concentration",
-    description: "Not concentrating the roster on a single NFL team or a single position group.",
+    description: `Whether a roster is stacked on a single NFL team beyond the ${RISK_FREE_STACK} players any draft picks up incidentally. Below that line there is nothing to grade and the factor is dropped rather than scored.`,
   },
 };
+
 
 export interface DraftPickInput {
   /** Overall pick number in this draft, 1-based. */
@@ -348,7 +373,9 @@ export function computeDraftQuality(teams: TeamDraftInput[]): DraftQualityResult
       teamCounts.set(p.nflTeam, (teamCounts.get(p.nflTeam) ?? 0) + 1);
     }
     const maxFromOneTeam = teamCounts.size ? Math.max(...teamCounts.values()) : 0;
-    const riskSpread = -maxFromOneTeam;
+    // Only the excess above an incidental stack counts; see RISK_FREE_STACK.
+    const stackExcess = Math.max(0, maxFromOneTeam - RISK_FREE_STACK);
+    const riskSpread = -stackExcess;
 
     return {
       team: t,
@@ -366,6 +393,7 @@ export function computeDraftQuality(teams: TeamDraftInput[]): DraftQualityResult
       byeSpread,
       worstBye,
       riskSpread,
+      stackExcess,
       maxFromOneTeam,
       byPosition,
       starters,
@@ -386,11 +414,32 @@ export function computeDraftQuality(teams: TeamDraftInput[]): DraftQualityResult
   const rBye = range((m) => m.byeSpread);
   const rRisk = range((m) => m.riskSpread);
 
-  const activeKeys = (Object.keys(DRAFT_WEIGHTS) as DraftFactorKey[]).filter((k) =>
-    k === "valueVsAdp" ? adpAvailable : true,
-  );
+  /*
+   * A factor with nothing behind it is dropped, not scored 50. Scoring every
+   * team the same still spends the factor's weight, and it left the report
+   * cards discussing bye weeks nobody had data for.
+   */
+  const riskMeasurable = metrics.some((m) => m.stackExcess > 0);
+  if (!riskMeasurable) {
+    notes.push(
+      `No manager drafted more than ${RISK_FREE_STACK} players from any one NFL team, which is what a draft of this length picks up incidentally. There is no concentration to grade, so the factor is excluded rather than scored neutrally.`,
+    );
+  }
+
+  const available: Record<DraftFactorKey, boolean> = {
+    valueVsAdp: adpAvailable,
+    starterQuality: true,
+    rosterConstruction: true,
+    positionalScarcity: true,
+    benchUpside: true,
+    capitalEfficiency: true,
+    byeWeekSpread: byeAvailable,
+    riskConcentration: riskMeasurable,
+  };
+
+  const activeKeys = (Object.keys(DRAFT_WEIGHTS) as DraftFactorKey[]).filter((k) => available[k]);
   const weightTotal = activeKeys.reduce((sum, k) => sum + DRAFT_WEIGHTS[k], 0);
-  const weightOf = (k: DraftFactorKey) => DRAFT_WEIGHTS[k] / weightTotal;
+  const weightOf = (k: DraftFactorKey) => (weightTotal > 0 ? DRAFT_WEIGHTS[k] / weightTotal : 0);
 
   const graded = metrics.map((m) => {
     const values: Record<DraftFactorKey, number> = {
@@ -400,21 +449,21 @@ export function computeDraftQuality(teams: TeamDraftInput[]): DraftQualityResult
       positionalScarcity: normalize(m.scarcity, rScarcity.min, rScarcity.max),
       benchUpside: normalize(m.benchUpside, rBench.min, rBench.max),
       capitalEfficiency: normalize(m.efficiency, rEfficiency.min, rEfficiency.max),
-      byeWeekSpread: byeAvailable ? normalize(m.byeSpread, rBye.min, rBye.max) : 50,
+      byeWeekSpread: normalize(m.byeSpread, rBye.min, rBye.max),
       riskConcentration: normalize(m.riskSpread, rRisk.min, rRisk.max),
     };
 
     const raws: Record<DraftFactorKey, string> = {
       valueVsAdp: m.adpCount ? `${m.adpBeats}/${m.adpCount} beat ADP` : "no ADP on record",
       starterQuality: percentilesAvailable
-        ? `starters averaged the ${Math.round(m.starterQuality)}th percentile at their positions`
+        ? `starters averaged the ${ordinal(Math.round(m.starterQuality))} percentile at their positions`
         : `avg starter pick ${round(m.starterCost)} (no prior-season data)`,
       rosterConstruction: `${Math.round(m.completeness * 100)}% lineup filled`,
-      positionalScarcity: `${round(m.scarcity)} scarcity index`,
+      positionalScarcity: `${round(m.scarcity)} scarcity index (0-100, higher = scarce slots secured earlier)`,
       benchUpside: `${m.bench.length} bench picks`,
-      capitalEfficiency: `${round(m.efficiency, 2)} value/capital`,
+      capitalEfficiency: `${round(m.efficiency, 2)} starter quality per unit of draft capital`,
       byeWeekSpread: byeAvailable ? `${m.worstBye} starters share a bye` : "no bye data",
-      riskConcentration: `${m.maxFromOneTeam} from one NFL team`,
+      riskConcentration: `${m.maxFromOneTeam} from one NFL team (${m.stackExcess} above the incidental ${RISK_FREE_STACK})`,
     };
 
     const factors: DraftFactor[] = activeKeys.map((key) => ({

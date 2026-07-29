@@ -29,10 +29,18 @@ import { getEnv } from "@/lib/env";
 import {
   FEED_LIMIT,
   MAX_BODY_LENGTH,
+  MAX_CHAT_CODE_LENGTH,
   MAX_NAME_LENGTH,
   MIN_NAME_LENGTH,
   type PublicChatMessageView,
 } from "@/lib/public-chat-shared";
+import {
+  addModerationRule,
+  loadModerationState,
+  loadReservedNames,
+  normaliseName,
+  resolveChatCode,
+} from "./identity";
 
 // Re-exported so server callers have one import site.
 export { FEED_LIMIT, MAX_BODY_LENGTH, MAX_NAME_LENGTH, type PublicChatMessageView };
@@ -230,25 +238,78 @@ function toView(row: {
   displayName: string;
   body: string;
   createdAt: Date;
+  verifiedManagerId: string | null;
 }): PublicChatMessageView {
   return {
     id: row.id,
     displayName: row.displayName,
     body: row.body,
+    isVerifiedManager: row.verifiedManagerId != null,
     createdAt: row.createdAt.toISOString(),
   };
 }
 
-/** Posts a message. All validation, moderation and rate limiting happens here. */
+/**
+ * Posts a message. All validation, moderation, identity checking and rate
+ * limiting happens here.
+ *
+ * `chatCode` is a manager's personal code. It does two things and nothing else:
+ * it permits the use of a reserved name, and it marks the message verified. An
+ * absent or wrong code simply means the poster is anonymous — which is fine,
+ * unless the name they chose belongs to somebody real.
+ */
 export async function postPublicMessage(
   rawName: unknown,
   rawBody: unknown,
   address: string | null | undefined,
+  rawChatCode?: unknown,
 ): Promise<PostResult> {
   const validation = validateSubmission(rawName, rawBody);
   if (!validation.ok) return { ok: false, error: validation.error ?? "Invalid message." };
 
   const authorHash = hashAuthor(address);
+
+  const suppliedCode =
+    typeof rawChatCode === "string" && rawChatCode.trim().length > 0
+      ? rawChatCode.trim().slice(0, MAX_CHAT_CODE_LENGTH)
+      : null;
+
+  const [moderation, reserved, verified] = await Promise.all([
+    loadModerationState(),
+    loadReservedNames(),
+    suppliedCode ? resolveChatCode(suppliedCode) : Promise.resolve(null),
+  ]);
+
+  if (suppliedCode && !verified) {
+    return { ok: false, error: "That manager code was not recognised." };
+  }
+
+  // A muted poster is refused before anything is written. The message is
+  // deliberately vague — telling someone they are muted invites them to change
+  // networks and try again.
+  if (moderation.mutedAuthors.has(authorHash)) {
+    return { ok: false, error: "Your messages are not being accepted right now." };
+  }
+
+  const normalised = normaliseName(validation.displayName);
+  if (moderation.blockedNames.has(normalised)) {
+    return { ok: false, error: "That name has been blocked. Please pick another." };
+  }
+
+  /*
+   * The impersonation check. A reserved name may only be used by the manager it
+   * belongs to, proven by their code. Note this also stops a VERIFIED manager
+   * posting under a DIFFERENT manager's name — a code is proof of one identity,
+   * not a licence for all of them.
+   */
+  const owner = reserved.get(normalised);
+  if (owner && owner.managerId !== verified?.id) {
+    return {
+      ok: false,
+      error: `"${validation.displayName}" belongs to a manager in this league. If that is you, enter your manager code; otherwise please pick a different name.`,
+    };
+  }
+
   const limited = await checkRateLimits(authorHash);
   if (limited) return { ok: false, error: limited };
 
@@ -264,8 +325,19 @@ export async function postPublicMessage(
   }
 
   const created = await prisma.publicChatMessage.create({
-    data: { displayName: validation.displayName, body: validation.body, authorHash },
-    select: { id: true, displayName: true, body: true, createdAt: true },
+    data: {
+      displayName: validation.displayName,
+      body: validation.body,
+      authorHash,
+      verifiedManagerId: verified?.id ?? null,
+    },
+    select: {
+      id: true,
+      displayName: true,
+      body: true,
+      createdAt: true,
+      verifiedManagerId: true,
+    },
   });
   return { ok: true, message: toView(created) };
 }
@@ -276,9 +348,48 @@ export async function listPublicMessages(limit = FEED_LIMIT): Promise<PublicChat
     where: { hiddenAt: null },
     orderBy: { createdAt: "desc" },
     take: Math.min(limit, FEED_LIMIT),
-    select: { id: true, displayName: true, body: true, createdAt: true },
+    select: {
+      id: true,
+      displayName: true,
+      body: true,
+      createdAt: true,
+      verifiedManagerId: true,
+    },
   });
   return rows.reverse().map(toView);
+}
+
+/** Admin action: delete a message outright, rather than hiding it. */
+export async function deletePublicMessage(id: string): Promise<void> {
+  await prisma.publicChatMessage.deleteMany({ where: { id } });
+}
+
+/**
+ * Admin action: mute the source behind a message.
+ *
+ * Works from the message rather than from a raw address, because the raw
+ * address is never stored — only its salted digest, which is exactly what the
+ * mute rule keys on.
+ */
+export async function mutePublicMessageAuthor(
+  messageId: string,
+  adminEmail: string,
+  hours: number | null,
+  reason = "admin action",
+): Promise<boolean> {
+  const message = await prisma.publicChatMessage.findUnique({
+    where: { id: messageId },
+    select: { authorHash: true },
+  });
+  if (!message) return false;
+  await addModerationRule({
+    kind: "MUTED_AUTHOR",
+    value: message.authorHash,
+    reason,
+    createdBy: adminEmail,
+    expiresAt: hours != null ? new Date(Date.now() + hours * 3_600_000) : null,
+  });
+  return true;
 }
 
 /** Admin action: hide a message. Soft delete, so it stays auditable. */
@@ -314,6 +425,7 @@ export async function listAllPublicMessagesForAdmin(limit = 200) {
       hiddenAt: true,
       hiddenBy: true,
       hiddenReason: true,
+      verifiedManagerId: true,
     },
   });
 }

@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { StandingsTable } from "@/components/standings/standings-table";
 import { getCurrentSeason } from "@/server/repositories/season-repository";
 import { getStandingsForSeason } from "@/server/repositories/standings-repository";
+import { WeeklyHubLink } from "@/components/shared/weekly-hub-link";
 import { BarChart3 } from "lucide-react";
 
 export const metadata = { title: "Standings" };
@@ -34,6 +35,7 @@ export default async function StandingsPage() {
         title="Standings"
         description="Points for/against, all-play record, expected wins, and schedule luck — updated after every sync."
       />
+      <WeeklyHubLink what="standings" />
       <div className="mt-8">
         {rows.length > 0 ? (
           <StandingsTable rows={rows} />

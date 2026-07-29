@@ -12,6 +12,17 @@ import { createHash } from "node:crypto";
 
 import { prisma } from "@/lib/db";
 
+/**
+ * Bumped whenever the power-ranking blurb PROMPT changes.
+ *
+ * The cache key is a hash of the facts a blurb was written from, which is
+ * exactly right for "the numbers moved" but blind to "the instructions moved".
+ * Blurbs praising keeper value in a league with no keeper data survived a
+ * prompt fix because the underlying score had not changed. Including this in
+ * the hash retires them.
+ */
+export const POWER_BLURB_VERSION = 2;
+
 export type BlurbKind = "POWER_RANKING" | "RIVALRY" | "TRADE_VERDICT";
 
 /** Stable fingerprint of whatever facts a blurb was written from. */

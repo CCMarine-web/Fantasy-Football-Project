@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
@@ -7,18 +6,33 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { PunishmentGallery } from "@/components/shame/punishment-gallery";
 import { getHallOfShame } from "@/server/repositories/hall-of-shame-repository";
-import { listPunishments } from "@/server/repositories/punishment-repository";
-import { Skull, Toilet } from "lucide-react";
+import {
+  LAST_PLACE_FALLBACK_NOTE,
+  LAST_PLACE_METHODOLOGY,
+} from "@/server/stats/last-place";
+import { ordinal } from "@/lib/format";
+import { Camera, Skull } from "lucide-react";
 
 export const metadata = { title: "Hall of Shame" };
 
+/*
+ * Fully server-rendered; nothing here is fetched from the browser.
+ *
+ * There is deliberately no `export const revalidate`: this page calls `auth()`
+ * to decide whether to show the admin notice, which reads cookies and makes the
+ * route dynamic, and a route-segment revalidate is inert on a dynamic route.
+ * The expensive part is cached a layer down instead — see server/cache.ts.
+ */
+
 export default async function HallOfShamePage() {
-  const [shame, punishments, session, pendingPunishmentPhotos] = await Promise.all([
+  const [shame, session, pendingPunishmentPhotos] = await Promise.all([
     getHallOfShame(),
-    listPunishments(),
     auth(),
-    prisma.mediaAsset.count({ where: { category: "PUNISHMENT", approvalStatus: "PENDING" } }),
+    prisma.mediaAsset.count({
+      where: { category: "PUNISHMENT", approvalStatus: "PENDING" },
+    }),
   ]);
   const isAdmin = session?.user?.role === "ADMIN";
   const benchCovered = shame.benchYearsCovered;
@@ -29,19 +43,133 @@ export default async function HallOfShamePage() {
       <PageHeader
         eyebrow="The Wall of Woe"
         title="Hall of Shame"
-        description="The inverse of the record books — the lows, the blowouts, the toilet bowls, and the punishments that followed."
+        description="The inverse of the record books — the lows, the blowouts, the last-place finishes, and the punishments that followed."
       />
 
-      {shame.excludedScores > 0 ? (
-        <p className="mt-6 rounded-md border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-          {shame.excludedScores} recorded score{shame.excludedScores === 1 ? " is" : "s are"} left out
-          of these records — weeks where a team was abandoned rather than beaten, or where the
-          platform never reported a score. They are kept on the season pages but a 0.0 from a team
-          that stopped setting a lineup is not the lowest score in league history.
-        </p>
-      ) : null}
-
+      {/* ── 1. The punishment wall ──────────────────────────────────────── */}
       <section className="mt-8">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
+            <Camera className="h-5 w-5" /> Punishment Gallery
+          </h2>
+          {isAdmin ? (
+            <Link href="/admin/punishments" className="text-sm text-primary hover:underline">
+              Edit punishments
+            </Link>
+          ) : null}
+        </div>
+
+        {isAdmin && pendingPunishmentPhotos > 0 ? (
+          <p className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs">
+            {pendingPunishmentPhotos} punishment photograph
+            {pendingPunishmentPhotos === 1 ? "" : "s"} imported but not yet attached to a season.
+            Their filenames name no year or manager, so they were not guessed at —{" "}
+            <Link href="/admin/media" className="font-medium text-primary hover:underline">
+              assign them in Review Media
+            </Link>
+            . Admins only; nothing is public until attached.
+          </p>
+        ) : null}
+
+        {shame.punishmentPhotos.length > 0 ? (
+          <PunishmentGallery items={shame.punishmentPhotos} />
+        ) : (
+          <EmptyState
+            icon={Camera}
+            title="No punishment photographs published yet"
+            description="Photographs appear here once an admin has attached them to a season and a manager. Imported files that name neither are held back rather than guessed at."
+          />
+        )}
+
+        {shame.punishmentsWithoutPhotos.length > 0 ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {shame.punishmentsWithoutPhotos.map((p) => (
+              <span
+                key={p.id}
+                className="rounded-md border border-border/60 bg-card/40 px-3 py-1.5 text-xs text-muted-foreground"
+              >
+                <span className="font-medium text-foreground">{p.year}</span>
+                {p.managerName ? ` · ${p.managerName}` : ""}
+                {p.description ? ` — ${p.description}` : ""} (no photograph)
+              </span>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      {/* ── 2. Regular-season last place, one uninterrupted table ────────── */}
+      <section className="mt-12">
+        <h2 className="mb-2 flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
+          <Skull className="h-5 w-5" /> Last Place by Season
+        </h2>
+        <p className="mb-3 max-w-3xl text-sm text-muted-foreground">
+          {LAST_PLACE_METHODOLOGY}{" "}
+          The league&apos;s own standings order decides it wherever the platform recorded one.
+          {shame.usesFallbackTiebreak ? ` ${LAST_PLACE_FALLBACK_NOTE}` : ""}
+        </p>
+
+        {shame.lastPlace.length === 0 ? (
+          <EmptyState title="No completed seasons yet" />
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-border/60">
+            <table className="w-full text-sm">
+              <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
+                <tr>
+                  <th className="px-2 py-2 text-left sm:px-4">Season</th>
+                  <th className="px-2 py-2 text-left sm:px-4">Last Place</th>
+                  {/* Widest and least essential column — hidden below `sm` so
+                      Record and PF stay on screen rather than clipped. */}
+                  <th className="hidden px-2 py-2 text-left sm:table-cell sm:px-4">Team</th>
+                  <th className="px-2 py-2 text-right sm:px-4">Record</th>
+                  <th className="px-2 py-2 text-right sm:px-4">PF</th>
+                  <th className="hidden px-2 py-2 text-right sm:px-4 md:table-cell">Finish</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {shame.lastPlace.map((t) => (
+                  <tr key={t.year}>
+                    <td className="px-2 py-2 font-medium sm:px-4">{t.year}</td>
+                    <td className="px-2 py-2 sm:px-4">
+                      <ManagerLink managerId={t.managerId}>{t.managerName}</ManagerLink>
+                      {t.basis === "POINTS_FALLBACK" ? (
+                        <Badge variant="secondary" className="ml-2 align-middle text-[10px]">
+                          points tiebreak
+                        </Badge>
+                      ) : null}
+                    </td>
+                    <td className="hidden px-2 py-2 text-muted-foreground sm:table-cell sm:px-4">
+                      {t.teamName}
+                    </td>
+                    <td className="px-2 py-2 text-right font-mono sm:px-4">{t.record}</td>
+                    <td className="px-2 py-2 text-right font-mono text-muted-foreground sm:px-4">
+                      {t.pointsFor.toFixed(0)}
+                    </td>
+                    <td className="hidden px-2 py-2 text-right text-muted-foreground sm:px-4 md:table-cell">
+                      {ordinal(t.teamsInSeason)} of {t.teamsInSeason}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      {/* ── 3. The record lows ───────────────────────────────────────────── */}
+      <section className="mt-12">
+        <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
+          Record Lows
+        </h2>
+
+        {shame.excludedScores > 0 ? (
+          <p className="mb-4 rounded-md border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            {shame.excludedScores} recorded score{shame.excludedScores === 1 ? " is" : "s are"} left
+            out of these records — weeks where a team was abandoned rather than beaten, or where the
+            platform never reported a score. They are kept on the season pages, but a 0.0 from a team
+            that stopped setting a lineup is not the lowest score in league history.
+          </p>
+        ) : null}
+
         {shame.entries.length === 0 ? (
           <EmptyState icon={Skull} title="Nothing shameful on record yet" />
         ) : (
@@ -65,125 +193,6 @@ export default async function HallOfShamePage() {
                       {benchGap.join(", ")}.
                     </p>
                   ) : null}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Toilet Bowl history */}
-      <section className="mt-10">
-        <h2 className="mb-3 flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
-          <Toilet className="h-5 w-5" /> Toilet Bowl — Last Place by Season
-        </h2>
-        {shame.toiletBowl.length === 0 ? (
-          <EmptyState title="No completed seasons yet" />
-        ) : (
-          <div className="overflow-x-auto rounded-lg border border-border/60">
-            <table className="w-full text-sm">
-              <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
-                <tr>
-                  <th className="px-2 sm:px-4 py-2 text-left">Season</th>
-                  <th className="px-2 py-2 sm:px-4 text-left">Last Place</th>
-                  {/* Widest and least essential column — hidden below `sm` so
-                      Record and PF stay on screen rather than clipped. */}
-                  <th className="hidden px-2 py-2 sm:px-4 text-left sm:table-cell">Team</th>
-                  <th className="px-2 py-2 sm:px-4 text-right">Record</th>
-                  <th className="px-2 py-2 sm:px-4 text-right">PF</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {shame.toiletBowl.map((t) => (
-                  <tr key={t.year}>
-                    <td className="px-2 py-2 sm:px-4 font-medium">{t.year}</td>
-                    <td className="px-2 py-2 sm:px-4">
-                      <ManagerLink managerId={t.managerId}>{t.managerName}</ManagerLink>
-                    </td>
-                    <td className="hidden px-2 py-2 sm:px-4 text-muted-foreground sm:table-cell">{t.teamName}</td>
-                    <td className="px-2 py-2 sm:px-4 text-right font-mono">{t.record}</td>
-                    <td className="px-2 py-2 sm:px-4 text-right font-mono text-muted-foreground">{t.pointsFor.toFixed(0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
-
-      {/*
-       * Punishments. The "Edit" link used to be rendered for everybody, which
-       * pointed the public at an admin route they could not open; it is now
-       * admin-only. Photographs lead the card rather than sitting in a 80px
-       * thumbnail, because the photograph IS the punishment record.
-       */}
-      <section className="mt-10">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-            Last-Place Punishments
-          </h2>
-          {isAdmin ? (
-            <Link href="/admin/punishments" className="text-sm text-primary hover:underline">
-              Edit
-            </Link>
-          ) : null}
-        </div>
-
-        {isAdmin && pendingPunishmentPhotos > 0 ? (
-          <p className="mb-3 rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-xs">
-            {pendingPunishmentPhotos} punishment photograph
-            {pendingPunishmentPhotos === 1 ? "" : "s"} imported but not yet attached to a season.
-            Their filenames name no year or manager, so they were not guessed at —{" "}
-            <Link href="/admin/media" className="font-medium text-primary hover:underline">
-              assign them in Review Media
-            </Link>
-            . Admins only; nothing is public until attached.
-          </p>
-        ) : null}
-
-        {punishments.length === 0 ? (
-          <EmptyState
-            icon={Skull}
-            title="No punishments recorded yet"
-            description="Each season's last-place punishment appears here once it has been recorded with a year, a manager, and a photograph."
-          />
-        ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {punishments.map((p) => (
-              <Card key={p.id} className="overflow-hidden pt-0">
-                {p.photoUrl ? (
-                  <Image
-                    src={p.photoUrl}
-                    alt={`${p.managerName ? `${p.managerName}'s ` : ""}${p.year} last-place punishment: ${p.description}`}
-                    width={1400}
-                    height={1050}
-                    sizes="(max-width: 640px) 100vw, 50vw"
-                    className="max-h-96 w-full bg-muted object-contain"
-                  />
-                ) : null}
-                <CardContent className="flex gap-4">
-                  {p.photoUrl ? null : (
-                    <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-md bg-muted">
-                      <Skull className="h-8 w-8 text-muted-foreground" />
-                    </div>
-                  )}
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline">{p.year}</Badge>
-                      {/* A punishment can name a manager who has no linked row
-                          (hand-entered history), so the link is only rendered
-                          when there is an id to link to — previously this built
-                          an href of "/managers/null". */}
-                      {p.managerName && p.managerId ? (
-                        <ManagerLink managerId={p.managerId} className="text-sm font-semibold">
-                          {p.managerName}
-                        </ManagerLink>
-                      ) : p.managerName ? (
-                        <span className="text-sm font-semibold">{p.managerName}</span>
-                      ) : null}
-                    </div>
-                    <p className="mt-1 text-sm text-foreground/90">{p.description}</p>
-                  </div>
                 </CardContent>
               </Card>
             ))}

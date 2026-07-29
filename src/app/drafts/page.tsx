@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { getCurrentSeason } from "@/server/repositories/season-repository";
 import { getDraftForSeasonYear, listDraftSeasons } from "@/server/repositories/draft-repository";
+import { positionLabel } from "@/lib/format";
 import { ClipboardList } from "lucide-react";
 import Link from "next/link";
 
@@ -66,7 +67,9 @@ export default async function DraftsPage({
                       <span className="flex-1 truncate px-2">
                         {pick.player ? `${pick.player.firstName} ${pick.player.lastName}` : "—"}
                         {pick.player ? (
-                          <span className="ml-1 text-xs text-muted-foreground">{pick.player.position}</span>
+                          <span className="ml-1 text-xs text-muted-foreground">
+                            {positionLabel(pick.player.position)}
+                          </span>
                         ) : null}
                       </span>
                       <span className="truncate text-xs text-muted-foreground">

@@ -4,6 +4,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { listPublishedArticles } from "@/server/repositories/news-repository";
+import { WeeklyHubLink } from "@/components/shared/weekly-hub-link";
 import { Newspaper } from "lucide-react";
 import { BRAND } from "@/lib/branding";
 
@@ -29,6 +30,7 @@ export default async function NewsPage() {
         title="News Archive"
         description="The weekly league newspaper — recaps, power rankings, awards, and everything in between."
       />
+      <WeeklyHubLink what="news" />
       <div className="mt-8 space-y-4">
         {articles.length === 0 ? (
           <EmptyState icon={Newspaper} title="No issues published yet" />

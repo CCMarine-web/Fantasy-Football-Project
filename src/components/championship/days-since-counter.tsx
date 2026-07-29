@@ -1,36 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
-function computeDays(startMs: number): { days: number; h: number; m: number; s: number } {
-  const diff = Math.max(0, Date.now() - startMs);
-  const seconds = Math.floor(diff / 1000);
-  return {
-    days: Math.floor(seconds / 86400),
-    h: Math.floor((seconds % 86400) / 3600),
-    m: Math.floor((seconds % 3600) / 60),
-    s: seconds % 60,
-  };
-}
+import { computeElapsed, type Elapsed } from "@/lib/countdown";
 
 /**
  * Generic live "N days since <label>" counter, counting UP from an ISO date.
- * Used by the Championship Belt shame counter. Same effect pattern as
- * DaysAsChampion / DraftCountdown: first tick scheduled via setTimeout, cleared
- * on unmount, and nothing rendered until mounted (avoids hydration mismatch).
+ * Used by the Championship Belt shame counter.
+ *
+ * Same shape as DaysAsChampion: the starting figure is computed on the server
+ * and passed in so it is present on first paint, then ticked from a timer
+ * callback and cleared on unmount.
  *
  * `label` is the sentence tail after the day count, e.g. "since Anthony last
  * won a playoff game".
  */
-export function DaysSinceCounter({ isoStart, label }: { isoStart: string; label: string }) {
+export function DaysSinceCounter({
+  isoStart,
+  label,
+  initial = null,
+}: {
+  isoStart: string;
+  label: string;
+  initial?: Elapsed | null;
+}) {
   const startMs = new Date(isoStart).getTime();
-  const [state, setState] = useState<ReturnType<typeof computeDays> | null>(null);
+  const [state, setState] = useState<Elapsed | null>(initial);
 
   useEffect(() => {
     if (Number.isNaN(startMs)) return;
     let timer: ReturnType<typeof setTimeout>;
     const tick = () => {
-      setState(computeDays(startMs));
+      setState(computeElapsed(startMs, Date.now()));
       timer = setTimeout(tick, 1000);
     };
     timer = setTimeout(tick, 0);
@@ -40,7 +40,7 @@ export function DaysSinceCounter({ isoStart, label }: { isoStart: string; label:
   if (Number.isNaN(startMs) || !state) return null;
 
   return (
-    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1" suppressHydrationWarning>
       <span className="font-heading text-4xl font-semibold tabular-nums text-primary sm:text-5xl">
         {state.days.toLocaleString()}
       </span>
@@ -48,8 +48,8 @@ export function DaysSinceCounter({ isoStart, label }: { isoStart: string; label:
         {state.days === 1 ? "day" : "days"} {label}
       </span>
       <span className="ml-1 font-mono text-xs tabular-nums text-muted-foreground">
-        {String(state.h).padStart(2, "0")}:{String(state.m).padStart(2, "0")}:
-        {String(state.s).padStart(2, "0")}
+        {String(state.hours).padStart(2, "0")}:{String(state.minutes).padStart(2, "0")}:
+        {String(state.seconds).padStart(2, "0")}
       </span>
     </div>
   );

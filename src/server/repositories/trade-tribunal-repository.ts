@@ -284,8 +284,17 @@ export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
       ? (nameById.get(valuation.winnerManagerId) ?? null)
       : null;
 
-    // Deterministic prose summary, used as the input a verdict is written from
-    // and shown when no verdict exists.
+    /*
+     * Deterministic prose summary — the input a verdict is written from, and
+     * what the page shows when no verdict exists.
+     *
+     * The earlier wording read "X came out 93 points of value above replacement
+     * ahead of Y", which puts a five-word noun phrase between the number and
+     * the word it modifies and leaves a reader parsing the sentence twice. The
+     * measure is now named once at the end, where it belongs.
+     */
+    const measuredAgainst =
+      "with every player measured against what was freely available at his position";
     let hindsightSummary: string;
     if (valuation.lopsidedness == null) {
       hindsightSummary =
@@ -293,10 +302,14 @@ export async function getTradeTribunal(): Promise<TradeTribunalView[]> {
           ? "nothing in this trade could be valued from the recorded data"
           : "this trade involved more than two managers, so it is reported rather than graded";
     } else if (valuation.lopsidedness === "EVEN_DEAL") {
-      hindsightSummary = `both sides came out within ${valuation.differential?.toFixed(0) ?? "0"} points of value above replacement — an even deal`;
+      const gap = valuation.differential ?? 0;
+      hindsightSummary =
+        gap < 1
+          ? `the two hauls came out level, ${measuredAgainst}`
+          : `the two hauls finished within ${gap.toFixed(0)} points of each other, ${measuredAgainst}`;
     } else {
       const loser = valuedSides.find((s) => s.managerId !== valuation.winnerManagerId);
-      hindsightSummary = `${winnerName} came out ${valuation.differential?.toFixed(0)} points of value above replacement ahead of ${loser?.managerName ?? "the other side"}, once each player is measured against what was freely available at his position`;
+      hindsightSummary = `${winnerName} finished ${valuation.differential?.toFixed(0)} points ahead of ${loser?.managerName ?? "the other side"}, ${measuredAgainst}`;
     }
 
     return {

@@ -9,6 +9,7 @@ import {
   type TradeTribunalView,
 } from "@/server/repositories/trade-tribunal-repository";
 import { LOPSIDEDNESS_LABEL, type Lopsidedness } from "@/server/stats/trade-value";
+import { ordinal, positionLabel } from "@/lib/format";
 import { Gavel, ArrowRight, Info } from "lucide-react";
 
 export const metadata = { title: "Trade Tribunal" };
@@ -183,12 +184,23 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
           </div>
           {t.differential != null && t.lopsidedness !== "EVEN_DEAL" ? (
             <div className="text-right">
+              <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+                Value differential
+              </p>
               <p className="font-mono text-lg font-semibold tabular-nums text-primary">
                 +{t.differential.toFixed(0)}
               </p>
               <p className="text-xs text-muted-foreground">
-                value above replacement
-                {t.relativeDifferential != null ? ` · ${Math.round(t.relativeDifferential * 100)}% gap` : ""}
+                position-adjusted points above replacement
+                {/* The relative figure is the gap measured against the AVERAGE
+                    haul, so it routinely exceeds 100% — "189% gap between the
+                    two hauls" reads as a percentage of something and is not
+                    one. Expressed as a multiple above 1, it says what it means. */}
+                {t.relativeDifferential != null
+                  ? t.relativeDifferential >= 1
+                    ? ` · ${t.relativeDifferential.toFixed(1)}× the average haul in this trade`
+                    : ` · ${Math.round(t.relativeDifferential * 100)}% of the average haul in this trade`
+                  : ""}
               </p>
             </div>
           ) : null}
@@ -211,11 +223,16 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
                 >
                   {side.managerName}
                 </Link>
-                <span
-                  className="font-mono text-sm tabular-nums text-foreground"
-                  title="Position-normalised value received"
-                >
-                  {side.value.toFixed(0)}
+                <span className="text-right">
+                  <span className="block text-[11px] tracking-wide text-muted-foreground uppercase">
+                    Value received
+                  </span>
+                  <span
+                    className="block font-mono text-sm tabular-nums text-foreground"
+                    title="Position-adjusted points above replacement, banked per game actually played"
+                  >
+                    {side.value.toFixed(0)}
+                  </span>
                 </span>
               </div>
               <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
@@ -229,7 +246,7 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
                 {side.players.map((p) => (
                   <li key={p.playerId}>
                     <span className="font-medium">
-                      {p.name} ({p.position})
+                      {p.name} ({positionLabel(p.position)})
                     </span>
                     <span className="block text-xs text-muted-foreground">
                       {p.note
@@ -240,7 +257,7 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
                               : "no replacement line"
                           }${
                             p.positionalPercentile != null
-                              ? `, ${p.positionalPercentile}th percentile at ${p.position}`
+                              ? `, ${ordinal(p.positionalPercentile)} percentile at ${positionLabel(p.position)}`
                               : ""
                           }${p.availability != null ? `, played ${Math.round(p.availability * 100)}% of the remaining weeks` : ""}`}
                     </span>
@@ -261,12 +278,16 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
           ))}
         </div>
 
-        <p className="text-sm text-foreground/90">{t.hindsightSummary}.</p>
+        <p className="text-sm text-foreground/90">
+          <span className="font-medium">In hindsight: </span>
+          {t.hindsightSummary}.
+        </p>
 
         {t.verdict ? (
-          <p className="border-l-2 border-primary/40 pl-3 text-sm text-foreground/90 italic">
-            {t.verdict}
-          </p>
+          <div className="border-l-2 border-primary/40 pl-3">
+            <p className="text-[11px] tracking-wide text-muted-foreground uppercase">Verdict</p>
+            <p className="text-sm text-foreground/90 italic">{t.verdict}</p>
+          </div>
         ) : null}
 
         {t.missingInputs.length > 0 ? (

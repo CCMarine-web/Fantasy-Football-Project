@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/db";
 import { longestLosingStreak, longestWinningStreak } from "@/server/stats";
 import type { GameResult } from "@/server/stats/types";
+import { loadVerifiedGames } from "./verified-games";
+import { cached, CACHE_TAGS } from "@/server/cache";
 
 export interface RecordEntry {
   key: string;
@@ -30,63 +32,32 @@ interface Mt {
  * Computes every league record live from the synced matchup data (works across
  * all seasons regardless of source). Each entry carries the holder, value, and
  * where/against-whom context. Returns [] when there are no scored games.
+ *
+ * Games come from the shared verified-games loader, which requires BOTH sides
+ * to be a real contest. Without that the all-time lowest score was 0.0 three
+ * weeks running from a manager who had stopped setting a lineup, and the
+ * all-time biggest blowout read "167.4-0.0" against the same abandoned team.
  */
-export async function getComputedRecords(): Promise<RecordEntry[]> {
-  /*
-   * `verifiedScore` excludes scores that are on record but are not results of a
-   * real contest — an abandoned team's run of zeros, an unplayed week, a score
-   * the platform never reported. Without this filter the all-time lowest score
-   * was 0.0 three weeks running from one manager who had stopped setting a
-   * lineup, which is a fact about a spreadsheet rather than about football.
-   * See scripts/import/audit-suspect-scores.ts.
-   */
-  const rows = await prisma.matchupTeam.findMany({
-    where: { score: { not: null }, verifiedScore: true },
-    include: {
-      fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } },
-      matchup: {
-        select: {
-          week: true,
-          isPlayoff: true,
-          seasonId: true,
-          season: { select: { year: true } },
-          teams: {
-            select: {
-              fantasyTeamId: true,
-              score: true,
-              verifiedScore: true,
-              fantasyTeam: { select: { manager: { select: { displayName: true } } } },
-            },
-          },
-        },
-      },
-    },
-  });
+export const getComputedRecords = cached(buildComputedRecords, ["computed-records"], {
+  tags: [CACHE_TAGS.league],
+});
 
-  const games: Mt[] = [];
-  for (const r of rows) {
-    if (r.score == null) continue;
-    const opp = r.matchup.teams.find((t) => t.fantasyTeamId !== r.fantasyTeamId);
-    if (!opp || opp.score == null) continue;
-    // A game against a team that did not field a lineup is not a contest
-    // either way round. Filtering only this side left the OPPONENT's row in,
-    // so the all-time biggest blowout read "167.4-0.0".
-    if (!opp.verifiedScore) continue;
-    games.push({
-      fantasyTeamId: r.fantasyTeamId,
-      managerId: r.fantasyTeam.managerId,
-      managerName: r.fantasyTeam.manager.displayName,
-      score: r.score,
-      isWinner: r.isWinner,
-      week: r.matchup.week,
-      year: r.matchup.season.year,
-      isPlayoff: r.matchup.isPlayoff,
-      seasonId: r.matchup.seasonId,
-      opponentTeamId: opp.fantasyTeamId,
-      opponentName: opp.fantasyTeam.manager.displayName,
-      opponentScore: opp.score,
-    });
-  }
+async function buildComputedRecords(): Promise<RecordEntry[]> {
+  const rows = await loadVerifiedGames();
+  const games: Mt[] = rows.map((r) => ({
+    fantasyTeamId: r.fantasyTeamId,
+    managerId: r.managerId,
+    managerName: r.managerName,
+    score: r.score,
+    isWinner: r.isWinner,
+    week: r.week,
+    year: r.year,
+    isPlayoff: r.isPlayoff,
+    seasonId: r.seasonId,
+    opponentTeamId: r.opponentTeamId,
+    opponentName: r.opponentManagerName,
+    opponentScore: r.opponentScore,
+  }));
   if (games.length === 0) return [];
 
   const entries: RecordEntry[] = [];

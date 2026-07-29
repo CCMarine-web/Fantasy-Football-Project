@@ -39,7 +39,15 @@ export interface TransactionView {
   seasonYear: number;
   week: number | null;
   type: TransactionType;
-  /** "Waiver claim", "Free-agent pickup", "Trade", "Commissioner action". */
+  /**
+   * What the move actually was, in the league's own words: "Add", "Drop",
+   * "Add/Drop", "Successful waiver claim", "Failed waiver claim", "Trade" or
+   * "Commissioner action".
+   *
+   * Derived from the assets, not from the platform's transaction type alone. A
+   * free-agent transaction that both added and dropped a player is an add/drop,
+   * and rendering it as a "Free-agent pickup" hid half of what happened.
+   */
   kindLabel: string;
   outcome: TransactionOutcome;
   /** "Successful", "Failed claim", "Pending", "Reversed". */
@@ -74,12 +82,35 @@ export interface TransactionsPage {
   totalMatching: number;
 }
 
-const KIND_LABEL: Record<TransactionType, string> = {
-  WAIVER: "Waiver claim",
-  FREE_AGENT: "Free-agent pickup",
-  TRADE: "Trade",
-  COMMISSIONER: "Commissioner action",
-};
+/**
+ * The seven kinds of move the league actually makes.
+ *
+ * A waiver claim's label carries its outcome, because "Waiver claim" beside a
+ * greyed-out card was the only thing distinguishing the six managers who did
+ * not get Jerome Ford from the one who did. Everything else is named by what
+ * moved: an add, a drop, or both in one transaction.
+ */
+function kindLabelFor(
+  type: TransactionType,
+  outcome: TransactionOutcome,
+  addedCount: number,
+  droppedCount: number,
+): string {
+  if (type === "TRADE") return "Trade";
+  if (type === "COMMISSIONER") return "Commissioner action";
+  if (type === "WAIVER") {
+    return outcome === "SUCCESSFUL"
+      ? "Successful waiver claim"
+      : outcome === "FAILED"
+        ? "Failed waiver claim"
+        : outcome === "REVERSED"
+          ? "Reversed waiver claim"
+          : "Pending waiver claim";
+  }
+  if (addedCount > 0 && droppedCount > 0) return "Add/Drop";
+  if (droppedCount > 0) return "Drop";
+  return "Add";
+}
 
 const OUTCOME: Record<TransactionStatus, { outcome: TransactionOutcome; label: string }> = {
   COMPLETE: { outcome: "SUCCESSFUL", label: "Successful" },
@@ -247,17 +278,19 @@ export async function getTransactionsPage(
 
   const transactions: TransactionView[] = rows.map((t) => {
     const status = OUTCOME[t.status];
+    const added = t.assets.filter((a) => a.direction === "ADD").map(assetView);
+    const dropped = t.assets.filter((a) => a.direction !== "ADD").map(assetView);
     const partial: Omit<TransactionView, "summary"> = {
       id: t.id,
       seasonYear: t.season.year,
       week: t.week,
       type: t.type,
-      kindLabel: KIND_LABEL[t.type],
+      kindLabel: kindLabelFor(t.type, status.outcome, added.length, dropped.length),
       outcome: status.outcome,
       outcomeLabel: status.label,
       faabSpent: t.faabSpent,
-      added: t.assets.filter((a) => a.direction === "ADD").map(assetView),
-      dropped: t.assets.filter((a) => a.direction !== "ADD").map(assetView),
+      added,
+      dropped,
       processedAt: t.processedAt,
     };
     return { ...partial, summary: describe(partial) };

@@ -51,10 +51,13 @@ export interface ManagerPerfPacket {
    */
   playoffRecord: string;
   /**
-   * Toilet-bowl and placement games. Postseason, but not playoff games, and
-   * never to be described as such.
+   * Seasons this manager finished BOTTOM OF THE REGULAR-SEASON STANDINGS.
+   *
+   * This is the league's definition of last place. Consolation-bracket results
+   * are not in this packet at all — a Toilet Bowl decides nothing, and the
+   * writer cannot mislabel a game it never sees.
    */
-  consolationRecord: string;
+  lastPlaceYears: number[];
   championships: number;
   finalsAppearances: number;
   playoffAppearances: number;
@@ -141,13 +144,14 @@ HARD RULES
 - Use ONLY the facts in the packet. Never invent a stat, a championship, a trade, a quote or an event.
 - Numbers you cite must match the packet exactly. If the packet says 55-71, do not write "roughly .500".
 - "careerRecord" and every era record are REGULAR SEASON. They are the figures printed in the table beside this profile, so a reader can check them. Never add postseason games into a career or era record. The era records must also sum to the career record; if they do not appear to, cite the packet's figures rather than your own arithmetic.
-- The postseason is split in two and the split matters. The playoff record covers championship-bracket games only — the games that decide the title. The consolation record covers the toilet bowl and the placement games below it. NEVER describe a consolation game as a playoff game, never add the two together, and never call a good consolation record a playoff run. Going 2-0 in a toilet bowl is not a playoff record; if anything it is worth a joke.
+- The playoff record covers championship-bracket games ONLY — the games that decide the title. The league's consolation bracket (the "Toilet Bowl") decides nothing and is not recorded anywhere in this packet. Never mention a toilet bowl, a consolation bracket, a placement game or a "loser's bracket": you have no data on them, so anything you say about one is invented.
+- LAST PLACE means finishing bottom of the REGULAR-SEASON standings, and "lastPlaceYears" lists exactly which seasons those were (it may be empty, which means never). Never call anyone a Toilet Bowl loser, and never infer last place from a final placing, a playoff exit or a postseason result.
 - The Luck Score runs 0 to 100 with 50 neutral and measures how much the SCHEDULE helped, not how good the manager is. Above 50 the record flatters the scoring; below 50 it understates it. A high score is not a compliment and a low one is not an insult. If the score is null, there are too few games to say — do not describe that manager as having neutral or average luck.
 - The packet's "unavailable" list names things that are genuinely not on record. Do not speculate about them and do not imply they are known.
 - "personalityProfile", "communicationStyle", "leagueVoice" and "relationships" are PRIVATE research distilled from material the public never sees. Use them to shape TONE, angle and the target of a joke. Never quote them, never quote or paraphrase a chat message, never attribute a specific saying to anyone, and never reveal or imply that a group chat exists or was analysed. A reader must not be able to tell these inputs were used.
 - Those four fields are PROSE and any numbers inside them are unverified. Ignore every figure they contain. Each statistic you cite must come from a numeric field of this packet — "careerRecord", the "eras" rows, the "seasons" rows, "topRivalries", "allPlayRecord" and so on.
 - HEAD-TO-HEAD RECORDS: the packet lists this manager's record against EVERY opponent. If you name an opponent and a record, copy that record from the list character for character, and make sure it is the row for that opponent. Do not reverse it, do not round it, and never write a head-to-head figure that is not in the list. Runs have been produced claiming "a 4-1 edge" over an opponent the manager is 6-5 against and "3-1" over one they trail 6-7 — both invented, both printed next to the real table. If you are not certain which row an opponent is, describe the rivalry without a number.
-- Do not attach a postseason claim to a head-to-head unless the packet supports it. A pair whose meetings were all in the consolation bracket has not met in the playoffs.
+- Do not attach a postseason claim to a head-to-head unless the packet supports it. The head-to-head rows carry no round information, so never assert that a pair met in the playoffs.
 - If statsComplete is false, do not present the record as the manager's complete history.
 - Write for a reader, not a debugger. Never print a raw field name from the packet — no "recentPointsPerGame", "winPct", "allPlayRecord", "luckScore", "playoffRecord". Say "10.7 points a game above his career rate", "a .524 win rate", "his all-play record". If a value has no natural English phrasing, leave it out.
 - Respect the safeguards.`;
@@ -158,7 +162,7 @@ HARD RULES
  * arithmetic, but it reads like a leaked variable because it is one.
  */
 const PACKET_KEY_PATTERN =
-  /\b(recentPointsPerGame|careerPointsPerGame|allPlayWinPct|allPlayRecord|winPct|luckLabel|luckScore|luckSummary|playoffRecord|consolationRecord|postseasonRecord|recentTrajectory|statsComplete|bestFinish|worstFinish|playoffAppearances|finalsAppearances|championshipYears|pointsForPerGame|topRivalries|communicationStyle|approvedKnowledge|historyNotes|seasonsPlayed|currentTeamName|yearsActive|regularSeasonRank|finalRank|madePlayoffs|isChampion|pointsFor|pointsAgainst)\b/;
+  /\b(recentPointsPerGame|careerPointsPerGame|allPlayWinPct|allPlayRecord|winPct|luckLabel|luckScore|luckSummary|playoffRecord|lastPlaceYears|postseasonRecord|recentTrajectory|statsComplete|bestFinish|worstFinish|playoffAppearances|finalsAppearances|championshipYears|pointsForPerGame|topRivalries|communicationStyle|approvedKnowledge|historyNotes|seasonsPlayed|currentTeamName|yearsActive|regularSeasonRank|finalRank|madePlayoffs|isChampion|pointsFor|pointsAgainst)\b/;
 
 /** True when the draft leaked packet identifiers into the copy. */
 export function leaksPacketFieldNames(text: string): boolean {

@@ -37,21 +37,13 @@ function RivalryCard({ r }: { r: RivalryView }) {
               {r.championshipMeetings > 1 ? "s" : ""}
             </Badge>
           ) : null}
-          {/* Championship bracket and consolation are shown as what they are.
-              Both used to be badged "playoff", so a pair who had only ever met
-              in the toilet bowl looked like postseason regulars. */}
+          {/* Championship bracket only. Consolation meetings used to be badged
+              "playoff" too, so a pair who had only ever met in a placement game
+              looked like postseason regulars; they are no longer counted or
+              shown at all. */}
           {r.playoffMeetings > 0 ? (
             <Badge variant="outline" title="Meetings in the championship bracket">
               {r.playoffMeetings} playoff meeting{r.playoffMeetings > 1 ? "s" : ""}
-            </Badge>
-          ) : null}
-          {r.consolationMeetings > 0 ? (
-            <Badge
-              variant="outline"
-              className="text-muted-foreground"
-              title="Meetings in the toilet bowl or a placement game — postseason, but not playoff games"
-            >
-              {r.consolationMeetings} consolation
             </Badge>
           ) : null}
         </div>
