@@ -120,7 +120,34 @@ describe("weekly power rankings — in season", () => {
 
     expect(result.weights.map((w) => w.key)).toContain("lineupEfficiency");
     expect(result.rows[0].lineupEfficiency).not.toBeNull();
-    expect(result.notes).toHaveLength(0);
+    // No missing-data note. (Bench and schedule are identical for both teams
+    // here, so those are dropped as flat — that is a different note.)
+    expect(result.notes.some((n) => /player-level/i.test(n))).toBe(false);
+  });
+
+  it("drops a factor that is identical for every team and says so", () => {
+    // Three weeks played: "last 3 weeks vs season" is 1.0 for everyone.
+    const teams = [
+      team({ fantasyTeamId: "a", weeks: weeks([120, 130, 110], [100, 105, 95]) }),
+      team({ fantasyTeamId: "b", weeks: weeks([115, 125, 135], [110, 90, 100]) }),
+      team({ fantasyTeamId: "c", weeks: weeks([100, 90, 105], [95, 100, 120]) }),
+    ];
+    const result = computeWeeklyPowerRankings(teams);
+    expect(result.weights.map((w) => w.key)).not.toContain("recentForm");
+    expect(result.notes.some((n) => n.startsWith("Recent form is the same for every team"))).toBe(true);
+    // The remaining weights still sum to 100%.
+    expect(result.weights.reduce((s, w) => s + w.weight, 0)).toBeCloseTo(1, 6);
+  });
+
+  it("reports movement against the previous order", () => {
+    const teams = [
+      team({ fantasyTeamId: "a", weeks: weeks([120, 130], [100, 100]) }),
+      team({ fantasyTeamId: "b", weeks: weeks([140, 150], [100, 100]) }),
+    ];
+    const result = computeWeeklyPowerRankings(teams, ["a", "b"]);
+    const b = result.rows.find((r) => r.fantasyTeamId === "b")!;
+    expect(b.rank).toBe(1);
+    expect(b.previousRank).toBe(2);
   });
 
   it("is deterministic", () => {

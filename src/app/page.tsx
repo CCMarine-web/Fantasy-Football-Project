@@ -21,6 +21,7 @@ import { getPowerRankingsPreview } from "@/server/repositories/power-rankings-re
 import { BRAND } from "@/lib/branding";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
 import { SeasonCountdown } from "@/components/home/season-countdown";
+import { DataFreshness } from "@/components/shared/data-freshness";
 import { initialRemaining } from "@/lib/countdown";
 import { chooseSeasonCountdown } from "@/lib/season-countdown";
 import { getNflCalendar, seasonStartDateFor } from "@/server/nfl-calendar";
@@ -126,6 +127,7 @@ export default async function HomePage() {
             The official record of {BRAND.longName} — scores, standings, history, and the occasional
             roast.
           </p>
+          <DataFreshness className="mt-3" />
         </div>
         {countdown ? (
           <div className="w-full shrink-0 lg:max-w-xs">

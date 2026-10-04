@@ -126,7 +126,7 @@ export default async function TransactionsPage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow="The Wire"
         title="Transactions"
         description="Every add, drop, claim and trade on record. A waiver claim that lost is shown as a claim that lost, not as an acquisition."

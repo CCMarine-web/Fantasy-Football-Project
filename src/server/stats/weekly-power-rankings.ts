@@ -537,16 +537,36 @@ function inSeasonRankings(
   const rBench = range((m) => m.bench);
   const rSos = range((m) => m.sos);
 
-  // When player-level data is missing the three lineup factors can't be
-  // computed. Rather than scoring everyone 50 (which silently shrinks the
-  // spread), drop them and renormalise the remaining weights to sum to 1.
-  const activeKeys: InSeasonFactorKey[] = (
-    Object.keys(IN_SEASON_WEIGHTS) as InSeasonFactorKey[]
-  ).filter((k) =>
-    hasPlayerData
-      ? true
-      : k !== "lineupEfficiency" && k !== "starterStrength" && k !== "benchDepth",
+  /*
+   * A factor that cannot separate the teams is dropped and the remaining
+   * weights renormalised, rather than scored 50 for everyone (which silently
+   * shrinks the spread). Two ways that happens: no player-level data for the
+   * three lineup factors, or a factor that is identical across the league so
+   * far — Recent form is "last 3 weeks vs season", so through week 3 it is
+   * 1.0 for every team; Consistency is flat after a single game. The method
+   * text already promised this; the flat case was being kept at full weight.
+   */
+  const FLAT = 1e-9;
+  const flatByKey: Record<InSeasonFactorKey, boolean> = {
+    scoring: rScoring.max - rScoring.min < FLAT,
+    allPlay: rAllPlay.max - rAllPlay.min < FLAT,
+    expectedWins: rExpected.max - rExpected.min < FLAT,
+    recentForm: rForm.max - rForm.min < FLAT,
+    consistency: rCv.max - rCv.min < FLAT,
+    lineupEfficiency: rEff.max - rEff.min < FLAT,
+    starterStrength: rStarter.max - rStarter.min < FLAT,
+    benchDepth: rBench.max - rBench.min < FLAT,
+    scheduleStrength: rSos.max - rSos.min < FLAT,
+  };
+  const lineupKeys = new Set<InSeasonFactorKey>(["lineupEfficiency", "starterStrength", "benchDepth"]);
+  const activeKeys: InSeasonFactorKey[] = (Object.keys(IN_SEASON_WEIGHTS) as InSeasonFactorKey[]).filter(
+    (k) => (hasPlayerData || !lineupKeys.has(k)) && !flatByKey[k],
   );
+  for (const k of Object.keys(flatByKey) as InSeasonFactorKey[]) {
+    if (flatByKey[k] && (hasPlayerData || !lineupKeys.has(k))) {
+      notes.push(`${FACTOR_META[k].label} is the same for every team so far, so it is left out and the other weights are rescaled.`);
+    }
+  }
   const weightTotal = activeKeys.reduce((sum, k) => sum + IN_SEASON_WEIGHTS[k], 0);
   const weightOf = (k: InSeasonFactorKey) => IN_SEASON_WEIGHTS[k] / weightTotal;
 

@@ -9,6 +9,7 @@ import {
 } from "@/server/stats/weekly-power-rankings";
 import { getBlurbs, hashInputs, POWER_BLURB_VERSION } from "@/server/ai/blurb-cache";
 import { cached, CACHE_TAGS } from "@/server/cache";
+import { lineupOutcome } from "@/server/stats/optimal-lineup";
 
 /**
  * Power rankings for the league's CURRENT season — a running measure of team
@@ -86,7 +87,7 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
       select: {
         fantasyTeamId: true,
         week: true,
-        playerScores: { select: { isStarter: true, points: true } },
+        playerScores: { select: { isStarter: true, points: true, lineupSlot: true, player: { select: { position: true } } } },
       },
     }),
     prisma.draftPick.findMany({
@@ -115,25 +116,25 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
     });
   }
 
+  // Starting slots in this league (QB, 2 RB, 2 WR, TE, 2 FLEX, K, DEF), for
+  // roster depth before any weekly lineup exists.
+  const STARTER_SLOTS = 10;
+
   // Player-level detail, where it exists. A roster whose scores are not all
   // recorded (the ESPN era stores membership without weekly points) is skipped
   // rather than treated as a zero-point lineup.
-  const STARTER_SLOTS = 9;
   for (const roster of rosters) {
     const line = linesByTeam.get(roster.fantasyTeamId)?.get(roster.week);
     if (!line || roster.playerScores.length === 0) continue;
     const scored = roster.playerScores.filter((p): p is typeof p & { points: number } => p.points != null);
     if (scored.length !== roster.playerScores.length) continue;
 
-    const starters = scored.filter((p) => p.isStarter);
-    const bench = scored.filter((p) => !p.isStarter);
-    const starterCount = starters.length || STARTER_SLOTS;
-    line.starterPoints = starters.reduce((sum, p) => sum + p.points, 0);
-    line.optimalPoints = [...scored]
-      .sort((a, b) => b.points - a.points)
-      .slice(0, starterCount)
-      .reduce((sum, p) => sum + p.points, 0);
-    line.benchPoints = bench.reduce((sum, p) => sum + p.points, 0);
+    // The best LEGAL lineup (server/stats/optimal-lineup.ts), not the top N
+    // scorers regardless of position.
+    const outcome = lineupOutcome(scored.map((p) => ({ isStarter: p.isStarter, points: p.points, lineupSlot: p.lineupSlot, position: p.player.position })));
+    line.starterPoints = outcome.starterPoints;
+    line.optimalPoints = outcome.optimalPoints;
+    line.benchPoints = scored.filter((p) => !p.isStarter).reduce((sum, p) => sum + p.points, 0);
   }
 
   // Preseason fallbacks: draft capital, bench depth, and the manager's own
@@ -355,7 +356,20 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
     };
   });
 
-  const result = computeWeeklyPowerRankings(inputs);
+  /*
+   * Last week's order, for the movement arrows: the same model on the same
+   * inputs with this week's games left out. Nothing is stored — the ranking
+   * a week ago is exactly what this computes, and recomputing it means it can
+   * never drift from the ranking the page showed then.
+   */
+  const latestWeek = Math.max(0, ...inputs.flatMap((i) => i.weeks.map((w) => w.week)));
+  const previousOrder =
+    latestWeek > 1
+      ? computeWeeklyPowerRankings(
+          inputs.map((i) => ({ ...i, weeks: i.weeks.filter((w) => w.week < latestWeek) })),
+        ).rows.map((r) => r.fantasyTeamId)
+      : undefined;
+  const result = computeWeeklyPowerRankings(inputs, previousOrder);
 
   // One query for all commentary. The hash covers the numbers the copy is
   // written from, so a blurb is invalidated the moment the ranking moves.
@@ -393,7 +407,13 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
         ...row,
         avatarUrl: team?.manager?.photoUrl ?? team?.manager?.avatarUrl ?? null,
         record: `${team?.wins ?? 0}-${team?.losses ?? 0}${team?.ties ? `-${team.ties}` : ""}`,
-        blurb: blurbs.get(`${seasonYear}:${row.fantasyTeamId}`)?.text ?? null,
+        // Only commentary written from THIS week's numbers. A stale blurb is not
+        // "better than a blank space" here: preseason copy calling the #3 team
+        // "dead last, PowerScore 18.3" contradicted the card it sat on.
+        blurb: (() => {
+          const b = blurbs.get(`${seasonYear}:${row.fantasyTeamId}`);
+          return b && !b.stale ? b.text : null;
+        })(),
       };
     }),
   };

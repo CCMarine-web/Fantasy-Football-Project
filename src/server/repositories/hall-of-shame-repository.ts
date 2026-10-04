@@ -1,4 +1,6 @@
 import { prisma } from "@/lib/db";
+import { sharedRecord } from "@/server/stats/finishes";
+import { lineupOutcome } from "@/server/stats/optimal-lineup";
 import { longestLosingStreak } from "@/server/stats";
 import type { GameResult } from "@/server/stats/types";
 import {
@@ -148,26 +150,27 @@ async function buildHallOfShame(): Promise<HallOfShame> {
       });
       logByManager.set(g.managerId, e);
     }
-    let worstStreak = { id: "", name: "", len: 0 };
-    for (const [id, e] of logByManager) {
-      const l = longestLosingStreak(e.games);
-      if (l > worstStreak.len) worstStreak = { id, name: e.name, len: l };
-    }
-    if (worstStreak.len) {
+    // Shared records name every holder (it was picked by row order).
+    const worstStreak = sharedRecord(
+      [...logByManager].map(([id, e]) => ({ id, name: e.name, len: longestLosingStreak(e.games) })),
+    );
+    if (worstStreak) {
       entries.push({
         key: "loss-streak",
         label: "Longest Losing Streak",
         value: `${worstStreak.len} games`,
         holderName: worstStreak.name,
         holderManagerId: worstStreak.id,
-        detail: "all-time",
+        detail: worstStreak.shared ? "all-time · shared" : "all-time",
       });
     }
   }
 
   // Worst season record.
   const teams = await prisma.fantasyTeam.findMany({
-    where: { OR: [{ wins: { gt: 0 } }, { losses: { gt: 0 } }, { pointsFor: { gt: 0 } }] },
+    // Only finished seasons: three weeks of an unfinished one (3-0, 0-3) were
+    // beating every complete 14-game season for best and worst record.
+    where: { season: { status: "COMPLETE" }, OR: [{ wins: { gt: 0 } }, { losses: { gt: 0 } }, { pointsFor: { gt: 0 } }] },
     include: {
       manager: { select: { id: true, displayName: true } },
       season: { select: { year: true, status: true } },
@@ -198,7 +201,7 @@ async function buildHallOfShame(): Promise<HallOfShame> {
           season: { select: { year: true } },
         },
       },
-      playerScores: { select: { isStarter: true, points: true } },
+      playerScores: { select: { isStarter: true, points: true, lineupSlot: true, player: { select: { position: true } } } },
     },
   });
   const benchYears = new Set<number>();
@@ -220,15 +223,9 @@ async function buildHallOfShame(): Promise<HallOfShame> {
     );
     if (scored.length !== roster.playerScores.length) continue;
     benchYears.add(roster.fantasyTeam.season.year);
-    const starters = scored.filter((p) => p.isStarter);
-    const starterCount = starters.length || 9;
-    const actualStarterPts = starters.reduce((a, p) => a + p.points, 0);
-    // Optimal (position-agnostic): best `starterCount` scorers on the roster.
-    const optimalPts = [...scored]
-      .sort((a, b) => b.points - a.points)
-      .slice(0, starterCount)
-      .reduce((a, p) => a + p.points, 0);
-    const left = optimalPts - actualStarterPts;
+    // Against the best LEGAL lineup (server/stats/optimal-lineup.ts).
+    const outcome = lineupOutcome(scored.map((p) => ({ isStarter: p.isStarter, points: p.points, lineupSlot: p.lineupSlot, position: p.player.position })));
+    const left = outcome.optimalPoints - outcome.starterPoints;
     if (!worstBench || left > worstBench.value) {
       worstBench = {
         value: left,
@@ -282,7 +279,9 @@ export const getLastPlaceBySeason = cached(buildLastPlaceBySeason, ["last-place-
 
 async function buildLastPlaceBySeason(): Promise<LastPlaceFinish[]> {
   const teams = await prisma.fantasyTeam.findMany({
-    where: { season: { status: { not: "UPCOMING" } } },
+    // Last place is a final finish. Whoever is bottom three weeks in is not yet
+    // "last place 2026", and was being counted on profiles and the Managers page.
+    where: { season: { status: "COMPLETE" } },
     select: {
       teamName: true,
       wins: true,

@@ -44,7 +44,7 @@ export default async function TradeTribunalPage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow="The Court"
         title="Trade Tribunal"
         description="Every trade in league history, judged on what each player was actually worth at his own position — not on who scored more points. The most one-sided deals are on top."
@@ -188,6 +188,11 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
               </Badge>
             )}
             {t.notable ? <Badge variant="secondary">Notable</Badge> : null}
+            {t.provisional ? (
+              <Badge variant="outline" className="border-primary/50 text-primary">
+                Provisional — re-scored weekly until the {t.seasonYear} championship
+              </Badge>
+            ) : null}
             <Badge variant="outline" className="text-muted-foreground">
               {CONFIDENCE_LABEL[t.confidence]}
             </Badge>
@@ -298,7 +303,9 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
 
         {t.verdict ? (
           <div className="border-l-2 border-primary/40 pl-3">
-            <p className="text-[11px] tracking-wide text-muted-foreground uppercase">Verdict</p>
+            <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
+              {t.verdictStatus === "PROVISIONAL" || t.verdictStatus === "AWAITING_FINAL" ? "Verdict so far" : "Verdict"}
+            </p>
             <p className="text-sm text-foreground/90 italic">{t.verdict}</p>
           </div>
         ) : null}

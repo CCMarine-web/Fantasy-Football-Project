@@ -45,7 +45,7 @@ export default async function ChampionshipBeltPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow="Who Wears the Crown"
         title="Championship Belt"
         description="The reigning champion, the length of their reign, and the full lineage of everyone who has held the title."

@@ -117,3 +117,21 @@ export function nextKickoff(
   }
   return null;
 }
+
+/**
+ * The Wednesday that opens week 1 of an NFL season: two days after Labor Day
+ * (the first Monday in September). Matches Sleeper's season_start_date for
+ * the seasons it reports (2025-09-03, 2026-09-09), and works for past seasons
+ * Sleeper's calendar no longer describes.
+ */
+export function nflSeasonStartDate(year: number): string {
+  const sept1 = new Date(Date.UTC(year, 8, 1));
+  const laborDay = 1 + ((8 - sept1.getUTCDay()) % 7);
+  const start = new Date(Date.UTC(year, 8, laborDay + 2));
+  return start.toISOString().slice(0, 10);
+}
+
+/** Early Tuesday (04:00 UTC) after `week`'s Monday night game — when that week's last result is in. */
+export function weekEndMs(seasonStartDate: string, week: number): number {
+  return utcMidnight(seasonStartDate) + (7 * (week - 1) + 6) * DAY_MS + 4 * 3_600_000;
+}

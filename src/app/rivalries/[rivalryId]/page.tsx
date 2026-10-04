@@ -96,7 +96,7 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow={r.isOfficial ? "Official rivalry" : "Head to head"}
         title={`${r.managerAName} vs ${r.managerBName}`}
         description={`${r.gamesPlayed} ${r.gamesPlayed === 1 ? "meeting" : "meetings"} on record, computed from verified results.`}

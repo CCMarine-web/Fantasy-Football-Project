@@ -53,7 +53,15 @@ const buildGameLog = buildManagerGameLog;
 
 export async function getHeadToHeadGameLog(managerId: string, opponentManagerId: string): Promise<GameResult[]> {
   const games = await buildManagerGameLog(managerId);
-  return games.filter((g) => g.opponentId === opponentManagerId);
+  // Consolation-bracket games are not counted anywhere a manager's record is
+  // quoted (the page says so). They were leaking into head-to-head, career
+  // points and highs/lows: 148 head-to-head games against 136 career games.
+  return games.filter((g) => g.opponentId === opponentManagerId && !isConsolation(g));
+}
+
+/** A postseason game in the consolation bracket — decides nothing. */
+export function isConsolation(g: { isPlayoff: boolean; bracket?: string | null }): boolean {
+  return g.isPlayoff && g.bracket === "CONSOLATION";
 }
 
 async function buildSeasonFinishes(managerId: string): Promise<SeasonFinish[]> {
@@ -321,7 +329,10 @@ export async function getManagerProfileDetailed(managerId: string) {
     scoresByWeek.set(key, list);
   }
 
-  const games = allGames.filter((r) => r.managerId === managerId).map(toGameResult);
+  // Consolation-bracket games are not counted anywhere a manager's record is
+  // quoted (the page says so). They were leaking into head-to-head, career
+  // points and highs/lows: 148 head-to-head games against 136 career games.
+  const games = allGames.filter((r) => r.managerId === managerId).map(toGameResult).filter((g) => !isConsolation(g));
   /*
    * Two summaries, deliberately. `regular` is the record the page quotes and
    * the one every other surface agrees with. `summary` spans every game played

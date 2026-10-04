@@ -231,3 +231,101 @@ Ordered within each tier by impact.
 - **No secrets reach the browser.**
 - **The private chat archive** (`ChatMessage`, imports, participants, receipts, knowledge) is read only by admin screens and offline scripts.
 - **Everything the review found is fixed above**, except the media-storage item (Should fix 13) and `server-only` hardening (Should fix 14).
+
+---
+
+# Phase 2: Data accuracy and freshness
+
+A full reconciliation, not a spot check. Every feature that shows a ranking, score, record or piece of history was recomputed independently from the raw stored games by two separate verification passes. Each number was compared with what the site's own code produces and, for Sleeper seasons, with Sleeper itself.
+
+## 1. Contamination from the old cron bug
+
+Before the Oct 4 fix, unplayed 2026 weeks 4-17 were stored as FINAL 0-0 games (Sep 8 - Oct 4).
+
+**Stored data.** I scanned every stored, derived table for rows written in that window.
+
+| Stored data | Written during the bug window? | Result |
+|---|---|---|
+| Power-ranking blurbs, trade verdicts (`AIBlurbCache`) | No (last written Jul 29) | Not contaminated. Power-ranking blurbs were *stale* preseason text and are now hidden (see 3). |
+| Manager profiles (`ManagerPerformanceSummary`) | No | Not contaminated, but written preseason: they quote pre-2026 career numbers (see "AI text to regenerate") |
+| Records (`LeagueRecord`) | Table unused (0 rows) | Records are computed live |
+| Rivalries (`Rivalry`, `RivalryMeeting`) | No | Stale instead: they stopped at 2025. Now recomputed weekly (see 3). |
+| Standings snapshots | No (none for 2026) | — |
+| Weekly awards | Yes: 33 awards for unplayed weeks 4-14 | Deleted. Awards now come only from FINAL games, and a week with none has its awards cleared. |
+| Draft grades, predictions, receipts, knowledge, punishments, championships | No | Not contaminated |
+| AI recaps (`AIContentGeneration`) | Yes: 16 recaps of fake week-17 0-0 games | Deleted (by you). Guards now refuse any recap of an unplayed game. |
+| Player-level scores (`Roster` / `WeeklyPlayerScore`) | Yes: rosters for unplayed weeks 4-17 | Cleared by the corrected sync; only final weeks keep player scores |
+
+**Live-computed features.** Records, Hall of Shame, streaks, all-play, luck, head-to-head and power rankings read the stored scores on every request. While the 0-0 games existed they *were* contaminated on the live site, for example a 0.00 "lowest score". They healed the moment the sync stopped storing scores for unplayed weeks; nothing they computed was ever saved. Verified now:
+- no record or Hall of Shame entry is held by a 0.00 score or an unplayed week;
+- the three zero scores in the database are unverified, abandoned-team scores and already excluded.
+
+## 2. Reconciliation: `npm run verify:data`
+
+New, reusable, read-only. It recomputes the key numbers from scratch and compares them with the source:
+
+- **Sleeper seasons (2023+).**
+  - Every team's stored W-L-T and points for/against are checked against Sleeper's roster totals, to the hundredth.
+  - The same totals are recomputed from the stored games, which catches a single bad game even when the totals look right.
+  - Every stored score of every final week is checked against Sleeper's matchups endpoint, along with whether the two sides were really opponents.
+- **ESPN seasons (2017-2022).** Totals recomputed from the stored games are checked against the season totals ESPN reported at import.
+- **Weekly.** The weekly cron runs it for the current season right after each sync (a new VERIFY step). A mismatch marks the run PARTIAL and writes the disagreement into the audit log; it does not stop the run.
+
+**Results (all ten seasons):**
+
+| Season | Source | Teams | Scores | Result |
+|---|---|---|---|---|
+| 2017-2022 | ESPN import | 58 | 812 | All reconcile |
+| 2023 | Sleeper | 10 | 170 | Reconciles |
+| 2024 | Sleeper | 10 | 170 | Reconciles. Two **source discrepancies**: Sleeper's season total for Sad Team's points-for (1458.98) and Robbery Part 8's points-against (1713.22) are each exactly 1.00 below the sum of Sleeper's *own* weekly scores. Every weekly score matches ours, so there is nothing on our side to correct. Reported, not counted as errors. |
+| 2025 | Sleeper | 10 | 170 | Reconciles |
+| 2026 | Sleeper | 10 | 30 | Reconciles |
+
+**Fixed during reconciliation:**
+- **Points for/against were truncated** for every Sleeper team (438 instead of 438.10). The sync read Sleeper's `fpts` and ignored `fpts_decimal`. This is the standings tiebreaker.
+- **Commissioner score overrides** (`custom_points`) were ignored. There are none in this league's history, but the official score is now honoured.
+
+## 3. Feature by feature
+
+| Feature | Checked | Result and fixes |
+|---|---|---|
+| **Power rankings** | All 10 teams, every factor, recomputed independently; #1 and #6 by hand | Arithmetic matched exactly. Four problems fixed: **(a)** Movement arrows never showed: last week's order was never computed. It is now derived from the same model without this week's games (week 3: Barkemeyer ↑2, Fuentes ↑1, Javier ↓3). **(b)** A factor identical for every team ("Recent form" through week 3) was kept at 12%, contrary to the method text. Flat factors are now dropped and the weights rescaled. **(c)** "Optimal lineup" ignored positions (it could start two QBs), understating lineup efficiency by up to 10 points. It now uses the best *legal* lineup, using the real starter slots now recorded by the sync and backfilled for 2023-2026. This moved Schwing to #3 and Cibilich to #6, as the hand check predicted. **(d)** Preseason blurbs contradicted the cards ("dead last… 18.3" on #3) and are hidden until rewritten. Rankings recalculate every week: derived on read, with the cache cleared by the cron. |
+| **Standings** | 2026, all teams: W-L-T, PF, PA, all-play, expected wins, luck | Matches (after the decimals fix). The in-season rank column now numbers 1-10. |
+| **Records** | Highest/lowest game, blowout, closest, streaks, season marks | Matched; none held by a 0.00 or unplayed score. Fixed: best and worst season record and most points in a season were won by three weeks of 2026 (3-0 / 0-3); only completed seasons count now. Tied streaks (9 wins: McManus & Fuentes; 10 losses: Javier & Barkemeyer) showed one holder chosen by row order and now name both. |
+| **Hall of Shame** | Every entry, last place in all 9 completed seasons | Fixed: "Worst season ever" was 2026's 0-3 and is now Javier's 1-13 (2024). 2026 was listed as a final last place and now isn't (completed seasons only). The bench record was inflated by position-agnostic "optimal" lineups (102.5) and is now 79.5 against a legal lineup. |
+| **Rivalries / head-to-head** | 3 pairs against a recount; profile H2H against career totals | Fixed: stored rivalry stats stopped at 2025. They are now recomputed by the weekly cron (the commissioner's workbook still decides which pairs are official, and the 5 official flags are preserved). **Consolation-bracket games** were counted in rivalries (51 meetings) and on the manager page's head-to-head, career points, and highs and lows, while both pages say they aren't. One rule site-wide now: not counted. |
+| **Manager careers and Luck** | 2 managers, every figure and all 5 Luck inputs | Matched. Fixed: best and worst season picked the 3-0 2026 start, and now completed seasons only. "Playoff berths" counted 2026: Sleeper's provisional bracket flagged all 10 teams as playoff teams at week 3. The sync now ignores the bracket until a postseason game is played, and those flags were cleared. Luck's "postseason draw" compared playoff opponents to their *career* average instead of that season's. |
+| **Weekly awards** | 2026 wk 1-3, 2019 wk 7, 2024 wk 14 recomputed | Boom, bust, luckiest and unluckiest matched. Bench Blunder used the position-agnostic optimum, and the winner differed in 19 of 45 Sleeper-era weeks. Recomputed for 2023-2026 with legal lineups. Backfilled 2017-2022. |
+| **Trade Tribunal** | All 13 trades from every season against the database; window logic | All present (2026 has none yet). **Hindsight counted points the old owner scored:** the trade's own week was credited to the receiver even when the player played that week for the sender (8 of 13 trades; one winner flipped, four bands changed). Now the trade week counts only when scored on the receiving roster. **Provisional verdicts** for the current season are built: labelled on the card, re-scored weekly, the verdict rewritten only when the hindsight winner flips, and finalised after the championship. Failed or vetoed trades are excluded. 5 old verdicts still matched the corrected ruling and quote no figures, so they stay. 8 are held back until rewritten. |
+| **Draft report cards** | All 10 seasons' composites recomputed | Stored scores and letters are current, and 2026 uses only pre-draft data. **Needs your call:** letters come from *rank* on a fixed curve, so a D is impossible in a 10-team league, 22.9 gets C- while 22.3 gets F, and three tied pairs got different letters. See "Your call" below. |
+| **Predictions** | Scoring logic | None submitted in any season, and 2026 shows a clean empty state. Fixed: "last place" was scored from the Toilet Bowl result, which disagrees with the site's last place in 6 of 9 seasons; it now uses the same regular-season rule. |
+| **Championship Belt** | Titles per manager, current champion, counter | Matched. The reign counter now starts the night of the title game (Mon Dec 29, 2025) instead of Jan 1. |
+| **Season summaries** | 2025 and 2019 champion, runner-up and standings; 5 numbers in the 2025 article | All match |
+| **Weekly pipeline** | End to end | Re-syncs keep recaps linked (matchup ids are stable). A full cron run takes about 25s, against Vercel's 300s limit. Nothing is generated for unplayed weeks (guarded at four storage points, with tests). |
+| **News** | — | The archive listed no 2026 weekly issues and now lists every final week. |
+
+**Stored vs live.** Everything stored is now refreshed after each sync:
+- weekly awards, rivalry statistics and current-season trade verdicts, by the cron;
+- standings, records, Hall of Shame, luck, head-to-head and power rankings, derived on read.
+
+Draft grades are written once (draft day) and revisited once (after the season), by design.
+
+## 4. "Updated through Week X"
+
+Every data page now carries a line such as "Updated through Week 3, 2026 · synced Oct 4, 5:41 PM CDT". It comes from what is actually stored: the latest week with final scores and the last successful sync. If the cron stops, the line visibly stops moving.
+
+## AI text to regenerate (in the new voice, once approved)
+
+Not rewritten in the old voice, as you asked:
+
+- **8 trade verdicts** held back: 2023 W3, 2024 W2 (Detillier ↔ Cibilich), 2024 W10, 2025 W3, W4, W8, W9, W10. Their ruling changed or they quote figures that moved.
+- **10 power-ranking blurbs:** preseason text, hidden.
+- **10 manager profiles and scouting reports:** written preseason; they quote pre-2026 career numbers (for example "62-64" where it is now 65-64) and a few old team names.
+- **Draft grade write-ups:** only if you change the grading curve (below).
+
+## Your call
+
+1. **Draft grading curve.** Letters are assigned by rank on a fixed curve, which makes a D impossible and separates near-identical scores by a full grade.
+   - **Recommended:** absolute thresholds on the 0-100 composite, with equal scores always sharing a letter.
+   - Changing it changes stored letters, so the write-ups should be regenerated at the same time, in the new voice.
+2. **Lineup slots.** The draft model and the trade model still assume one FLEX; 2026 starts two. Small effect; fix alongside 1.

@@ -1,3 +1,4 @@
+import { DataFreshness } from "@/components/shared/data-freshness";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -126,6 +127,7 @@ export default async function ManagerProfilePage({
           </p>
           <h1 className="font-heading text-3xl font-semibold break-words uppercase sm:text-4xl">{manager.displayName}</h1>
           {manager.nickname ? <p className="mt-1 text-sm text-primary">&ldquo;{manager.nickname}&rdquo;</p> : null}
+          <DataFreshness className="mt-2" />
           <div className="mt-3 flex flex-wrap gap-2">
             {stats.championships > 0 ? (
               <Badge className="bg-primary text-primary-foreground">{stats.championships}&times; Champion</Badge>

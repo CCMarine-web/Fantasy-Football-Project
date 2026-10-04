@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { nflSeasonStartDate, weekEndMs } from "@/lib/nfl-schedule";
 
 export interface PlayoffGameResult {
   week: number;
@@ -45,15 +46,15 @@ export interface LineageEntry {
 }
 
 /**
- * The reign-start date the "days as champion" counter counts up from. Titles
- * are decided in December, but the exact clinch date isn't stored, so we
- * anchor the reign to the start of the calendar year AFTER the title season
- * (`Jan 1, year+1` UTC). This is a deterministic, slightly-conservative choice
- * that reads naturally ("champion since the new year") and never lands before
- * the season actually ended.
+ * The reign-start the "days as champion" counter counts up from: the night the
+ * title game ended — Monday night of the championship week, on the NFL
+ * calendar for that season (server-side lib/nfl-schedule). It used to be
+ * Jan 1 of the following year, which ran two or three days short every year.
+ * Falls back to Jan 1 only when the title game's week is unknown.
  */
-function reignStartIso(seasonYear: number): string {
-  return new Date(Date.UTC(seasonYear + 1, 0, 1)).toISOString();
+function reignStartIso(seasonYear: number, championshipWeek: number | null): string {
+  if (championshipWeek == null) return new Date(Date.UTC(seasonYear + 1, 0, 1)).toISOString();
+  return new Date(weekEndMs(nflSeasonStartDate(seasonYear), championshipWeek)).toISOString();
 }
 
 /**
@@ -143,7 +144,7 @@ export async function getCurrentChampion(): Promise<CurrentChampion | null> {
   return {
     seasonId: champ.seasonId,
     year: champ.season.year,
-    championSince: reignStartIso(champ.season.year),
+    championSince: reignStartIso(champ.season.year, Math.max(0, ...playoffMatchups.map((m) => m.week)) || null),
     managerId: champ.championManager.id,
     managerName: champ.championManager.displayName,
     photoUrl: champ.championManager.photoUrl ?? champ.championManager.avatarUrl ?? null,

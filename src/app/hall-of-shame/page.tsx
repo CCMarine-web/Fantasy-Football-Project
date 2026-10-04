@@ -38,7 +38,7 @@ export default async function HallOfShamePage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow="The Wall of Woe"
         title="Hall of Shame"
         description="The inverse of the record books — the lows, the blowouts, the last-place finishes, and the punishments that followed."

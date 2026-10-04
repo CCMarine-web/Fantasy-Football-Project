@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { cached, CACHE_TAGS } from "@/server/cache";
-import { getBlurbs } from "@/server/ai/blurb-cache";
+import { getBlurbs, hashInputs } from "@/server/ai/blurb-cache";
 import {
   buildPositionContext,
   consolidationCredit,
@@ -61,6 +61,18 @@ export interface TradeTribunalView {
   missingInputs: string[];
   /** Persisted verdict, or null when none has been generated yet. */
   verdict: string | null;
+  /**
+   * True while the trade's season is still being played: the valuation is
+   * re-scored after every week's sync, so the ruling can still change.
+   */
+  provisional: boolean;
+  /**
+   * FINAL — a ruling for a finished season. PROVISIONAL — current-season, the
+   * verdict matches today's hindsight winner. AWAITING_FINAL — the season has
+   * ended but the verdict was written as provisional (the next refresh rewrites
+   * it). PENDING — no verdict matching the current winner yet.
+   */
+  verdictStatus: "FINAL" | "PROVISIONAL" | "AWAITING_FINAL" | "PENDING";
   /** Deterministic summary of the outcome — the input a verdict is written from. */
   hindsightSummary: string;
   notable: boolean;
@@ -100,15 +112,43 @@ interface AcquiredAsset {
  * and a percentile for every player involved. None of it depends on who is
  * asking, and none of it changes between syncs.
  */
-export const getTradeTribunal = cached(buildTradeTribunal, ["trade-tribunal"], {
+export const getTradeTribunal = cached(() => buildTradeTribunal(), ["trade-tribunal"], {
   tags: [CACHE_TAGS.league, CACHE_TAGS.content],
 });
 
-async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
+/**
+ * The uncached build. The weekly refresh writes verdicts BEFORE it invalidates
+ * the caches, so it must value trades from this week's numbers, not the
+ * cached copy from last week.
+ */
+export const computeTradeTribunal = (options?: { tradeWeekRule?: "owner" | "all" }) => buildTradeTribunal(options);
+
+/**
+ * What a verdict is keyed on: the hindsight winner and whether the season is
+ * over. A current-season trade is re-scored every week, but its verdict is
+ * rewritten only when the winner flips — a few points of movement is not news
+ * — and once more when the championship makes it final. Provisional keys
+ * carry a "prov:" prefix so the refresh can find verdicts still waiting to be
+ * finalised; verdicts written before this scheme have neither prefix.
+ */
+export function tradeVerdictKey(t: { winnerManagerId: string | null; provisional: boolean }): string {
+  const hash = hashInputs({ v: 1, winner: t.winnerManagerId ?? "none", final: !t.provisional });
+  return `${t.provisional ? "prov" : "final"}:${hash}`;
+}
+
+/**
+ * `tradeWeekRule`: "owner" (the rule) counts a traded player's trade-week
+ * points only if they were scored on the receiving roster; "all" reproduces
+ * the old window, and exists only so a one-off migration can tell which saved
+ * verdicts were written against numbers that have since changed.
+ */
+async function buildTradeTribunal(options: { tradeWeekRule?: "owner" | "all" } = {}): Promise<TradeTribunalView[]> {
+  const tradeWeekRule = options.tradeWeekRule ?? "owner";
   const trades = await prisma.transaction.findMany({
-    where: { type: "TRADE" },
+    // Completed trades only: a vetoed or failed trade moved nothing to judge.
+    where: { type: "TRADE", status: "COMPLETE" },
     include: {
-      season: { select: { id: true, year: true, playoffStartWeek: true, regularSeasonWeeks: true } },
+      season: { select: { id: true, year: true, status: true, playoffStartWeek: true, regularSeasonWeeks: true } },
       trade: { select: { isNotable: true, notes: true } },
       assets: {
         include: {
@@ -141,7 +181,7 @@ async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
       points: true,
       playerId: true,
       player: { select: { position: true } },
-      roster: { select: { week: true, fantasyTeam: { select: { seasonId: true } } } },
+      roster: { select: { week: true, fantasyTeamId: true, fantasyTeam: { select: { seasonId: true } } } },
     },
   });
 
@@ -155,6 +195,8 @@ async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
     position: string;
     week: number;
     points: number;
+    /** The fantasy team the player was rostered on that week. */
+    fantasyTeamId: string;
   }
   const bySeason = new Map<string, ScoreRow[]>();
   for (const row of scores) {
@@ -166,15 +208,15 @@ async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
       position: row.player.position,
       week: row.roster.week,
       points: row.points,
+      fantasyTeamId: row.roster.fantasyTeamId,
     });
     bySeason.set(seasonId, list);
   }
 
-  const cached = await getBlurbs(
+  const savedVerdicts = await getBlurbs(
     "TRADE_VERDICT",
     trades.map((t) => ({ subjectKey: t.id, inputHash: "" })),
   );
-  const verdictByTransaction = new Map([...cached].map(([k, v]) => [k, v.text]));
 
   const views: TradeTribunalView[] = trades.map((t) => {
     const seasonRows = bySeason.get(t.season.id) ?? [];
@@ -184,7 +226,24 @@ async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
     const weeksRemaining = Math.max(0, lastWeek - fromWeek + 1);
 
     // ── Post-trade window, per player, across the whole league ─────────────
-    const windowRows = seasonRows.filter((r) => r.week >= fromWeek);
+    /*
+     * The trade's own week is ambiguous: Sleeper files a trade under the week
+     * it was processed in, which can be before or after that week's games. A
+     * traded player's trade-week points count only if they were scored on the
+     * RECEIVING roster — crediting the receiver with points the old owner
+     * banked inflated 8 of 13 trades and flipped one winner (2024 W2).
+     * Everyone else's trade-week points stay in, as the replacement-level pool.
+     */
+    const receiverOf = new Map<string, string>();
+    for (const asset of t.assets) {
+      if (asset.direction === "ADD" && asset.player) receiverOf.set(asset.player.id, asset.fantasyTeamId);
+    }
+    const windowRows = seasonRows.filter((r) => {
+      if (r.week > fromWeek) return true;
+      if (r.week < fromWeek) return false;
+      const receiver = receiverOf.get(r.playerId);
+      return tradeWeekRule === "all" || receiver == null || receiver === r.fantasyTeamId;
+    });
     const perPlayer = new Map<string, { position: string; points: number; games: number; playoffPoints: number; playoffGames: number }>();
     for (const row of windowRows) {
       const cur =
@@ -337,11 +396,18 @@ async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
       hindsightSummary =
         gap < 1
           ? `the two hauls came out level, ${measuredAgainst}`
-          : `the two hauls finished within ${gap.toFixed(0)} points of each other, ${measuredAgainst}`;
+          : `the two hauls finished within ${gap.toFixed(1)} points of each other, ${measuredAgainst}`;
     } else {
       const loser = valuedSides.find((s) => s.managerId !== valuation.winnerManagerId);
-      hindsightSummary = `${winnerName} finished ${valuation.differential?.toFixed(0)} points ahead of ${loser?.managerName ?? "the other side"}, ${measuredAgainst}`;
+      hindsightSummary = `${winnerName} finished ${valuation.differential?.toFixed(1)} points ahead of ${loser?.managerName ?? "the other side"}, ${measuredAgainst}`;
     }
+
+    const provisional = t.season.status !== "COMPLETE";
+    const { verdict, verdictStatus } = resolveVerdict(
+      savedVerdicts.get(t.id),
+      valuation.winnerManagerId,
+      provisional,
+    );
 
     return {
       transactionId: t.id,
@@ -366,7 +432,9 @@ async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
       winnerName,
       confidence: valuation.confidence,
       missingInputs: valuation.missingInputs,
-      verdict: verdictByTransaction.get(t.id) ?? null,
+      verdict,
+      provisional,
+      verdictStatus,
       hindsightSummary,
       notable: t.trade?.isNotable ?? false,
       notes: t.trade?.notes ?? null,
@@ -409,6 +477,34 @@ async function buildTradeTribunal(): Promise<TradeTribunalView[]> {
     const bo = b.lopsidedness ? order[b.lopsidedness] : 5;
     return ao - bo || (b.differential ?? 0) - (a.differential ?? 0) || b.seasonYear - a.seasonYear;
   });
+}
+
+/**
+ * Which saved verdict, if any, still describes a trade (see tradeVerdictKey).
+ * Pure, so the rules are tested rather than trusted.
+ */
+export function resolveVerdict(
+  saved: { text: string; inputHash: string } | undefined,
+  winnerManagerId: string | null,
+  provisional: boolean,
+): { verdict: string | null; verdictStatus: TradeTribunalView["verdictStatus"] } {
+  if (!saved) return { verdict: null, verdictStatus: "PENDING" };
+  if (saved.inputHash === tradeVerdictKey({ winnerManagerId, provisional })) {
+    return { verdict: saved.text, verdictStatus: provisional ? "PROVISIONAL" : "FINAL" };
+  }
+  if (!provisional && saved.inputHash.startsWith("prov:")) {
+    // Season over: the provisional ruling stands until the refresh finalises it.
+    return { verdict: saved.text, verdictStatus: "AWAITING_FINAL" };
+  }
+  if (!provisional) {
+    // Written before verdicts were keyed on the winner, against a valuation
+    // that has since been corrected (trade-week points). Ones still accurate
+    // were re-keyed by migration; the rest are held back until rewritten.
+    return { verdict: null, verdictStatus: "PENDING" };
+  }
+  // Still provisional and the hindsight winner has flipped: showing it would
+  // name the wrong winner. The refresh writes a new one.
+  return { verdict: null, verdictStatus: "PENDING" };
 }
 
 /**

@@ -46,6 +46,8 @@ export interface CachedBlurb {
   text: string;
   /** True when the cached copy predates the current numbers. */
   stale: boolean;
+  /** The hash the copy was written under. */
+  inputHash: string;
 }
 
 /**
@@ -68,7 +70,7 @@ export async function getBlurbs(
   const wanted = new Map(subjects.map((s) => [s.subjectKey, s.inputHash]));
   const out = new Map<string, CachedBlurb>();
   for (const r of rows) {
-    out.set(r.subjectKey, { text: r.text, stale: wanted.get(r.subjectKey) !== r.inputHash });
+    out.set(r.subjectKey, { text: r.text, stale: wanted.get(r.subjectKey) !== r.inputHash, inputHash: r.inputHash });
   }
   return out;
 }

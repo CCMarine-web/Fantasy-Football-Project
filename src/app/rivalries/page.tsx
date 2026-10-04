@@ -161,7 +161,7 @@ export default async function RivalriesPage() {
   if (all.length === 0) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-        <PageHeader eyebrow="Bad Blood" title="Rivalries" />
+        <PageHeader freshness eyebrow="Bad Blood" title="Rivalries" />
         <div className="mt-8">
           <EmptyState
             icon={Swords}
@@ -175,7 +175,7 @@ export default async function RivalriesPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow="Bad Blood"
         title="Rivalries"
         description="The league's declared rivalries, plus the closest-fought pairings by the numbers. Every record is computed from verified matchup results."

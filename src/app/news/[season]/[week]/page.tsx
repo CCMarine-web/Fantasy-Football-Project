@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { DataFreshness } from "@/components/shared/data-freshness";
 import { getWeeklyRecap } from "@/server/repositories/news-repository";
 import { Flame, Snowflake, Sparkles, Trophy } from "lucide-react";
 
@@ -43,6 +44,7 @@ export default async function WeeklyRecapPage({
       <h1 className="mt-2 font-heading text-3xl font-semibold tracking-wide break-words uppercase sm:text-4xl">
         {data.articleTitle ?? `Week ${data.week} Recap`}
       </h1>
+      <DataFreshness className="mt-2" />
 
       {/* Weekly awards */}
       {data.awards.length > 0 ? (

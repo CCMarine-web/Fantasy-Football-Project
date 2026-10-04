@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { findLastPlace } from "@/server/stats/last-place";
 import { draftDateFor } from "@/lib/draft-date";
 import type { Prediction, Season } from "@/generated/prisma/client";
 
@@ -231,11 +232,17 @@ async function getActualResults(seasonId: string): Promise<ActualResults | null>
     where: { seasonId },
     select: {
       managerId: true,
+      teamName: true,
       wins: true,
       losses: true,
+      ties: true,
       pointsFor: true,
+      pointsAgainst: true,
+      regularSeasonRank: true,
       finalRank: true,
       isChampion: true,
+      manager: { select: { displayName: true } },
+      season: { select: { year: true } },
     },
   });
   if (teams.length === 0) return null;
@@ -261,7 +268,27 @@ async function getActualResults(seasonId: string): Promise<ActualResults | null>
   return {
     order,
     championManagerId,
-    lastManagerId: order.length > 0 ? order[order.length - 1] : null,
+    /*
+     * Last place is the regular-season finish — the same rule the Hall of
+     * Shame uses (server/stats/last-place.ts). The bottom of the final order
+     * is the Toilet Bowl result, which named a different "last place" in six
+     * of nine seasons.
+     */
+    lastManagerId:
+      findLastPlace(
+        teams[0].season.year,
+        teams.map((t) => ({
+          managerId: t.managerId,
+          managerName: t.manager.displayName,
+          teamName: t.teamName,
+          wins: t.wins,
+          losses: t.losses,
+          ties: t.ties,
+          pointsFor: t.pointsFor,
+          pointsAgainst: t.pointsAgainst,
+          regularSeasonRank: t.regularSeasonRank,
+        })),
+      )?.managerId ?? null,
     winsByManager,
     teamCount: teams.length,
   };

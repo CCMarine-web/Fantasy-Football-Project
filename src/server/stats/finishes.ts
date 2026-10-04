@@ -25,3 +25,22 @@ export function averageFinish(finishes: SeasonFinish[]): number {
 export function finishesBySeason(finishes: SeasonFinish[]): SeasonFinish[] {
   return [...finishes].sort((a, b) => a.season - b.season);
 }
+
+/**
+ * The record-holder(s) of the longest value in `entries`, with ties named
+ * together ("A & B") rather than decided by whichever row came first. The id
+ * is only set when one manager holds it alone (it is used for a profile link).
+ */
+export function sharedRecord(
+  entries: { id: string; name: string; len: number }[],
+): { id: string | null; name: string; len: number; shared: boolean } | null {
+  const best = Math.max(0, ...entries.map((e) => e.len));
+  if (best === 0) return null;
+  const holders = entries.filter((e) => e.len === best).sort((a, b) => a.name.localeCompare(b.name));
+  return {
+    id: holders.length === 1 ? holders[0].id : null,
+    name: holders.map((h) => h.name).join(" & "),
+    len: best,
+    shared: holders.length > 1,
+  };
+}

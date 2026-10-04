@@ -57,7 +57,7 @@ export default async function RecordsPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow="The Ledger"
         title="League Records"
         description="Every record on the books, computed live across all synced seasons."

@@ -151,6 +151,15 @@ function allWeeksFor(season: { regularSeasonWeeks: number; playoffStartWeek: num
   return [...new Set(weeks)];
 }
 
+/**
+ * Sleeper splits a season total into whole points and hundredths: 438.10 is
+ * `fpts: 438, fpts_decimal: 10`. Reading only `fpts` truncated every
+ * points-for and points-against, which is the standings tiebreaker.
+ */
+export function seasonPoints(whole: number | null | undefined, hundredths: number | null | undefined): number {
+  return Math.round(((whole ?? 0) + (hundredths ?? 0) / 100) * 100) / 100;
+}
+
 /** Looks up a player's real name/position/team from the full NFL catalog, falling back to placeholders if absent. */
 function resolvePlayerCreateData(
   catalog: SleeperPlayersMap,
@@ -221,8 +230,8 @@ async function coreSyncTeams(seasonId: string, sleeperLeagueId: string, provider
           wins: roster.settings.wins,
           losses: roster.settings.losses,
           ties: roster.settings.ties,
-          pointsFor: roster.settings.fpts,
-          pointsAgainst: roster.settings.fpts_against ?? 0,
+          pointsFor: seasonPoints(roster.settings.fpts, roster.settings.fpts_decimal),
+          pointsAgainst: seasonPoints(roster.settings.fpts_against, roster.settings.fpts_against_decimal),
         },
         create: {
           seasonId,
@@ -232,8 +241,8 @@ async function coreSyncTeams(seasonId: string, sleeperLeagueId: string, provider
           wins: roster.settings.wins,
           losses: roster.settings.losses,
           ties: roster.settings.ties,
-          pointsFor: roster.settings.fpts,
-          pointsAgainst: roster.settings.fpts_against ?? 0,
+          pointsFor: seasonPoints(roster.settings.fpts, roster.settings.fpts_decimal),
+          pointsAgainst: seasonPoints(roster.settings.fpts_against, roster.settings.fpts_against_decimal),
         },
       });
       count += 1;
@@ -313,8 +322,13 @@ async function coreSyncWeek(
       // those as scores put a season's worth of 0-0 "finals" into standings,
       // records and awards, so a score is only kept once the week is final.
       const final = status === "FINAL";
-      const scores = group.map((m) => m.points ?? 0);
+      // A commissioner override (custom_points) is the official score.
+      const official = (m: SleeperMatchup) => m.custom_points ?? m.points ?? 0;
+      const scores = group.map(official);
       const topScore = Math.max(...scores);
+      // An exact tie has no winner. "Equals the top score" was true for both
+      // sides, which would have recorded a tie as two wins.
+      const tied = scores.length > 1 && scores.every((x) => x === topScore);
       const sides: string[] = [];
       for (const m of group) {
         const fantasyTeamId = teamByRosterId.get(String(m.roster_id));
@@ -322,8 +336,8 @@ async function coreSyncWeek(
         sides.push(fantasyTeamId);
 
         const side = {
-          score: final ? m.points : null,
-          isWinner: final && group.length > 1 ? (m.points ?? 0) === topScore : null,
+          score: final ? official(m) : null,
+          isWinner: final && group.length > 1 && !tied ? official(m) === topScore : null,
           verifiedScore: preservedVerification.get(fantasyTeamId) ?? true,
         };
         await tx.matchupTeam.upsert({
@@ -353,7 +367,11 @@ async function coreSyncWeek(
   if (status !== "FINAL") {
     await clearWeekPlayerScores(week, [...teamByRosterId.values()]);
   } else if (playersCatalog) {
-    await syncWeekPlayerScores(seasonId, week, matchups, teamByRosterId, playersCatalog, rosterByFantasyTeam);
+    // Starters are listed in roster_positions order, so each starter's real
+    // slot (FLEX included) is recoverable — the legal-lineup maths needs it.
+    const league = await provider.getLeague(sleeperLeagueId);
+    const starterSlots = (league.roster_positions ?? []).filter((p) => !["BN", "IR", "TAXI"].includes(p));
+    await syncWeekPlayerScores(seasonId, week, matchups, teamByRosterId, playersCatalog, rosterByFantasyTeam, starterSlots);
   }
 
   return count;
@@ -474,7 +492,8 @@ async function syncWeekPlayerScores(
   matchups: SleeperMatchup[],
   teamByRosterId: Map<string, string>,
   catalog: SleeperPlayersMap,
-  rosterByFantasyTeam: Map<string, string>
+  rosterByFantasyTeam: Map<string, string>,
+  starterSlots: string[] = []
 ): Promise<void> {
   const withPlayers = matchups.filter((m) => m.players_points && Object.keys(m.players_points).length > 0);
   if (withPlayers.length === 0) return; // no player-level data this week — skip
@@ -509,16 +528,18 @@ async function syncWeekPlayerScores(
     const rosterId = randomUUID();
     rosterByFantasyTeam.set(fantasyTeamId, rosterId);
     rosterRows.push({ id: rosterId, fantasyTeamId, week, sleeperRosterId: String(m.roster_id) });
-    const starters = new Set(m.starters ?? []);
+    const starterOrder = m.starters ?? [];
+    const starters = new Set(starterOrder);
     for (const [sleeperPid, points] of Object.entries(m.players_points!)) {
       const playerId = playerIdMap.get(sleeperPid);
       if (!playerId) continue;
       const isStarter = starters.has(sleeperPid);
+      const slot = starterSlots[starterOrder.indexOf(sleeperPid)];
       scoreRows.push({
         id: randomUUID(),
         rosterId,
         playerId,
-        lineupSlot: isStarter ? (catalog[sleeperPid]?.position ?? "FLEX") : "BN",
+        lineupSlot: isStarter ? (slot ?? catalog[sleeperPid]?.position ?? "FLEX") : "BN",
         isStarter,
         points,
       });
@@ -760,6 +781,25 @@ async function coreSyncDraft(
  * e.g. still in progress).
  */
 async function coreSyncPlayoffResults(seasonId: string, sleeperLeagueId: string, provider: SleeperProvider): Promise<number> {
+  /*
+   * Sleeper publishes a provisional bracket long before the playoffs, listing
+   * every roster. Read as results, it flagged all ten 2026 teams as playoff
+   * teams three weeks into the season — which then counted as a "berth" on
+   * every manager's profile. Until a postseason game has been played (or the
+   * league is complete), there are no playoff results: clear any flags and stop.
+   */
+  const [league, postseasonPlayed] = await Promise.all([
+    provider.getLeague(sleeperLeagueId),
+    prisma.matchup.count({ where: { seasonId, isPlayoff: true, status: "FINAL", teams: { some: { score: { not: null } } } } }),
+  ]);
+  if (league.status !== "complete" && postseasonPlayed === 0) {
+    await prisma.fantasyTeam.updateMany({
+      where: { seasonId, OR: [{ madePlayoffs: true }, { isChampion: true }, { finalRank: { not: null } }] },
+      data: { madePlayoffs: false, isChampion: false, finalRank: null },
+    });
+    return 0;
+  }
+
   const bracket = await provider.getWinnersBracket(sleeperLeagueId);
   if (bracket.length === 0) return 0;
 

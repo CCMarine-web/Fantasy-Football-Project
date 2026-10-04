@@ -53,6 +53,24 @@ export async function getWeeklyRecap(year: number, week: number): Promise<Weekly
   return { seasonYear: year, week, awards, matchups: recapMatchups, articleTitle: article?.title ?? null };
 }
 
+/**
+ * This season's weekly issues: every week with final results. The archive
+ * listed only published Article rows (season retrospectives), so the weekly
+ * pages the site actually produces — results, recaps, awards — were reachable
+ * only from a link elsewhere.
+ */
+export async function listCurrentWeeklyIssues(): Promise<{ year: number; week: number }[]> {
+  const season = await prisma.season.findFirst({ where: { isCurrent: true }, select: { id: true, year: true } });
+  if (!season) return [];
+  const weeks = await prisma.matchup.findMany({
+    where: { seasonId: season.id, status: "FINAL", teams: { some: { score: { not: null } } } },
+    distinct: ["week"],
+    select: { week: true },
+    orderBy: { week: "desc" },
+  });
+  return weeks.map((w) => ({ year: season.year, week: w.week }));
+}
+
 export async function listPublishedArticles() {
   return prisma.article.findMany({
     where: { status: "PUBLISHED", deletedAt: null },

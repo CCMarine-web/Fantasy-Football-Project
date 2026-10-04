@@ -3,7 +3,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { listPublishedArticles } from "@/server/repositories/news-repository";
+import { listCurrentWeeklyIssues, listPublishedArticles } from "@/server/repositories/news-repository";
 import { MatchupsHubLink } from "@/components/shared/matchups-hub-link";
 import { Newspaper } from "lucide-react";
 import { BRAND } from "@/lib/branding";
@@ -21,16 +21,35 @@ const ARTICLE_LABEL: Record<string, string> = {
 };
 
 export default async function NewsPage() {
-  const articles = await listPublishedArticles();
+  const [articles, issues] = await Promise.all([listPublishedArticles(), listCurrentWeeklyIssues()]);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow={BRAND.name}
         title="News Archive"
         description="The weekly league newspaper — recaps, power rankings, awards, and everything in between."
       />
       <MatchupsHubLink what="news" />
+      {issues.length > 0 ? (
+        <section className="mt-8">
+          <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
+            {issues[0].year} weekly issues
+          </h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {issues.map((issue) => (
+              <Link key={issue.week} href={`/news/${issue.year}/${issue.week}`} className="block">
+                <Card className="transition-colors hover:border-primary/60">
+                  <CardContent className="flex items-center justify-between gap-3">
+                    <span className="font-heading text-lg font-semibold uppercase">Week {issue.week}</span>
+                    <span className="text-xs font-medium text-primary">Results, recaps &amp; awards →</span>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
       <div className="mt-8 space-y-4">
         {articles.length === 0 ? (
           <EmptyState icon={Newspaper} title="No issues published yet" />

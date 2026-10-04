@@ -23,7 +23,8 @@
     "db:reset": "prisma migrate reset",
     "sync:sleeper": "tsx scripts/sync-sleeper.ts",
     "generate:weekly": "tsx scripts/generate-weekly.ts",
-    "cron:trigger": "tsx scripts/cron-trigger.ts"
+    "cron:trigger": "tsx scripts/cron-trigger.ts",
+    "verify:data": "tsx scripts/verify-data.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

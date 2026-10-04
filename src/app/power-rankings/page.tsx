@@ -79,7 +79,7 @@ export default async function PowerRankingsPage() {
   if (!data || data.rows.length === 0) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-        <PageHeader eyebrow="The Rat Trap" title="Power Rankings" />
+        <PageHeader freshness eyebrow="The Rat Trap" title="Power Rankings" />
         <div className="mt-8">
           <EmptyState
             icon={TrendingUp}
@@ -118,7 +118,7 @@ export default async function PowerRankingsPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader eyebrow={`${data.seasonYear} Season`} title={title} description={description} />
+      <PageHeader freshness eyebrow={`${data.seasonYear} Season`} title={title} description={description} />
 
       {/* Which of the three states this is, stated prominently. */}
       <div className="mt-4 flex flex-wrap items-center gap-2">

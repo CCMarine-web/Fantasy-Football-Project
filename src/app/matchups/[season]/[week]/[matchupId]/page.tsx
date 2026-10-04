@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { DataFreshness } from "@/components/shared/data-freshness";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
 import {
@@ -204,6 +205,7 @@ export default async function MatchupDetailPage({
         {teamA.fantasyTeam.teamName} <span className="text-muted-foreground">vs</span>{" "}
         {teamB.fantasyTeam.teamName}
       </h1>
+      <DataFreshness className="mt-2" />
 
       <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
         {[teamA, teamB].map((t, i) => (

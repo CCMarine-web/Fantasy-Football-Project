@@ -18,14 +18,24 @@ The order is fixed, and it is the point of the job.
 
 1. **SYNC** — pull platform data from Sleeper: matchups, scores, rosters,
    player-level scoring, transactions, the draft, playoff results.
-2. **RECALC** — recompute the deterministic statistics that read that data.
-   Weekly awards are stored; standings, records, rivalry statistics, Luck
-   Scores and Power Rankings are derived on read from the synced scores and are
-   correct the moment the sync lands.
-3. **WRITE** — only now generate AI copy (weekly recaps and previews), so the
-   writer is working from data that has just been verified rather than from
-   whatever happened to be in the database.
-4. **PUBLISH** — invalidate the cached read paths (`src/server/cache.ts`) so the
+2. **VERIFY** — reconcile what was just synced against Sleeper
+   (`src/server/verify/data-verification.ts`, the same check as
+   `npm run verify:data`): every team's W-L-T and points for/against, those
+   totals recomputed from the stored games, and every stored score of a final
+   week against Sleeper's matchups endpoint. A mismatch fails this step — the
+   run is logged PARTIAL with the disagreement in the audit row — but does not
+   stop the job.
+3. **RECALC** — recompute what is stored: weekly awards, and rivalry
+   statistics (`src/server/stats/rivalry-recompute.ts`). Standings, records,
+   Luck Scores and Power Rankings are derived on read from the synced scores
+   and are correct the moment the sync lands.
+4. **WRITE** — only now generate AI copy, so the writer is working from data
+   that has just been verified rather than whatever happened to be in the
+   database: weekly recaps and previews, and current-season Trade Tribunal
+   verdicts. Those verdicts are provisional — the valuation is re-scored every
+   week — and are rewritten only when the hindsight winner flips, then once
+   more after the championship makes them final.
+5. **PUBLISH** — invalidate the cached read paths (`src/server/cache.ts`) so the
    next request serves the new numbers.
 
 Generating before syncing is the failure this ordering exists to prevent: a
@@ -116,4 +126,4 @@ These are deliberately manual, because they are expensive and rarely change:
 | Season retrospectives | `scripts/ai/generate-season-articles.ts` |
 | Manager profiles | `scripts/ai/regenerate-manager-profiles.ts` |
 | Draft grades | `scripts/ai/regenerate-draft-grades.ts` |
-| Rivalry statistics | `scripts/import/import-rivalries.ts` |
+| Official rivalry pairings (the commissioner's workbook) | `scripts/import/import-rivalries.ts` — the statistics themselves are recomputed by the weekly refresh |

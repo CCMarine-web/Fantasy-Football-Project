@@ -96,7 +96,7 @@ export default async function MatchupsPage({
   if (!hub) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <PageHeader eyebrow="The League" title="Matchups" />
+        <PageHeader freshness eyebrow="The League" title="Matchups" />
         <div className="mt-8">
           <EmptyState
             icon={CalendarDays}
@@ -116,7 +116,7 @@ export default async function MatchupsPage({
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow={`${hub.seasonYear} Season`}
         title="Matchups"
         description="Everything that matters this week — the featured game, every other matchup, standings, rankings, the wire and the news — on one page."
@@ -124,13 +124,11 @@ export default async function MatchupsPage({
 
       {/* ── Where the season actually is, and the week switcher ─────────── */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        {/* How current the data is — never the week picked in the selector. */}
+        {/* How current the data is lives in the header line above; this says
+            which week is on screen, which is not the same thing. */}
         <Badge className="bg-primary text-primary-foreground">
-          {inSeason && hub.phase.currentWeek != null ? `Updated through Week ${hub.phase.currentWeek}` : periodLabel}
+          {inSeason && hub.week != null ? `Viewing Week ${hub.week}` : periodLabel}
         </Badge>
-        {inSeason && hub.week != null && hub.week !== hub.phase.currentWeek ? (
-          <Badge variant="outline">Viewing Week {hub.week}</Badge>
-        ) : null}
         {!inSeason ? (
           <span className="text-sm text-muted-foreground">
             {hub.phase.phase === "PRESEASON"
@@ -145,12 +143,6 @@ export default async function MatchupsPage({
         week-4 numbers in week 6 gives the reader no way to tell, and every
         figure on it is wrong in the same direction.
       */}
-      <p className="mt-2 text-xs text-muted-foreground">
-        {hub.sync.lastSuccessAt
-          ? `Last successful data sync: ${formatSyncTime(hub.sync.lastSuccessAt)}.`
-          : "No automated data sync has completed yet."}
-      </p>
-
       {hub.sync.isStale ? (
         <p
           role="status"

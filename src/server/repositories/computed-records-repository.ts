@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { sharedRecord } from "@/server/stats/finishes";
 import { longestLosingStreak, longestWinningStreak } from "@/server/stats";
 import type { GameResult } from "@/server/stats/types";
 import { loadVerifiedGames } from "./verified-games";
@@ -106,7 +107,9 @@ async function buildComputedRecords(): Promise<RecordEntry[]> {
 
   // Season records: most points in a season, best / worst record.
   const teams = await prisma.fantasyTeam.findMany({
-    where: { OR: [{ wins: { gt: 0 } }, { losses: { gt: 0 } }, { pointsFor: { gt: 0 } }] },
+    // Only finished seasons: three weeks of an unfinished one (3-0, 0-3) were
+    // beating every complete 14-game season for best and worst record.
+    where: { season: { status: "COMPLETE" }, OR: [{ wins: { gt: 0 } }, { losses: { gt: 0 } }, { pointsFor: { gt: 0 } }] },
     include: { manager: { select: { id: true, displayName: true } }, season: { select: { year: true } } },
   });
   if (teams.length) {
@@ -129,16 +132,13 @@ async function buildComputedRecords(): Promise<RecordEntry[]> {
     e.games.push({ week: g.week, season: g.year, isPlayoff: g.isPlayoff, pointsFor: g.score, pointsAgainst: g.opponentScore, opponentId: g.opponentTeamId, result: g.isWinner === true ? "W" : g.isWinner === false ? "L" : "T" });
     logByManager.set(g.managerId, e);
   }
-  let bestWin = { id: "", name: "", len: 0 };
-  let bestLoss = { id: "", name: "", len: 0 };
-  for (const [id, e] of logByManager) {
-    const w = longestWinningStreak(e.games);
-    const l = longestLosingStreak(e.games);
-    if (w > bestWin.len) bestWin = { id, name: e.name, len: w };
-    if (l > bestLoss.len) bestLoss = { id, name: e.name, len: l };
-  }
-  if (bestWin.len) entries.push({ key: "win-streak", label: "Longest Win Streak", value: `${bestWin.len} games`, holderName: bestWin.name, holderManagerId: bestWin.id, detail: "all-time" });
-  if (bestLoss.len) entries.push({ key: "loss-streak", label: "Longest Losing Streak", value: `${bestLoss.len} games`, holderName: bestLoss.name, holderManagerId: bestLoss.id, detail: "all-time" });
+  // A record two managers share names both; it was picked by row order.
+  const winStreaks = [...logByManager].map(([id, e]) => ({ id, name: e.name, len: longestWinningStreak(e.games) }));
+  const lossStreaks = [...logByManager].map(([id, e]) => ({ id, name: e.name, len: longestLosingStreak(e.games) }));
+  const bestWin = sharedRecord(winStreaks);
+  const bestLoss = sharedRecord(lossStreaks);
+  if (bestWin) entries.push({ key: "win-streak", label: "Longest Win Streak", value: `${bestWin.len} games`, holderName: bestWin.name, holderManagerId: bestWin.id, detail: bestWin.shared ? "all-time · shared" : "all-time" });
+  if (bestLoss) entries.push({ key: "loss-streak", label: "Longest Losing Streak", value: `${bestLoss.len} games`, holderName: bestLoss.name, holderManagerId: bestLoss.id, detail: bestLoss.shared ? "all-time · shared" : "all-time" });
 
   // Championships + championship-game records + best low-seed run.
   const championships = await prisma.championship.findMany({

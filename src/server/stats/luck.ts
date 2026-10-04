@@ -215,6 +215,27 @@ function seasonAverages(league: LeagueWeekScore[]): Map<string, number> {
 }
 
 /**
+ * Regular-season points per game per manager PER SEASON, keyed
+ * "managerId|season". The postseason draw asks whether a playoff opponent
+ * played above THEIR SEASON's form — measuring against a career average
+ * (what the career score used to do) mixed in seasons that had nothing to do
+ * with the game and contradicted the label on the page.
+ */
+function seasonAveragesByYear(league: LeagueWeekScore[]): Map<string, number> {
+  const byKey = new Map<string, number[]>();
+  for (const row of league) {
+    if (row.isPlayoff) continue;
+    const key = `${row.managerId}|${row.season}`;
+    const list = byKey.get(key) ?? [];
+    list.push(row.points);
+    byKey.set(key, list);
+  }
+  const out = new Map<string, number>();
+  for (const [key, points] of byKey) out.set(key, mean(points));
+  return out;
+}
+
+/**
  * Computes one manager's Luck Score.
  *
  * `games` is that manager's game log; `league` is every team's weekly score
@@ -361,9 +382,10 @@ export function computeLuckScore(
   }
 
   // ── 5. Postseason draw ──────────────────────────────────────────────────
+  const byYear = seasonAveragesByYear(league);
   const titleGames = games.filter((g) => g.isPlayoff && g.bracket === "WINNERS");
   const withBaseline = titleGames
-    .map((g) => ({ actual: g.pointsAgainst, baseline: averages.get(g.opponentId) }))
+    .map((g) => ({ actual: g.pointsAgainst, baseline: byYear.get(`${g.opponentId}|${g.season}`) }))
     .filter((x): x is { actual: number; baseline: number } => x.baseline != null && x.baseline > 0);
   if (withBaseline.length >= MIN_POSTSEASON_GAMES) {
     const pct = mean(withBaseline.map((x) => (x.baseline - x.actual) / x.baseline));

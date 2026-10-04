@@ -32,7 +32,7 @@ export default async function HistoryPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow="The Archive"
         title="League History"
         description="Every season, every champion, every finals matchup since founding."

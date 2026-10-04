@@ -5,7 +5,11 @@ import { syncCurrentLeague } from "@/server/sleeper";
 import { CACHE_TAGS } from "@/server/cache";
 import { getSeasonPhase, type SeasonPhase } from "@/server/repositories/season-phase";
 import { computeWeeklyAwards } from "@/server/repositories/weekly-awards-repository";
+import { recomputeRivalryStats } from "@/server/stats/rivalry-recompute";
+import { summarizeVerification, verifySeasonData } from "@/server/verify/data-verification";
 import { generateWeeklyContent } from "@/server/ai/weekly-pipeline";
+import { refreshTradeVerdicts } from "@/server/ai/site-blurbs";
+import { computeTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
 
 /**
  * THE WEEKLY REFRESH
@@ -62,7 +66,7 @@ import { generateWeeklyContent } from "@/server/ai/weekly-pipeline";
  * environment is ever included in a logged message — see `safeError`.
  */
 
-export type RefreshStepKey = "SYNC" | "RECALC" | "WRITE" | "PUBLISH";
+export type RefreshStepKey = "SYNC" | "VERIFY" | "RECALC" | "WRITE" | "PUBLISH";
 
 export type RefreshStepStatus = "SUCCESS" | "FAILED" | "SKIPPED";
 
@@ -209,6 +213,27 @@ export async function runWeeklyRefresh(
 
   const phase = await getSeasonPhase(season.id, season.year);
 
+  // ── 1b. Reconcile what was just synced against Sleeper ───────────────────
+  /*
+   * Recomputes this season's team totals from the stored games and compares
+   * them, and every stored final score, with Sleeper (server/verify). A
+   * mismatch does not stop the run — the numbers on disk are still the best
+   * available — but it fails this step, so the run is logged PARTIAL with the
+   * disagreement in the audit row instead of passing silently.
+   */
+  if (options.skipSync || !isSleeperConfigured()) {
+    steps.push(skipped("VERIFY", "Reconcile with Sleeper", "No sync this run, so nothing new to reconcile."));
+  } else {
+    steps.push(
+      await runStep("VERIFY", "Reconcile with Sleeper", async () => {
+        const result = await verifySeasonData(season.id);
+        const summary = summarizeVerification([result]);
+        if (result.error || result.errors > 0) throw new Error(summary);
+        return summary;
+      }),
+    );
+  }
+
   // ── 2. Deterministic recalculation ───────────────────────────────────────
   if (phase.phase !== "IN_SEASON") {
     steps.push(
@@ -240,7 +265,10 @@ export async function runWeeklyRefresh(
           awards += n;
           if (n > 0) played += 1;
         }
-        return `Weekly awards recomputed for ${played} played week${played === 1 ? "" : "s"} (${awards} award rows). Standings, records, luck and power rankings are derived on read from the synced scores.`;
+        // Rivalry statistics are stored, not derived on read, so they are
+        // recomputed here — otherwise this season's meetings never reach them.
+        const pairs = await recomputeRivalryStats();
+        return `Weekly awards recomputed for ${played} played week${played === 1 ? "" : "s"} (${awards} award rows); ${pairs} rivalry pairs recomputed. Standings, records, luck and power rankings are derived on read from the synced scores.`;
       }),
     );
   }
@@ -268,7 +296,11 @@ export async function runWeeklyRefresh(
         // sync:false — step 1 already did it, and doing it twice in one run
         // doubles the Sleeper calls for no benefit.
         const result = await generateWeeklyContent({ sync: false });
-        return `${result.recapsGenerated} recap(s) and ${result.previewsGenerated} preview(s) written; ${result.skipped} already existed and were left alone.`;
+        // Current-season trades are re-scored every week (the valuation is
+        // derived on read); their verdict is rewritten only when the hindsight
+        // winner flips, and once more when the season is final.
+        const verdicts = await refreshTradeVerdicts(await computeTradeTribunal());
+        return `${result.recapsGenerated} recap(s) and ${result.previewsGenerated} preview(s) written; ${result.skipped} already existed and were left alone. Trade verdicts: ${verdicts.written} rewritten, ${verdicts.unchanged} unchanged.`;
       }),
     );
   }

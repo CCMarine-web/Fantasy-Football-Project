@@ -4,6 +4,7 @@ import { ManagerLink } from "@/components/shared/manager-link";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { DataFreshness } from "@/components/shared/data-freshness";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TeamPointsBarChart } from "@/components/charts/team-points-bar-chart";
 import { getSeasonArticle, getSeasonHistory } from "@/server/repositories/history-repository";
@@ -104,7 +105,8 @@ export default async function SeasonHistoryPage({
       <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
         {SEASON_STATUS_LABEL[season.status] ?? season.status}
       </p>
-      <h1 className="font-heading text-4xl font-semibold tracking-wide uppercase">{season.year} Season</h1>
+      <h1 className="font-heading text-3xl font-semibold tracking-wide uppercase sm:text-4xl">{season.year} Season</h1>
+      <DataFreshness className="mt-2" />
 
       {season.championship ? (
         <Card className="mt-6 border-gold/40 bg-gold/5">

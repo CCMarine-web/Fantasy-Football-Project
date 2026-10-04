@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { lineupOutcome } from "@/server/stats/optimal-lineup";
 import { WeeklyAwardType } from "@/generated/prisma/client";
 
 export interface WeeklyAwardView {
@@ -69,7 +70,7 @@ export async function computeWeeklyAwards(seasonId: string, week: number): Promi
   const teamIds = teams.map((t) => t.fantasyTeam.id);
   const rosters = await prisma.roster.findMany({
     where: { fantasyTeamId: { in: teamIds }, week },
-    include: { fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } }, playerScores: { select: { isStarter: true, points: true } } },
+    include: { fantasyTeam: { select: { managerId: true, manager: { select: { displayName: true } } } }, playerScores: { select: { isStarter: true, points: true, lineupSlot: true, player: { select: { position: true } } } } },
   });
   let worstBench: { managerId: string; value: number } | null = null;
   for (const r of rosters) {
@@ -79,11 +80,9 @@ export async function computeWeeklyAwards(seasonId: string, week: number): Promi
     // invent a record-breaking blunder out of missing data.
     const scored = r.playerScores.filter((p): p is typeof p & { points: number } => p.points != null);
     if (scored.length !== r.playerScores.length) continue;
-    const starters = scored.filter((p) => p.isStarter);
-    const n = starters.length || 9;
-    const actual = starters.reduce((a, p) => a + p.points, 0);
-    const optimal = [...scored].sort((a, b) => b.points - a.points).slice(0, n).reduce((a, p) => a + p.points, 0);
-    const left = optimal - actual;
+    // Against the best LEGAL lineup, not the top N scorers regardless of position.
+    const { starterPoints, optimalPoints } = lineupOutcome(scored.map((p) => ({ isStarter: p.isStarter, points: p.points, lineupSlot: p.lineupSlot, position: p.player.position })));
+    const left = optimalPoints - starterPoints;
     if (!worstBench || left > worstBench.value) worstBench = { managerId: r.fantasyTeam.managerId, value: left };
   }
   if (worstBench && worstBench.value > 0.5) {

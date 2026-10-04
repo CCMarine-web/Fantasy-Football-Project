@@ -105,7 +105,7 @@ export default async function DraftReportCardsPage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader
+      <PageHeader freshness
         eyebrow="On the Clock"
         title="Draft Report Cards"
         description="A grade for every draft, judged on the decisions made in the room — not on how the season happened to end."

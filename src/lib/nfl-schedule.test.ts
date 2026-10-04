@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveWeekStatus, nextKickoff, weekFinalMs, weekKickoffMs } from "./nfl-schedule";
+import { deriveWeekStatus, nextKickoff, nflSeasonStartDate, weekEndMs, weekFinalMs, weekKickoffMs } from "./nfl-schedule";
 
 // Sleeper's /state/nfl season_start_date for 2026: Wednesday, September 9.
 const START = "2026-09-09";
@@ -67,5 +67,17 @@ describe("nextKickoff", () => {
 
   it("returns null once the last week has kicked off", () => {
     expect(nextKickoff(START, Date.parse("2027-01-20T00:00:00Z"), 17)).toBeNull();
+  });
+});
+
+describe("nflSeasonStartDate", () => {
+  it("is the Wednesday after Labor Day, matching Sleeper", () => {
+    expect(nflSeasonStartDate(2026)).toBe("2026-09-09");
+    expect(nflSeasonStartDate(2025)).toBe("2025-09-03");
+    expect(nflSeasonStartDate(2021)).toBe("2021-09-08");
+  });
+
+  it("puts the 2025 week-17 title game's end on the night of Monday, Dec 29", () => {
+    expect(new Date(weekEndMs(nflSeasonStartDate(2025), 17)).toISOString()).toBe("2025-12-30T04:00:00.000Z");
   });
 });
