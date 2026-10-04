@@ -12,6 +12,7 @@ import type {
   SleeperTradedPick,
   SleeperBracketMatchup,
   SleeperPlayersMap,
+  SleeperNflState,
 } from "./types";
 
 /**
@@ -35,6 +36,7 @@ export interface SleeperProvider {
   getDraftPicks(draftId: string): Promise<SleeperDraftPick[]>;
   getAllPlayers(): Promise<SleeperPlayersMap>;
   getLeagueHistoryChain(leagueId: string): Promise<string[]>;
+  getNflState(): Promise<SleeperNflState>;
 }
 
 let cachedProvider: SleeperProvider | undefined;

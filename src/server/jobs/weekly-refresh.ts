@@ -223,17 +223,24 @@ export async function runWeeklyRefresh(
   } else {
     steps.push(
       await runStep("RECALC", "Recalculate statistics", async () => {
-        // Awards for every week with scores. Upserted, so re-running a week
-        // corrects it rather than adding a second set.
+        // Every regular-season week, played or not: a played week's awards are
+        // upserted (so a re-run corrects rather than duplicates) and an
+        // unplayed week's are cleared, so nothing computed from a
+        // since-withdrawn score survives a re-run.
         const weeks = await prisma.matchup.findMany({
-          where: { seasonId: season.id, isPlayoff: false, teams: { some: { score: { not: null } } } },
+          where: { seasonId: season.id, isPlayoff: false },
           distinct: ["week"],
           select: { week: true },
           orderBy: { week: "asc" },
         });
         let awards = 0;
-        for (const w of weeks) awards += await computeWeeklyAwards(season.id, w.week);
-        return `Weekly awards recomputed for ${weeks.length} week${weeks.length === 1 ? "" : "s"} (${awards} award rows). Standings, records, luck and power rankings are derived on read from the synced scores.`;
+        let played = 0;
+        for (const w of weeks) {
+          const n = await computeWeeklyAwards(season.id, w.week);
+          awards += n;
+          if (n > 0) played += 1;
+        }
+        return `Weekly awards recomputed for ${played} played week${played === 1 ? "" : "s"} (${awards} award rows). Standings, records, luck and power rankings are derived on read from the synced scores.`;
       }),
     );
   }

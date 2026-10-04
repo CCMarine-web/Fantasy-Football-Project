@@ -22,6 +22,7 @@ import { BRAND } from "@/lib/branding";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
 import { DraftCountdown } from "@/components/home/draft-countdown";
 import { initialRemaining } from "@/lib/countdown";
+import { nextKickoff } from "@/lib/nfl-schedule";
 import { OffseasonPanel } from "@/components/home/offseason-panel";
 import { getSeasonPhase } from "@/server/repositories/season-phase";
 import { getOffseasonData } from "@/server/repositories/offseason-repository";
@@ -68,6 +69,24 @@ export default async function HomePage() {
     );
   }
 
+  // Before the draft, count down to it. After it, count down to the next
+  // week's Thursday-night kickoff; once the last week has kicked off, nothing.
+  const nextWeek = phase
+    ? nextKickoff(LEAGUE_CONFIG.nflSeasonStartDate, phase.nowMs, data.season.playoffStartWeek + 2)
+    : null;
+  const countdown = !LEAGUE_CONFIG.showDraftCountdown
+    ? null
+    : phase?.phase === "PRESEASON" && !phase.draftDatePassed
+      ? { isoDate: LEAGUE_CONFIG.draftDate, heading: "Countdown to Draft", passedHeading: "Draft is here", passedMessage: "It's draft time — good luck." }
+      : nextWeek
+        ? {
+            isoDate: new Date(nextWeek.kickoffMs).toISOString(),
+            heading: `Countdown to Week ${nextWeek.week} Kickoff`,
+            passedHeading: `Week ${nextWeek.week} is live`,
+            passedMessage: "Games are under way.",
+          }
+        : null;
+
   const {
     season,
     currentWeek,
@@ -99,12 +118,15 @@ export default async function HomePage() {
             roast.
           </p>
         </div>
-        {LEAGUE_CONFIG.showDraftCountdown ? (
+        {countdown ? (
           <div className="w-full shrink-0 lg:max-w-xs">
             <DraftCountdown
-              isoDate={LEAGUE_CONFIG.draftDate}
+              isoDate={countdown.isoDate}
               timeZone={LEAGUE_CONFIG.draftTimeZone}
-              initial={phase ? initialRemaining(LEAGUE_CONFIG.draftDate, phase.nowMs) : null}
+              initial={phase ? initialRemaining(countdown.isoDate, phase.nowMs) : null}
+              heading={countdown.heading}
+              passedHeading={countdown.passedHeading}
+              passedMessage={countdown.passedMessage}
             />
           </div>
         ) : null}

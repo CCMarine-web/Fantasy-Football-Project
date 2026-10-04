@@ -10,6 +10,7 @@ import type {
   SleeperTradedPick,
   SleeperBracketMatchup,
   SleeperPlayersMap,
+  SleeperNflState,
 } from "./types";
 
 /**
@@ -225,6 +226,11 @@ export class MockSleeperProvider implements SleeperProvider {
 
   async getAllPlayers(): Promise<SleeperPlayersMap> {
     return this.players;
+  }
+
+  async getNflState(): Promise<SleeperNflState> {
+    // Matches the mock league: 2025, week 3 under way, no calendar anchor.
+    return { week: 3, leg: 3, season: "2025", season_type: "regular", season_start_date: null };
   }
 
   async getLeagueHistoryChain(leagueId: string): Promise<string[]> {

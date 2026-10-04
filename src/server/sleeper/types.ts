@@ -29,6 +29,20 @@ export interface SleeperUserMetadata {
 }
 
 // ---------------------------------------------------------------------------
+// NFL state
+// ---------------------------------------------------------------------------
+
+/** GET /state/nfl — where the NFL calendar is right now. */
+export interface SleeperNflState {
+  week: number;
+  leg: number;
+  season: string;
+  season_type: string;
+  /** `YYYY-MM-DD`, the Wednesday that opens week 1. */
+  season_start_date?: string | null;
+}
+
+// ---------------------------------------------------------------------------
 // League
 // ---------------------------------------------------------------------------
 
@@ -39,6 +53,8 @@ export interface SleeperLeagueSettings {
   playoff_teams?: number | null;
   playoff_week_start?: number | null;
   leg?: number | null;
+  /** The last week Sleeper has finished scoring. */
+  last_scored_leg?: number | null;
   [key: string]: unknown;
 }
 

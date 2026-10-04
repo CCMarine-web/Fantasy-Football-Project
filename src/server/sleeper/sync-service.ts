@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/db";
 import { deriveFinalPlacements } from "./final-placements";
 import { getEnv } from "@/lib/env";
+import { deriveWeekStatus, type WeekStatus } from "@/lib/nfl-schedule";
 import {
   SyncType,
   SyncStatus,
@@ -248,7 +249,8 @@ async function coreSyncWeek(
   week: number,
   provider: SleeperProvider,
   isPlayoff = false,
-  playersCatalog?: SleeperPlayersMap
+  playersCatalog?: SleeperPlayersMap,
+  status: WeekStatus = "FINAL"
 ): Promise<number> {
   const [matchups, teams] = await Promise.all([
     provider.getMatchups(sleeperLeagueId, week),
@@ -273,7 +275,7 @@ async function coreSyncWeek(
   /*
    * `verifiedScore` is a human judgement, not synced data: it marks a score
    * that is on record but is not the result of a real contest (an abandoned
-   * team, an unplayed week). This function replaces the week wholesale, which
+   * team, an unplayed week). Re-writing the week from Sleeper's data used to
    * silently reset every such flag back to true — so the weekly cron would
    * quietly re-admit an abandoned team's zeros to the record books a week after
    * an admin excluded them. The flags are read first and reapplied below.
@@ -285,44 +287,60 @@ async function coreSyncWeek(
   });
   for (const t of priorTeams) preservedVerification.set(t.fantasyTeamId, false);
 
+  /*
+   * Matchups are updated in place, keyed on Sleeper's matchup id, rather than
+   * deleted and recreated. Generated previews and recaps are linked to a
+   * Matchup by its id, so recreating the week every Tuesday orphaned every
+   * piece of writing about it — and made the pipeline write it all again.
+   */
   await prisma.$transaction(async (tx) => {
-    const existing = await tx.matchup.findMany({ where: { seasonId, week }, select: { id: true } });
-    if (existing.length > 0) {
-      const existingIds = existing.map((m) => m.id);
-      await tx.matchupTeam.deleteMany({ where: { matchupId: { in: existingIds } } });
-      await tx.matchup.deleteMany({ where: { id: { in: existingIds } } });
-    }
+    const existing = await tx.matchup.findMany({ where: { seasonId, week }, select: { id: true, sleeperMatchupId: true } });
+    const existingBySleeperId = new Map(
+      existing.filter((m) => m.sleeperMatchupId != null).map((m) => [m.sleeperMatchupId as string, m.id]),
+    );
+    const kept = new Set<string>();
 
     for (const [matchupKey, group] of groups) {
-      const matchup = await tx.matchup.create({
-        data: {
-          seasonId,
-          week,
-          sleeperMatchupId: matchupKey >= 0 ? String(matchupKey) : null,
-          isPlayoff,
-          // TODO: derive SCHEDULED / IN_PROGRESS / FINAL from the league's
-          // current week/status instead of assuming every synced week is final.
-          status: "FINAL",
-        },
-      });
+      const sleeperMatchupId = matchupKey >= 0 ? String(matchupKey) : null;
+      const priorId = sleeperMatchupId ? existingBySleeperId.get(sleeperMatchupId) : undefined;
+      const matchup = priorId
+        ? await tx.matchup.update({ where: { id: priorId }, data: { isPlayoff, status } })
+        : await tx.matchup.create({ data: { seasonId, week, sleeperMatchupId, isPlayoff, status } });
+      kept.add(matchup.id);
 
+      // Sleeper reports 0 points for every week not yet played. Recording
+      // those as scores put a season's worth of 0-0 "finals" into standings,
+      // records and awards, so a score is only kept once the week is final.
+      const final = status === "FINAL";
       const scores = group.map((m) => m.points ?? 0);
       const topScore = Math.max(...scores);
+      const sides: string[] = [];
       for (const m of group) {
         const fantasyTeamId = teamByRosterId.get(String(m.roster_id));
         if (!fantasyTeamId) continue; // roster not yet synced — run coreSyncTeams first
+        sides.push(fantasyTeamId);
 
-        await tx.matchupTeam.create({
-          data: {
-            matchupId: matchup.id,
-            fantasyTeamId,
-            score: m.points,
-            isWinner: group.length > 1 ? (m.points ?? 0) === topScore : null,
-            verifiedScore: preservedVerification.get(fantasyTeamId) ?? true,
-          },
+        const side = {
+          score: final ? m.points : null,
+          isWinner: final && group.length > 1 ? (m.points ?? 0) === topScore : null,
+          verifiedScore: preservedVerification.get(fantasyTeamId) ?? true,
+        };
+        await tx.matchupTeam.upsert({
+          where: { matchupId_fantasyTeamId: { matchupId: matchup.id, fantasyTeamId } },
+          update: side,
+          create: { matchupId: matchup.id, fantasyTeamId, ...side },
         });
         count += 1;
       }
+      await tx.matchupTeam.deleteMany({ where: { matchupId: matchup.id, fantasyTeamId: { notIn: sides } } });
+    }
+
+    // Matchups Sleeper no longer reports for this week.
+    const stale = existing.map((m) => m.id).filter((id) => !kept.has(id));
+    if (stale.length > 0) {
+      await tx.playoffBracket.updateMany({ where: { matchupId: { in: stale } }, data: { matchupId: null } });
+      await tx.matchupTeam.deleteMany({ where: { matchupId: { in: stale } } });
+      await tx.matchup.deleteMany({ where: { id: { in: stale } } });
     }
   }, { timeout: 30_000 });
 
@@ -331,11 +349,118 @@ async function coreSyncWeek(
   // store them so bench-points, boom/bust, and trade-hindsight features work.
   // Done outside the matchup transaction, batched, and skipped gracefully when
   // a week has no player data.
-  if (playersCatalog) {
+  if (status !== "FINAL") {
+    await clearWeekPlayerScores(week, [...teamByRosterId.values()]);
+  } else if (playersCatalog) {
     await syncWeekPlayerScores(seasonId, week, matchups, teamByRosterId, playersCatalog, rosterByFantasyTeam);
   }
 
   return count;
+}
+
+type PlayerCreateData = { firstName: string; lastName: string; position: string; nflTeam: string | null };
+
+/**
+ * sleeperPlayerId -> FantasyPlayer.id for every id given, creating any that do
+ * not exist yet in one batch. Three queries however many players, where the
+ * per-player upsert it replaces cost a round trip each — thousands per weekly
+ * sync, which is what pushed the cron to the edge of its time limit.
+ * Existing players are never modified, matching the old `update: {}`.
+ */
+async function ensurePlayers(
+  catalog: SleeperPlayersMap,
+  sleeperIds: Iterable<string>,
+  createData: (sleeperId: string) => PlayerCreateData = (id) => resolvePlayerCreateData(catalog, id)
+): Promise<Map<string, string>> {
+  const wanted = [...new Set(sleeperIds)];
+  const byId = new Map<string, string>();
+  if (wanted.length === 0) return byId;
+  const lookup = async (ids: string[]) => {
+    const rows = await prisma.fantasyPlayer.findMany({
+      where: { sleeperPlayerId: { in: ids } },
+      select: { id: true, sleeperPlayerId: true },
+    });
+    for (const r of rows) if (r.sleeperPlayerId) byId.set(r.sleeperPlayerId, r.id);
+  };
+  await lookup(wanted);
+  const missing = wanted.filter((id) => !byId.has(id));
+  if (missing.length > 0) {
+    await prisma.fantasyPlayer.createMany({
+      data: missing.map((id) => ({ sleeperPlayerId: id, ...createData(id) })),
+      skipDuplicates: true,
+    });
+    await lookup(missing);
+  }
+  return byId;
+}
+
+/** Removes a week's Roster + WeeklyPlayerScore rows — an unfinished week has no player scores to keep. */
+async function clearWeekPlayerScores(week: number, fantasyTeamIds: string[]): Promise<void> {
+  const rosters = await prisma.roster.findMany({
+    where: { fantasyTeamId: { in: fantasyTeamIds }, week },
+    select: { id: true },
+  });
+  if (rosters.length === 0) return;
+  const ids = rosters.map((r) => r.id);
+  await prisma.weeklyPlayerScore.deleteMany({ where: { rosterId: { in: ids } } });
+  await prisma.roster.deleteMany({ where: { id: { in: ids } } });
+}
+
+/**
+ * How far along each week of a Sleeper league is, from the league's own
+ * status and scored-week marker plus Sleeper's NFL calendar. The calendar is
+ * only trusted when it is for the same season as the league — a historical
+ * league is judged on its own status alone.
+ */
+async function resolveWeekStatuses(
+  sleeperLeagueId: string,
+  provider: SleeperProvider
+): Promise<(week: number) => WeekStatus> {
+  const [league, state] = await Promise.all([
+    provider.getLeague(sleeperLeagueId),
+    provider.getNflState().catch(() => null),
+  ]);
+  const sameSeason = state != null && state.season === league.season;
+  const nowMs = Date.now();
+  return (week) =>
+    deriveWeekStatus({
+      week,
+      nowMs,
+      leagueComplete: league.status === "complete",
+      lastScoredLeg: league.settings.last_scored_leg ?? null,
+      seasonStartDate: sameSeason ? (state.season_start_date ?? null) : null,
+      currentLeg: sameSeason && state.season_type === "regular" ? state.leg : null,
+    });
+}
+
+/**
+ * The weeks a routine sync of the current season has to touch. A week settled
+ * more than a week ago (stat corrections land within a week) and a scheduled
+ * week more than two weeks out are already on record exactly as Sleeper has
+ * them; re-writing all seventeen every Tuesday is most of what made the sync
+ * take four minutes. A week not yet on record, or whose status has moved, is
+ * always synced. `syncSeason` still does every week, for a full rebuild.
+ */
+async function weeksNeedingSync(
+  seasonId: string,
+  weeks: number[],
+  statusOf: (week: number) => WeekStatus
+): Promise<number[]> {
+  const stored = new Map(
+    (
+      await prisma.matchup.findMany({ where: { seasonId }, distinct: ["week"], select: { week: true, status: true } })
+    ).map((m) => [m.week, m.status])
+  );
+  const finals = weeks.filter((w) => statusOf(w) === "FINAL");
+  const latestFinal = finals.length > 0 ? Math.max(...finals) : 0;
+  const nextUnplayed = weeks.find((w) => statusOf(w) !== "FINAL") ?? Number.POSITIVE_INFINITY;
+  return weeks.filter((week) => {
+    const status = statusOf(week);
+    if (stored.get(week) !== status) return true;
+    if (status === "FINAL") return week >= latestFinal - 1;
+    if (status === "SCHEDULED") return week <= nextUnplayed + 2;
+    return true;
+  });
 }
 
 /** Persists Roster + WeeklyPlayerScore rows for one week from Sleeper's per-player matchup points. */
@@ -354,19 +479,12 @@ async function syncWeekPlayerScores(
     .map((m) => teamByRosterId.get(String(m.roster_id)))
     .filter((x): x is string => Boolean(x));
 
-  // Ensure every referenced player exists (upsert from the catalog).
-  const allPlayerIds = new Set<string>();
-  for (const m of withPlayers) for (const pid of Object.keys(m.players_points!)) allPlayerIds.add(pid);
-  const playerIdMap = new Map<string, string>(); // sleeperPlayerId -> FantasyPlayer.id
-  for (const sleeperPid of allPlayerIds) {
-    const data = resolvePlayerCreateData(catalog, sleeperPid);
-    const player = await prisma.fantasyPlayer.upsert({
-      where: { sleeperPlayerId: sleeperPid },
-      update: {},
-      create: { sleeperPlayerId: sleeperPid, ...data },
-    });
-    playerIdMap.set(sleeperPid, player.id);
-  }
+  // Ensure every referenced player exists (created from the catalog).
+  // sleeperPlayerId -> FantasyPlayer.id
+  const playerIdMap = await ensurePlayers(
+    catalog,
+    withPlayers.flatMap((m) => Object.keys(m.players_points!))
+  );
 
   // Replace this week's rosters+scores for these teams.
   const existingRosters = await prisma.roster.findMany({
@@ -425,9 +543,28 @@ async function coreSyncTransactions(
   });
   const teamByRosterId = new Map(teams.filter((t) => t.sleeperRosterId).map((t) => [t.sleeperRosterId as string, t]));
 
+  // A completed or failed transaction never changes again, so one already on
+  // record in that state is left alone rather than rewritten every week.
+  const known = new Map(
+    (
+      await prisma.transaction.findMany({
+        where: { seasonId, sleeperTransactionId: { not: null } },
+        select: { sleeperTransactionId: true, status: true },
+      })
+    ).map((t) => [t.sleeperTransactionId as string, t.status])
+  );
+
   let count = 0;
   for (const week of weeks) {
-    const weekTransactions = await provider.getTransactions(sleeperLeagueId, week);
+    const weekTransactions = (await provider.getTransactions(sleeperLeagueId, week)).filter((txn) => {
+      const prior = known.get(txn.transaction_id);
+      const status = mapTransactionStatus(txn.status);
+      return !(prior === status && status !== TransactionStatus.PENDING);
+    });
+    const playerIds = await ensurePlayers(
+      playersCatalog,
+      weekTransactions.flatMap((txn) => [...Object.keys(txn.adds ?? {}), ...Object.keys(txn.drops ?? {})])
+    );
 
     for (const txn of weekTransactions) {
       await prisma.$transaction(async (tx) => {
@@ -455,12 +592,8 @@ async function coreSyncTransactions(
         // Sleeper's adds/drops maps are keyed by player_id -> roster_id.
         for (const [playerSleeperId, rosterId] of Object.entries(txn.adds ?? {})) {
           const team = teamByRosterId.get(String(rosterId));
-          if (!team) continue;
-          const player = await tx.fantasyPlayer.upsert({
-            where: { sleeperPlayerId: playerSleeperId },
-            update: {},
-            create: { sleeperPlayerId: playerSleeperId, ...resolvePlayerCreateData(playersCatalog, playerSleeperId) },
-          });
+          const playerId = playerIds.get(playerSleeperId);
+          if (!team || !playerId) continue;
           await tx.transactionAsset.create({
             data: {
               transactionId: transactionRow.id,
@@ -468,7 +601,7 @@ async function coreSyncTransactions(
               managerId: team.managerId,
               direction: "ADD",
               assetType: "PLAYER",
-              playerId: player.id,
+              playerId,
             },
           });
           count += 1;
@@ -476,12 +609,8 @@ async function coreSyncTransactions(
 
         for (const [playerSleeperId, rosterId] of Object.entries(txn.drops ?? {})) {
           const team = teamByRosterId.get(String(rosterId));
-          if (!team) continue;
-          const player = await tx.fantasyPlayer.upsert({
-            where: { sleeperPlayerId: playerSleeperId },
-            update: {},
-            create: { sleeperPlayerId: playerSleeperId, ...resolvePlayerCreateData(playersCatalog, playerSleeperId) },
-          });
+          const playerId = playerIds.get(playerSleeperId);
+          if (!team || !playerId) continue;
           await tx.transactionAsset.create({
             data: {
               transactionId: transactionRow.id,
@@ -489,7 +618,7 @@ async function coreSyncTransactions(
               managerId: team.managerId,
               direction: "DROP",
               assetType: "PLAYER",
-              playerId: player.id,
+              playerId,
             },
           });
           count += 1;
@@ -534,6 +663,33 @@ async function coreSyncDraft(
   });
   const teamByRosterId = new Map(teams.filter((t) => t.sleeperRosterId).map((t) => [t.sleeperRosterId as string, t]));
 
+  // A finished draft that is already fully on record cannot change. Rewriting
+  // it every week cost hundreds of round trips, reset its completion time to
+  // "now", and would undo any hand correction made to a pick since.
+  if (draftData.status === "complete") {
+    const stored = await prisma.draft.findUnique({
+      where: { seasonId },
+      select: { sleeperDraftId: true, completedAt: true, _count: { select: { picks: true } } },
+    });
+    if (stored?.sleeperDraftId === draftData.draft_id && stored.completedAt && stored._count.picks >= picks.length) return 0;
+  }
+
+  const pickById = new Map(picks.map((p) => [p.player_id, p]));
+  const playerIds = await ensurePlayers(
+    playersCatalog,
+    picks.map((p) => p.player_id).filter((id): id is string => Boolean(id)),
+    (id) => {
+      const catalogData = resolvePlayerCreateData(playersCatalog, id);
+      const meta = pickById.get(id)?.metadata;
+      return {
+        firstName: meta?.first_name ?? catalogData.firstName,
+        lastName: meta?.last_name ?? catalogData.lastName,
+        position: meta?.position ?? catalogData.position,
+        nflTeam: meta?.team ?? catalogData.nflTeam,
+      };
+    }
+  );
+
   let count = 0;
   // A full draft can be 100+ picks, each needing a player upsert + pick
   // upsert — comfortably over Prisma's 5s default interactive-transaction
@@ -562,22 +718,7 @@ async function coreSyncDraft(
       const team = teamByRosterId.get(String(pick.roster_id));
       if (!team) continue; // roster not synced yet — run coreSyncTeams first
 
-      let playerId: string | null = null;
-      if (pick.player_id) {
-        const catalogData = resolvePlayerCreateData(playersCatalog, pick.player_id);
-        const player = await tx.fantasyPlayer.upsert({
-          where: { sleeperPlayerId: pick.player_id },
-          update: {},
-          create: {
-            sleeperPlayerId: pick.player_id,
-            firstName: pick.metadata?.first_name ?? catalogData.firstName,
-            lastName: pick.metadata?.last_name ?? catalogData.lastName,
-            position: pick.metadata?.position ?? catalogData.position,
-            nflTeam: pick.metadata?.team ?? catalogData.nflTeam,
-          },
-        });
-        playerId = player.id;
-      }
+      const playerId = pick.player_id ? (playerIds.get(pick.player_id) ?? null) : null;
 
       const pickData = {
         round: pick.round,
@@ -853,10 +994,12 @@ export async function syncCurrentLeague(): Promise<{ seasonId: string; recordsPr
     });
 
     const playersCatalog = await provider.getAllPlayers();
+    const statusOf = await resolveWeekStatuses(sleeperLeagueId, provider);
     let recordsProcessed = await coreSyncTeams(seasonRow.id, sleeperLeagueId, provider);
     const regularWeeks = weeksFor(seasonRow);
-    for (const week of allWeeksFor(seasonRow)) {
-      recordsProcessed += await coreSyncWeek(seasonRow.id, sleeperLeagueId, week, provider, week >= seasonRow.playoffStartWeek, playersCatalog);
+    const weeks = await weeksNeedingSync(seasonRow.id, allWeeksFor(seasonRow), statusOf);
+    for (const week of weeks) {
+      recordsProcessed += await coreSyncWeek(seasonRow.id, sleeperLeagueId, week, provider, week >= seasonRow.playoffStartWeek, playersCatalog, statusOf(week));
     }
     recordsProcessed += await coreSyncTransactions(seasonRow.id, sleeperLeagueId, regularWeeks, provider, playersCatalog);
     recordsProcessed += await coreSyncDraft(seasonRow.id, sleeperLeagueId, provider, playersCatalog);
@@ -874,10 +1017,11 @@ export async function syncSeason(seasonId: string): Promise<{ seasonId: string; 
     const sleeperLeagueId = resolveSleeperLeagueId(season);
 
     const playersCatalog = await provider.getAllPlayers();
+    const statusOf = await resolveWeekStatuses(sleeperLeagueId, provider);
     let recordsProcessed = await coreSyncTeams(seasonId, sleeperLeagueId, provider);
     const regularWeeks = weeksFor(season);
     for (const week of allWeeksFor(season)) {
-      recordsProcessed += await coreSyncWeek(seasonId, sleeperLeagueId, week, provider, week >= season.playoffStartWeek, playersCatalog);
+      recordsProcessed += await coreSyncWeek(seasonId, sleeperLeagueId, week, provider, week >= season.playoffStartWeek, playersCatalog, statusOf(week));
     }
     recordsProcessed += await coreSyncTransactions(seasonId, sleeperLeagueId, regularWeeks, provider, playersCatalog);
     recordsProcessed += await coreSyncDraft(seasonId, sleeperLeagueId, provider, playersCatalog);
@@ -975,7 +1119,8 @@ export async function syncWeek(seasonId: string, week: number): Promise<{ season
     const provider = getSleeperProvider();
     const season = await prisma.season.findUniqueOrThrow({ where: { id: seasonId } });
     const sleeperLeagueId = resolveSleeperLeagueId(season);
-    const recordsProcessed = await coreSyncWeek(seasonId, sleeperLeagueId, week, provider);
+    const statusOf = await resolveWeekStatuses(sleeperLeagueId, provider);
+    const recordsProcessed = await coreSyncWeek(seasonId, sleeperLeagueId, week, provider, week >= season.playoffStartWeek, undefined, statusOf(week));
     return { recordsProcessed, result: { seasonId, week, recordsProcessed } };
   });
 }

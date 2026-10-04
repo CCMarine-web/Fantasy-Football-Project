@@ -46,4 +46,5 @@ export type {
   SleeperBracketMatchup,
   SleeperPlayer,
   SleeperPlayersMap,
+  SleeperNflState,
 } from "./types";

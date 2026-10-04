@@ -65,11 +65,18 @@ done. A run that fails partway is resumed by running it again.
 
 - **Transactions** upsert on `(seasonId, sleeperTransactionId)`. There is no
   path that creates a second row for the same Sleeper transaction.
-- **Matchups** are replaced per week. The human `verifiedScore` judgement — the
-  flag that excludes an abandoned team's zeros from the record books — is read
-  before the replacement and reapplied after it, so the cron cannot quietly
-  re-admit scores an admin excluded.
-- **Weekly awards** upsert on `(seasonId, week, type)`.
+- **Matchups** are updated in place, keyed on Sleeper's matchup id, so a
+  matchup keeps its id — and its linked preview and recap — across syncs. Each
+  week is `SCHEDULED`, `IN_PROGRESS` or `FINAL` (see `src/lib/nfl-schedule.ts`:
+  Sleeper's `last_scored_leg`, or Tuesday 10:00 UTC after the week's Monday
+  game); only a `FINAL` week stores scores, so unplayed weeks never appear as
+  0-0 results. Weeks settled more than a week ago, and scheduled weeks more
+  than two weeks out, are not re-written. The human `verifiedScore` judgement —
+  the flag that excludes an abandoned team's zeros from the record books — is
+  preserved across syncs, so the cron cannot quietly re-admit scores an admin
+  excluded.
+- **Weekly awards** upsert on `(seasonId, week, type)`; a week with no final
+  scores has its awards cleared.
 - **AI previews and recaps** are skipped when one already exists for that
   matchup, so no article is ever written twice.
 - **A step that throws** is recorded and the job continues. A Sleeper outage

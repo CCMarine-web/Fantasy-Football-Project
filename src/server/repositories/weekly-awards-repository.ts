@@ -31,7 +31,13 @@ export async function computeWeeklyAwards(seasonId: string, week: number): Promi
     where: { matchup: { seasonId, week, isPlayoff: false }, score: { not: null }, verifiedScore: true },
     include: { fantasyTeam: { select: { id: true, managerId: true, manager: { select: { displayName: true } } } } },
   });
-  if (teams.length === 0) return 0;
+  // A week with no verified scores has no awards. Clearing rather than
+  // returning early is what removes awards computed from scores that have
+  // since been withdrawn — an unplayed week once synced as 0-0, say.
+  if (teams.length === 0) {
+    await prisma.weeklyAward.deleteMany({ where: { seasonId, week } });
+    return 0;
+  }
 
   const rows: { type: WeeklyAwardType; managerId: string; value: number; description: string }[] = [];
 
@@ -77,6 +83,10 @@ export async function computeWeeklyAwards(seasonId: string, week: number): Promi
     rows.push({ type: "BENCH_BLUNDER", managerId: worstBench.managerId, value: worstBench.value, description: `Left ${worstBench.value.toFixed(1)} points on the bench.` });
   }
 
+  // Award types this week no longer earns (no Bench Blunder without player data).
+  await prisma.weeklyAward.deleteMany({
+    where: { seasonId, week, type: { notIn: rows.map((r) => r.type) } },
+  });
   for (const row of rows) {
     await prisma.weeklyAward.upsert({
       where: { seasonId_week_type: { seasonId, week, type: row.type } },

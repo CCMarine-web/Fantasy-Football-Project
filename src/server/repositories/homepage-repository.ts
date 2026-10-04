@@ -27,11 +27,14 @@ async function loadHomepageData() {
     return null;
   }
 
-  const latestMatchup = await prisma.matchup.findFirst({
-    where: { seasonId: season.id },
+  // The latest week actually played, not the latest week on the schedule —
+  // Sleeper publishes all seventeen weeks up front, so "highest week with a
+  // matchup" was week 17 from the day the schedule appeared.
+  const latestPlayed = await prisma.matchup.findFirst({
+    where: { seasonId: season.id, status: "FINAL", teams: { some: { score: { not: null } } } },
     orderBy: { week: "desc" },
   });
-  const currentWeek = latestMatchup?.week ?? 1;
+  const currentWeek = latestPlayed?.week ?? 1;
 
   const [currentWeekMatchups, upcomingMatchups, standings, defendingChampionship, recentTransactions, latestArticle, randomQuote] =
     await Promise.all([

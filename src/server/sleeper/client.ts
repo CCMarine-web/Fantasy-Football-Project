@@ -10,6 +10,7 @@ import type {
   SleeperTradedPick,
   SleeperBracketMatchup,
   SleeperPlayersMap,
+  SleeperNflState,
 } from "./types";
 
 /**
@@ -170,6 +171,12 @@ export class SleeperApiClient {
    */
   async getAllPlayers(): Promise<SleeperPlayersMap> {
     return this.request<SleeperPlayersMap>(`/players/nfl`, TTL.LONG);
+  }
+
+  // -- state ----------------------------------------------------------------
+
+  async getNflState(): Promise<SleeperNflState> {
+    return this.request<SleeperNflState>(`/state/nfl`, TTL.SHORT);
   }
 
   // -- composite helpers ----------------------------------------------------

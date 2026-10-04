@@ -14,8 +14,18 @@ export const LEAGUE_CONFIG = {
   /** IANA zone the draft time is quoted in — used to label the countdown. */
   draftTimeZone: "America/Chicago",
 
-  /** Set false to hide the draft countdown once the draft has passed / season is live. */
+  /**
+   * Show the homepage countdown: to the draft before it happens, then to the
+   * next NFL week's Thursday-night kickoff for the rest of the season.
+   */
   showDraftCountdown: true,
+
+  /**
+   * The Wednesday that opens NFL week 1 — Sleeper's `/state/nfl`
+   * `season_start_date`. Every weekly kickoff on the homepage countdown is
+   * computed from it (Thursday 8:15 PM Eastern). Update it each season.
+   */
+  nflSeasonStartDate: "2026-09-09",
 
   /**
    * "Days since…" shame counter shown on the Championship Belt page. A bit of

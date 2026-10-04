@@ -16,7 +16,8 @@ function Unit({ value, label }: { value: number; label: string }) {
 }
 
 /**
- * Live draft countdown. The target date comes from LEAGUE_CONFIG.draftDate
+ * Live countdown — to the draft in the preseason, to the next week's kickoff
+ * once the season is on (`heading`/`passedHeading`/`passedMessage`). The target date comes from LEAGUE_CONFIG.draftDate
  * (passed in as an ISO string so this stays a pure client component). The
  * ticking digits render as zeros until the first timer tick so SSR and the
  * first client render agree; the date label is formatted in a FIXED locale and
@@ -29,6 +30,9 @@ export function DraftCountdown({
   isoDate,
   timeZone = "America/Chicago",
   initial = null,
+  heading = "Countdown to Draft",
+  passedHeading = "Draft is here",
+  passedMessage = "It's draft time — good luck.",
 }: {
   isoDate: string;
   timeZone?: string;
@@ -38,6 +42,9 @@ export function DraftCountdown({
    * frame of zeros before the timer starts.
    */
   initial?: Remaining | null;
+  heading?: string;
+  passedHeading?: string;
+  passedMessage?: string;
 }) {
   const targetMs = new Date(isoDate).getTime();
   const [remaining, setRemaining] = useState<Remaining | null>(initial);
@@ -74,11 +81,11 @@ export function DraftCountdown({
       <div className="flex items-center gap-2">
         <CalendarClock className="h-4 w-4" />
         <p className="text-xs font-semibold tracking-[0.2em] uppercase">
-          {remaining?.passed ? "Draft is here" : "Countdown to Draft"}
+          {remaining?.passed ? passedHeading : heading}
         </p>
       </div>
       {remaining?.passed ? (
-        <p className="mt-2 font-heading text-2xl font-semibold uppercase">It&apos;s draft time — good luck.</p>
+        <p className="mt-2 font-heading text-2xl font-semibold uppercase">{passedMessage}</p>
       ) : remaining ? (
         <div className="mt-3 flex items-center justify-between gap-1">
           <Unit value={remaining.days} label="Days" />
