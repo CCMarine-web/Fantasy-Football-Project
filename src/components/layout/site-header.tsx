@@ -125,7 +125,7 @@ export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
             <span className="font-heading text-lg font-semibold tracking-wide uppercase">
               {BRAND.name}
             </span>
-            <span className="text-muted-foreground text-[13px] tracking-[0.2em] uppercase">
+            <span className="text-muted-foreground text-[11px] tracking-[0.12em] uppercase min-[400px]:text-[13px] min-[400px]:tracking-[0.2em]">
               {BRAND.tagline}
             </span>
           </span>

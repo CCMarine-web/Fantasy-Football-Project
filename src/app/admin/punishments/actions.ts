@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { CACHE_TAGS } from "@/server/cache";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
@@ -83,6 +84,8 @@ export async function savePunishmentAction(
     });
   }
 
+  updateTag(CACHE_TAGS.league);
+  updateTag(CACHE_TAGS.managers);
   revalidatePath("/hall-of-shame");
   revalidatePath("/admin/punishments");
   revalidatePath("/admin/media");
@@ -94,6 +97,8 @@ export async function deletePunishmentAction(formData: FormData): Promise<void> 
   const year = Number(formData.get("year"));
   if (Number.isFinite(year)) {
     await deletePunishment(year);
+    updateTag(CACHE_TAGS.league);
+    updateTag(CACHE_TAGS.managers);
     revalidatePath("/hall-of-shame");
     revalidatePath("/admin/punishments");
   }

@@ -9,11 +9,20 @@ import { Swords, Trophy } from "lucide-react";
 
 export const metadata = { title: "Rivalries" };
 
+/**
+ * Margins print to one decimal, like every other score on the site. A margin
+ * under a point gets a second decimal, because "0.0" for a game someone won
+ * reads as a tie.
+ */
+function formatMargin(v: number): string {
+  return Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1);
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="min-w-0">
       <dt className="text-xs tracking-wide text-muted-foreground uppercase">{label}</dt>
-      <dd className="font-mono text-sm font-semibold tabular-nums">{value}</dd>
+      <dd className="font-mono text-sm font-semibold break-words tabular-nums">{value}</dd>
     </div>
   );
 }
@@ -48,7 +57,35 @@ function RivalryCard({ r }: { r: RivalryView }) {
           ) : null}
         </div>
 
-        <div className="flex items-center justify-between gap-3">
+        {/* Phone: a two-line scoreboard, each manager beside their own win
+            count. Side by side at 390px both names truncated to "Patric…",
+            so the series score no longer said who had which record. */}
+        <div className="sm:hidden">
+          <p className="mb-2 text-xs text-muted-foreground">
+            Head-to-head wins · {r.gamesPlayed} {r.gamesPlayed === 1 ? "meeting" : "meetings"}
+            {r.ties ? ` · ${r.ties} ${r.ties === 1 ? "tie" : "ties"}` : ""}
+          </p>
+          <div className="space-y-2">
+            {[
+              { id: r.managerAId, name: r.managerAName, photo: r.managerAPhoto, wins: r.managerAWins, leads: aLeads },
+              { id: r.managerBId, name: r.managerBName, photo: r.managerBPhoto, wins: r.managerBWins, leads: bLeads },
+            ].map((side) => (
+              <Link
+                key={side.id}
+                href={`/managers/${side.id}`}
+                className={`flex items-center gap-3 hover:text-primary ${side.leads ? "text-primary" : ""}`}
+              >
+                <TeamAvatar name={side.name} imageUrl={side.photo} className="h-9 w-9 shrink-0" />
+                <span className="min-w-0 flex-1 font-heading text-base font-semibold break-words">
+                  {side.name}
+                </span>
+                <span className="shrink-0 font-heading text-2xl font-semibold tabular-nums">{side.wins}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        <div className="hidden items-center justify-between gap-3 sm:flex">
           <Link href={`/managers/${r.managerAId}`} className="flex min-w-0 items-center gap-2 hover:text-primary">
             <TeamAvatar name={r.managerAName} imageUrl={r.managerAPhoto} className="h-10 w-10" />
             <span className={`truncate font-heading text-base font-semibold ${aLeads ? "text-primary" : ""}`}>
@@ -63,7 +100,7 @@ function RivalryCard({ r }: { r: RivalryView }) {
               {r.managerBWins}
               {r.ties ? <span className="text-muted-foreground">–{r.ties}</span> : null}
             </div>
-            <div className="text-xs text-muted-foreground">{r.gamesPlayed} meetings</div>
+            <div className="text-xs text-muted-foreground">{r.gamesPlayed} {r.gamesPlayed === 1 ? "meeting" : "meetings"}</div>
           </div>
 
           <Link
@@ -80,16 +117,25 @@ function RivalryCard({ r }: { r: RivalryView }) {
         {r.blurb ? <p className="text-sm text-foreground/90">{r.blurb}</p> : null}
 
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Total points" value={`${Math.round(r.managerAPoints)} – ${Math.round(r.managerBPoints)}`} />
-          <Stat label="Avg score" value={`${r.managerAAvg ?? "—"} – ${r.managerBAvg ?? "—"}`} />
-          <Stat label="Avg margin" value={r.averageMargin != null ? `${r.averageMargin}` : "—"} />
+          <Stat label="Total points" value={`${r.managerAPoints.toFixed(1)} – ${r.managerBPoints.toFixed(1)}`} />
+          <Stat
+            label="Avg score"
+            value={`${r.managerAAvg?.toFixed(1) ?? "—"} – ${r.managerBAvg?.toFixed(1) ?? "—"}`}
+          />
+          <Stat label="Avg margin" value={r.averageMargin != null ? formatMargin(r.averageMargin) : "—"} />
           <Stat
             label="Closest"
-            value={r.closestGameMargin != null ? `${r.closestGameMargin} (${r.closestGameSeason})` : "—"}
+            value={
+              r.closestGameMargin != null ? `${formatMargin(r.closestGameMargin)} (${r.closestGameSeason})` : "—"
+            }
           />
           <Stat
             label="Biggest win"
-            value={r.largestBlowoutMargin != null ? `${r.largestBlowoutMargin} (${r.largestBlowoutSeason})` : "—"}
+            value={
+              r.largestBlowoutMargin != null
+                ? `${formatMargin(r.largestBlowoutMargin)} (${r.largestBlowoutSeason})`
+                : "—"
+            }
           />
           <Stat label="Current streak" value={streakName ? `${streakName} ×${r.currentStreakCount}` : "—"} />
           <Stat label="Longest streak" value={longestName ? `${longestName} ×${r.longestStreakCount}` : "—"} />

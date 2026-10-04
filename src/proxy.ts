@@ -6,7 +6,12 @@ import { auth } from "@/auth";
 // since our Credentials + Prisma auth flow needs Node APIs anyway.
 export const proxy = auth((req) => {
   const { pathname } = req.nextUrl;
-  const isProtected = pathname.startsWith("/admin") || pathname.startsWith("/chat-lore");
+  // The belt editor lives under /championship-belt but is admin-only; without
+  // this a signed-out visitor got the generic "couldn't load this page" error.
+  const isProtected =
+    pathname.startsWith("/admin") ||
+    pathname.startsWith("/chat-lore") ||
+    pathname === "/championship-belt/edit";
   if (!isProtected) return;
 
   const role = req.auth?.user?.role;
@@ -31,5 +36,5 @@ export const proxy = auth((req) => {
 });
 
 export const config = {
-  matcher: ["/admin/:path*", "/chat-lore/:path*"],
+  matcher: ["/admin/:path*", "/chat-lore/:path*", "/championship-belt/edit"],
 };

@@ -9,10 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { PunishmentGallery } from "@/components/shame/punishment-gallery";
 import { MiscPunishmentGallery } from "@/components/shame/misc-punishment-gallery";
 import { getHallOfShame } from "@/server/repositories/hall-of-shame-repository";
-import {
-  LAST_PLACE_FALLBACK_NOTE,
-  LAST_PLACE_METHODOLOGY,
-} from "@/server/stats/last-place";
+import { LAST_PLACE_METHODOLOGY } from "@/server/stats/last-place";
 import { ordinal } from "@/lib/format";
 import { Camera, Skull } from "lucide-react";
 
@@ -131,7 +128,11 @@ export default async function HallOfShamePage() {
         <p className="mb-3 max-w-3xl text-sm text-muted-foreground">
           {LAST_PLACE_METHODOLOGY}{" "}
           The league&apos;s own standings order decides it wherever the platform recorded one.
-          {shame.usesFallbackTiebreak ? ` ${LAST_PLACE_FALLBACK_NOTE}` : ""}
+          {/* Not LAST_PLACE_FALLBACK_NOTE: that is written for a single season
+              ("…for this season…") and read wrongly above a table of all of them. */}
+          {shame.usesFallbackTiebreak
+            ? " Where no final standings order was recorded, last place falls back to record, then points."
+            : ""}
         </p>
 
         {shame.lastPlace.length === 0 ? (

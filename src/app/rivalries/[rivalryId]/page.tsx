@@ -5,13 +5,49 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { getRivalryDetail } from "@/server/repositories/computed-rivalries-repository";
+import {
+  getRivalryDetail,
+  type RivalryMeetingView,
+} from "@/server/repositories/computed-rivalries-repository";
+import { cn } from "@/lib/utils";
 import { Trophy } from "lucide-react";
 
 export async function generateMetadata({ params }: { params: Promise<{ rivalryId: string }> }) {
   const { rivalryId } = await params;
   const r = await getRivalryDetail(rivalryId);
   return { title: r ? `${r.managerAName} vs ${r.managerBName}` : "Rivalry" };
+}
+
+/**
+ * Margins print to one decimal, like every other score on the site; one under
+ * a point gets a second decimal so a real win never reads "0.0". `pts` is
+ * singular at exactly one point.
+ */
+function formatMargin(v: number): string {
+  return Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1);
+}
+
+function marginPts(v: number): string {
+  const n = formatMargin(v);
+  return `${n} ${n === "1.0" ? "pt" : "pts"}`;
+}
+
+/**
+ * Only the championship bracket earns a postseason badge. A "PO" beside a
+ * placement game claimed a playoff meeting that never happened.
+ */
+function MeetingBadge({ m, className }: { m: RivalryMeetingView; className?: string }) {
+  if (m.isChampionship) {
+    return <Badge className={cn("bg-gold text-gold-foreground", className)}>Title</Badge>;
+  }
+  if (m.isPlayoff && m.bracketType === "WINNERS") {
+    return (
+      <Badge variant="outline" className={className}>
+        PO
+      </Badge>
+    );
+  }
+  return null;
 }
 
 function Compare({
@@ -63,16 +99,24 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
       <PageHeader
         eyebrow={r.isOfficial ? "Official rivalry" : "Head to head"}
         title={`${r.managerAName} vs ${r.managerBName}`}
-        description={`${r.gamesPlayed} meetings on record, computed from verified results.`}
+        description={`${r.gamesPlayed} ${r.gamesPlayed === 1 ? "meeting" : "meetings"} on record, computed from verified results.`}
       />
 
       {/* Series header */}
       <Card className="mt-6">
         <CardContent>
+          {/* Each side takes an equal share and wraps its name inside a small
+              inset, so a long name breaks onto a second line instead of
+              running into the card edge. */}
           <div className="flex items-center justify-between gap-3">
-            <Link href={`/managers/${r.managerAId}`} className="flex min-w-0 flex-col items-center gap-2 hover:text-primary">
-              <TeamAvatar name={r.managerAName} imageUrl={r.managerAPhoto} className="h-16 w-16" />
-              <span className="truncate font-heading text-base font-semibold">{r.managerAName}</span>
+            <Link
+              href={`/managers/${r.managerAId}`}
+              className="flex min-w-0 flex-1 basis-0 flex-col items-center gap-2 px-1 hover:text-primary"
+            >
+              <TeamAvatar name={r.managerAName} imageUrl={r.managerAPhoto} className="h-16 w-16 shrink-0" />
+              <span className="w-full text-center font-heading text-sm font-semibold break-words sm:text-base">
+                {r.managerAName}
+              </span>
             </Link>
             <div className="shrink-0 text-center">
               <div className="font-heading text-4xl font-semibold tabular-nums">
@@ -83,9 +127,14 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
               </div>
               <div className="text-xs text-muted-foreground">series record</div>
             </div>
-            <Link href={`/managers/${r.managerBId}`} className="flex min-w-0 flex-col items-center gap-2 hover:text-primary">
-              <TeamAvatar name={r.managerBName} imageUrl={r.managerBPhoto} className="h-16 w-16" />
-              <span className="truncate font-heading text-base font-semibold">{r.managerBName}</span>
+            <Link
+              href={`/managers/${r.managerBId}`}
+              className="flex min-w-0 flex-1 basis-0 flex-col items-center gap-2 px-1 hover:text-primary"
+            >
+              <TeamAvatar name={r.managerBName} imageUrl={r.managerBPhoto} className="h-16 w-16 shrink-0" />
+              <span className="w-full text-center font-heading text-sm font-semibold break-words sm:text-base">
+                {r.managerBName}
+              </span>
             </Link>
           </div>
 
@@ -102,18 +151,23 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
           <Compare label="Total points" a={r.managerAPoints} b={r.managerBPoints} format={(v) => v.toFixed(1)} />
           <Compare label="Avg score" a={r.managerAAvg} b={r.managerBAvg} format={(v) => v.toFixed(1)} />
           <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-            <p>Average margin: <span className="font-mono text-foreground">{r.averageMargin ?? "—"}</span></p>
+            <p>
+              Average margin:{" "}
+              <span className="font-mono text-foreground">
+                {r.averageMargin != null ? marginPts(r.averageMargin) : "—"}
+              </span>
+            </p>
             <p>
               Closest game:{" "}
               <span className="font-mono text-foreground">
-                {r.closestGameMargin != null ? `${r.closestGameMargin} pts (${r.closestGameSeason})` : "—"}
+                {r.closestGameMargin != null ? `${marginPts(r.closestGameMargin)} (${r.closestGameSeason})` : "—"}
               </span>
             </p>
             <p>
               Biggest win:{" "}
               <span className="font-mono text-foreground">
                 {r.largestBlowoutMargin != null
-                  ? `${nameFor(r.largestBlowoutManagerId) ?? "—"} by ${r.largestBlowoutMargin} (${r.largestBlowoutSeason})`
+                  ? `${nameFor(r.largestBlowoutManagerId) ?? "—"} by ${marginPts(r.largestBlowoutMargin)} (${r.largestBlowoutSeason})`
                   : "—"}
               </span>
             </p>
@@ -177,7 +231,41 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
       <Card className="mt-6">
         <CardContent>
           <h2 className="mb-3 font-heading text-lg font-semibold">Every meeting</h2>
-          <div className="overflow-x-auto">
+
+          {/* Phone: one compact row per game. The five-column table showed
+              only Season, Wk and one manager's score at 390px, with the other
+              score and the result off-screen and nothing to say so. */}
+          <div className="sm:hidden">
+            <p className="mb-1 text-xs break-words text-muted-foreground">
+              Scores read {r.managerAName} – {r.managerBName}; the winner&rsquo;s is highlighted.
+            </p>
+            <ul className="divide-y divide-border/50">
+              {r.meetings.map((m) => (
+                <li key={`${m.seasonYear}-${m.week}`} className="flex items-center justify-between gap-3 py-2">
+                  <div className="min-w-0">
+                    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-sm tabular-nums">
+                      {m.seasonYear} · Wk {m.week}
+                      <MeetingBadge m={m} />
+                    </p>
+                    <p className="text-xs break-words text-muted-foreground">
+                      {m.winnerId ? `${nameFor(m.winnerId)} won` : "Tie"}
+                    </p>
+                  </div>
+                  <p className="shrink-0 font-mono text-sm tabular-nums">
+                    <span className={m.winnerId === r.managerAId ? "font-semibold text-primary" : ""}>
+                      {m.managerAScore.toFixed(1)}
+                    </span>
+                    <span className="mx-0.5 text-muted-foreground">–</span>
+                    <span className={m.winnerId === r.managerBId ? "font-semibold text-primary" : ""}>
+                      {m.managerBScore.toFixed(1)}
+                    </span>
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="hidden overflow-x-auto sm:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -194,16 +282,7 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
                     <TableCell className="font-mono tabular-nums">{m.seasonYear}</TableCell>
                     <TableCell className="font-mono tabular-nums">
                       {m.week}
-                      {/* Only the championship bracket earns a postseason
-                          badge. A "PO" beside a placement game claimed a
-                          playoff meeting that never happened. */}
-                      {m.isChampionship ? (
-                        <Badge className="ml-2 bg-gold text-gold-foreground">Title</Badge>
-                      ) : m.isPlayoff && m.bracketType === "WINNERS" ? (
-                        <Badge variant="outline" className="ml-2">
-                          PO
-                        </Badge>
-                      ) : null}
+                      <MeetingBadge m={m} className="ml-2" />
                     </TableCell>
                     <TableCell
                       className={`text-right font-mono tabular-nums ${m.winnerId === r.managerAId ? "font-semibold text-primary" : ""}`}

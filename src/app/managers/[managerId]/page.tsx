@@ -13,7 +13,7 @@ import { ManagerTrajectoryChart } from "@/components/charts/manager-trajectory-c
 import {
   getManagerProfileDetailed,
   getManagerScoutingReport,
-  getOrCreateManagerPerformanceSummary,
+  getSavedManagerPerformanceSummary,
 } from "@/server/repositories/manager-repository";
 import { getManagerAwardTally } from "@/server/repositories/weekly-awards-repository";
 import { Sparkles, TrendingUp } from "lucide-react";
@@ -76,7 +76,7 @@ export default async function ManagerProfilePage({
     getManagerProfileDetailed(managerId),
     getManagerScoutingReport(managerId),
     getManagerAwardTally(managerId),
-    getOrCreateManagerPerformanceSummary(managerId),
+    getSavedManagerPerformanceSummary(managerId),
   ]);
   if (!profile) notFound();
 
@@ -562,15 +562,8 @@ export default async function ManagerProfilePage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {scouting ? (
-              <>
-                <p className="text-sm whitespace-pre-line text-foreground/90">{scouting.text}</p>
-                {scouting.isMock ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Placeholder — add an <code>OPENAI_API_KEY</code> for a real scouting report.
-                  </p>
-                ) : null}
-              </>
+            {scouting && !scouting.isMock ? (
+              <p className="text-sm whitespace-pre-line text-foreground/90">{scouting.text}</p>
             ) : (
               <p className="text-sm text-muted-foreground">
                 A generated scouting report — draft tendencies, trade behavior, and archetype — will

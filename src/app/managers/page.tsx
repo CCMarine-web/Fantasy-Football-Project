@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ordinal } from "@/lib/format";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -200,11 +201,13 @@ export default async function ManagersPage({
                         </Badge>
                       ) : null}
                       {m.finalsAppearances > 0 ? (
-                        <Badge variant="outline">{m.finalsAppearances} finals</Badge>
+                        <Badge variant="outline">
+                          {m.finalsAppearances} {m.finalsAppearances === 1 ? "final" : "finals"}
+                        </Badge>
                       ) : null}
                       {m.bestFinish ? (
                         <Badge variant="outline" title="Best finish">
-                          Best: {m.bestFinish === 1 ? "🏆 1st" : `#${m.bestFinish}`}
+                          Best: {ordinal(m.bestFinish)}
                         </Badge>
                       ) : null}
                       {m.lastPlaceFinishes > 0 ? (

@@ -44,6 +44,18 @@ model User {
   predictions         Prediction[]          @relation("PredictionUser")
 }
 
+/// Failed sign-in counter, one row per email ("email:<address>") and per client
+/// address ("ip:<address>"). Lives in the database rather than in memory
+/// because every serverless instance would otherwise keep its own count. See
+/// src/server/auth/login-throttle.ts.
+model LoginThrottle {
+  key         String    @id
+  failures    Int       @default(0)
+  windowStart DateTime  @default(now())
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+}
+
 // ---------------------------------------------------------------------------
 // League / season structure
 // ---------------------------------------------------------------------------

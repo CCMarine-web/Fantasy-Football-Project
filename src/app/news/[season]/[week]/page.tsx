@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -5,7 +6,17 @@ import { Separator } from "@/components/ui/separator";
 import { getWeeklyRecap } from "@/server/repositories/news-repository";
 import { Flame, Snowflake, Sparkles, Trophy } from "lucide-react";
 
-export const metadata = { title: "Weekly Recap" };
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ season: string; week: string }>;
+}): Promise<Metadata> {
+  const { season, week } = await params;
+  const data = await getWeeklyRecap(Number(season), Number(week));
+  const title = data?.articleTitle ?? `Week ${week} Recap, ${season}`;
+  const description = `Week ${week} of the ${season} Rat Trap season: the awards, the results and the recap.`;
+  return { title, description, openGraph: { title, description } };
+}
 
 const AWARD_ICONS: Record<string, typeof Flame> = {
   BOOM_OF_WEEK: Flame,
@@ -29,7 +40,7 @@ export default async function WeeklyRecapPage({
       <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
         {data.seasonYear} · Week {data.week}
       </p>
-      <h1 className="mt-2 font-heading text-4xl font-semibold tracking-wide uppercase">
+      <h1 className="mt-2 font-heading text-3xl font-semibold tracking-wide break-words uppercase sm:text-4xl">
         {data.articleTitle ?? `Week ${data.week} Recap`}
       </h1>
 

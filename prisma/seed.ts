@@ -34,7 +34,28 @@ function draftOrderFromStandings(prevFinal: FinalStandingRow[] | null): number[]
   return [...prevFinal].sort((a, b) => b.regularSeasonRank - a.regularSeasonRank).map((r) => r.teamIndex);
 }
 
+/**
+ * The seed DELETES EVERYTHING and replaces it with a fictional league. Pointed
+ * at the real database it would destroy the league's history, so it refuses
+ * whenever real league data is present — a season linked to a real Sleeper
+ * league or imported from ESPN — unless SEED_WIPE_REAL_DATA says otherwise.
+ */
+async function assertSafeToSeed(): Promise<void> {
+  if (process.env.SEED_WIPE_REAL_DATA === "yes-delete-everything") return;
+  const real = await prisma.season.count({
+    // The seed never sets a Sleeper or ESPN id, so either one means real data.
+    where: { OR: [{ espnLeagueId: { not: null } }, { dataSource: "ESPN" }, { sleeperLeagueId: { not: null } }] },
+  });
+  if (real > 0) {
+    throw new Error(
+      `Refusing to seed: this database holds ${real} real season(s) (Sleeper/ESPN). ` +
+        "The seed wipes every table. Point DATABASE_URL at a local or throwaway database instead.",
+    );
+  }
+}
+
 async function main(): Promise<void> {
+  await assertSafeToSeed();
   console.log("Clearing existing data...");
   await clearDatabase(prisma);
 

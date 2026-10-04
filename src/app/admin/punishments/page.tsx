@@ -1,3 +1,4 @@
+import { auth } from "@/auth";
 import Link from "next/link";
 import { PageHeader } from "@/components/shared/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +12,8 @@ import { deletePunishmentAction } from "./actions";
 export const metadata = { title: "Edit Punishments" };
 
 export default async function AdminPunishmentsPage() {
+  const session = await auth();
+  if (session?.user?.role !== "ADMIN") throw new Error("Admins only");
   const [managers, punishments, photoAssets, lastPlace] = await Promise.all([
     prisma.manager.findMany({ where: { deletedAt: null }, select: { id: true, displayName: true }, orderBy: { displayName: "asc" } }),
     listPunishments(),

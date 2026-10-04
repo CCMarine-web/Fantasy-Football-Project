@@ -1,3 +1,4 @@
+import { auth } from "@/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { PageHeader } from "@/components/shared/page-header";
@@ -12,6 +13,8 @@ export default async function AdminManagerEditPage({
 }: {
   params: Promise<{ managerId: string }>;
 }) {
+  const session = await auth();
+  if (session?.user?.role !== "ADMIN") throw new Error("Admins only");
   const { managerId } = await params;
   const manager = await prisma.manager.findUnique({
     where: { id: managerId },

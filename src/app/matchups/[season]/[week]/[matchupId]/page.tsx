@@ -1,6 +1,8 @@
+import { cache } from "react";
+import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -16,9 +18,30 @@ import {
   headToHeadRecord,
   largestBlowout,
 } from "@/server/stats";
-import { LineChart, Sparkles } from "lucide-react";
+import { ArrowLeft, Sparkles } from "lucide-react";
 
-export const metadata = { title: "Matchup" };
+/** One load per request, shared by generateMetadata and the page. */
+const loadMatchup = cache(async (matchupId: string) => getMatchupById(matchupId));
+
+type Params = { season: string; week: string; matchupId: string };
+
+/**
+ * The title and description a group-chat link unfurls with: who played, when,
+ * and — once it is final — the score.
+ */
+export async function generateMetadata({ params }: { params: Promise<Params> }): Promise<Metadata> {
+  const { matchupId } = await params;
+  const m = await loadMatchup(matchupId);
+  if (!m || m.teams.length < 2) return { title: "Matchup" };
+  const [a, b] = m.teams;
+  const when = `Week ${m.week}, ${m.season.year}${m.roundName ? ` · ${m.roundName}` : ""}`;
+  const title = `${a.fantasyTeam.teamName} vs ${b.fantasyTeam.teamName} — ${when}`;
+  const final = m.status === "FINAL" && a.score != null && b.score != null;
+  const description = final
+    ? `Final: ${a.fantasyTeam.manager.displayName} ${a.score!.toFixed(1)}, ${b.fantasyTeam.manager.displayName} ${b.score!.toFixed(1)}.`
+    : `${a.fantasyTeam.manager.displayName} vs ${b.fantasyTeam.manager.displayName}, ${when}. Lineups, head-to-head history and the preview.`;
+  return { title, description, openGraph: { title, description }, twitter: { title, description } };
+}
 
 function LineupTable({
   title,
@@ -113,10 +136,10 @@ function LineupTable({
 export default async function MatchupDetailPage({
   params,
 }: {
-  params: Promise<{ season: string; week: string; matchupId: string }>;
+  params: Promise<Params>;
 }) {
   const { season, week, matchupId } = await params;
-  const matchup = await getMatchupById(matchupId);
+  const matchup = await loadMatchup(matchupId);
 
   if (!matchup || matchup.season.year !== Number(season) || matchup.week !== Number(week)) {
     notFound();
@@ -136,30 +159,71 @@ export default async function MatchupDetailPage({
   const blowout = largestBlowout(h2hGames);
 
   const isFinal = matchup.status === "FINAL";
+  const statusLabel = isFinal ? "Final" : matchup.status === "IN_PROGRESS" ? "Live" : "Upcoming";
   const aiContent = await getMatchupAIContent(matchup.id);
+  // Placeholder copy is never shown as if it were real writing.
+  const preview = aiContent.isMock ? null : aiContent.preview;
+  const recap = aiContent.isMock ? null : aiContent.recap;
+
+  // The series from teamA's side; name whoever actually leads it.
+  const nameA = teamA.fantasyTeam.manager.displayName;
+  const nameB = teamB.fantasyTeam.manager.displayName;
+  const tiesSuffix = h2hRecord.ties ? `-${h2hRecord.ties}` : "";
+  const series =
+    h2hRecord.wins === h2hRecord.losses
+      ? { leader: null, score: `Series tied ${h2hRecord.wins}-${h2hRecord.losses}${tiesSuffix}` }
+      : h2hRecord.wins > h2hRecord.losses
+        ? { leader: nameA, score: `${h2hRecord.wins}-${h2hRecord.losses}${tiesSuffix}` }
+        : { leader: nameB, score: `${h2hRecord.losses}-${h2hRecord.wins}${tiesSuffix}` };
+
+  // Recap first once the game is over; before then the preview leads.
+  const writing = [
+    {
+      key: "recap",
+      title: "Recap",
+      text: recap,
+      empty: isFinal ? "No recap has been written for this game." : "The recap is written once this game is final.",
+    },
+    { key: "preview", title: "Preview", text: preview, empty: "No preview was written for this game." },
+  ];
+  if (!isFinal) writing.reverse();
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+      <Link
+        href={`/matchups?week=${matchup.week}`}
+        className="inline-flex min-h-10 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-4 w-4" aria-hidden /> Week {matchup.week} matchups
+      </Link>
+      <p className="mt-2 text-xs font-semibold tracking-[0.2em] text-primary uppercase">
         {matchup.season.year} · Week {matchup.week}
-        {matchup.roundName ? ` · ${matchup.roundName}` : ""}
+        {matchup.roundName ? ` · ${matchup.roundName}` : ""} · {statusLabel}
       </p>
+      <h1 className="mt-1 font-heading text-2xl font-semibold tracking-wide break-words uppercase sm:text-3xl">
+        {teamA.fantasyTeam.teamName} <span className="text-muted-foreground">vs</span>{" "}
+        {teamB.fantasyTeam.teamName}
+      </h1>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
+      <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
         {[teamA, teamB].map((t, i) => (
-          <div key={t.id} className={`flex items-center gap-3 ${i === 1 ? "sm:flex-row-reverse sm:text-right" : ""}`}>
-            <TeamAvatar name={t.fantasyTeam.manager.displayName} imageUrl={t.fantasyTeam.manager.avatarUrl} className="h-14 w-14" />
+          <div
+            key={t.id}
+            className={`flex items-center gap-3 ${i === 1 ? "order-3 sm:flex-row-reverse sm:text-right" : "order-1"}`}
+          >
+            <TeamAvatar name={t.fantasyTeam.manager.displayName} imageUrl={t.fantasyTeam.manager.photoUrl ?? t.fantasyTeam.manager.avatarUrl} className="h-14 w-14" />
             <div>
               <p className="font-heading text-xl font-semibold">{t.fantasyTeam.teamName}</p>
               <p className="text-sm text-muted-foreground">{t.fantasyTeam.manager.displayName}</p>
-              <p className="font-mono text-2xl font-bold tabular-nums">
+              <p className={`font-mono text-2xl font-bold tabular-nums ${isFinal && t.isWinner ? "text-primary" : ""}`}>
                 {(isFinal ? t.score : t.projectedScore)?.toFixed(1) ?? "—"}
               </p>
             </div>
           </div>
         ))}
-        <div className="hidden text-center text-sm text-muted-foreground sm:block">
-          {isFinal ? "FINAL" : "VS"}
+        {/* Between the teams at every width, so a phone still says how it ended. */}
+        <div className="order-2 text-center text-xs font-semibold tracking-[0.2em] text-muted-foreground uppercase">
+          {isFinal ? "Final" : "vs"}
         </div>
       </div>
 
@@ -172,19 +236,23 @@ export default async function MatchupDetailPage({
 
       <Separator className="my-8" />
 
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
+      <section>
         <Card>
           <CardHeader>
             <CardTitle className="uppercase">Head-to-Head History</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <p>
-              <strong>{teamA.fantasyTeam.manager.displayName}</strong> leads the series{" "}
-              <span className="font-mono">
-                {h2hRecord.wins}-{h2hRecord.losses}
-                {h2hRecord.ties ? `-${h2hRecord.ties}` : ""}
-              </span>
-            </p>
+            {h2hGames.length > 0 ? (
+              <p>
+                {series.leader ? (
+                  <>
+                    <strong>{series.leader}</strong> leads the series <span className="font-mono">{series.score}</span>
+                  </>
+                ) : (
+                  <span className="font-mono">{series.score}</span>
+                )}
+              </p>
+            ) : null}
             {streak.winner ? (
               <p className="text-muted-foreground">
                 Current streak: {streak.winner === "self" ? teamA.fantasyTeam.manager.displayName : teamB.fantasyTeam.manager.displayName} has won {streak.length} straight.
@@ -208,80 +276,27 @@ export default async function MatchupDetailPage({
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 uppercase">
-              <LineChart className="h-4 w-4" /> Win Probability
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <EmptyState
-              icon={LineChart}
-              title="Chart coming soon"
-              description="A live win-probability chart will render here once in-game scoring data is synced."
-            />
-          </CardContent>
-        </Card>
       </section>
 
       <Separator className="my-8" />
 
       <section className="grid grid-cols-1 gap-6 md:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 uppercase">
-              <Sparkles className="h-4 w-4" /> Preview
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {aiContent.preview ? (
-              <>
-                <p className="text-sm whitespace-pre-line text-foreground/90">{aiContent.preview}</p>
-                <Badge variant="outline" className="mt-3">
-                  {aiContent.isMock ? "Placeholder (mock AI)" : "AI-generated"}
-                </Badge>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  An AI-generated matchup preview will appear here once this week&apos;s content has
-                  been generated (weekly during the season).
-                </p>
-                <Badge variant="outline" className="mt-3">
-                  AI content status: not generated
-                </Badge>
-              </>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 uppercase">
-              <Sparkles className="h-4 w-4" /> Recap
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {aiContent.recap ? (
-              <>
-                <p className="text-sm whitespace-pre-line text-foreground/90">{aiContent.recap}</p>
-                <Badge variant="outline" className="mt-3">
-                  {aiContent.isMock ? "Placeholder (mock AI)" : "AI-generated"}
-                </Badge>
-              </>
-            ) : (
-              <>
-                <p className="text-sm text-muted-foreground">
-                  {isFinal
-                    ? "An AI-generated recap will appear here once generated (weekly during the season)."
-                    : "A recap will be available after this matchup is final."}
-                </p>
-                <Badge variant="outline" className="mt-3">
-                  AI content status: not generated
-                </Badge>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        {writing.map((block) => (
+          <Card key={block.key}>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 uppercase">
+                <Sparkles className="h-4 w-4" aria-hidden /> {block.title}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {block.text ? (
+                <p className="text-sm whitespace-pre-line text-foreground/90">{block.text}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">{block.empty}</p>
+              )}
+            </CardContent>
+          </Card>
+        ))}
       </section>
     </div>
   );

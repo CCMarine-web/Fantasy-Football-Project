@@ -354,7 +354,10 @@ export async function getManagerProfileDetailed(managerId: string) {
     const g = l.wins + l.losses + l.ties;
     return g ? (l.wins + 0.5 * l.ties) / g : 0;
   };
-  const playedSeasons = seasonLines.filter((l) => l.wins + l.losses + l.ties > 0);
+  // Best and worst season are judged on finished seasons only — a 3-0 start
+  // is not a better season than a 10-4 championship.
+  const completeYears = new Set(manager.fantasyTeams.filter((t) => t.season.status === "COMPLETE").map((t) => t.season.year));
+  const playedSeasons = seasonLines.filter((l) => l.wins + l.losses + l.ties > 0 && completeYears.has(l.year));
   const bestSeason = [...playedSeasons].sort((a, b) => winPct(b) - winPct(a) || b.pointsFor - a.pointsFor)[0] ?? null;
   const worstSeason = [...playedSeasons].sort((a, b) => winPct(a) - winPct(b) || a.pointsFor - b.pointsFor)[0] ?? null;
 
@@ -869,12 +872,12 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
 
   // APPROVED + PUBLIC_SAFE knowledge about this manager, and commissioner history mentions.
   const knowledge = await prisma.leagueKnowledge.findMany({
-    where: { approvalStatus: "APPROVED", privacyStatus: "PUBLIC_SAFE", managers: { some: { managerId } } },
+    where: { approvalStatus: "APPROVED", privacyStatus: "PUBLIC_SAFE", sensitivity: "NONE", managers: { some: { managerId } } },
     select: { title: true },
     take: 6,
   });
   const historySections = await prisma.leagueHistorySection.findMany({
-    where: { approvalStatus: "APPROVED", body: { contains: manager.displayName } },
+    where: { approvalStatus: "APPROVED", sensitivity: "NONE", body: { contains: manager.displayName } },
     select: { year: true, title: true, body: true },
     take: 4,
   });
@@ -1091,11 +1094,17 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
   };
 }
 
-/** Return the saved summary, generating + saving it once if missing. */
-export async function getOrCreateManagerPerformanceSummary(managerId: string): Promise<{ text: string; isMock: boolean } | null> {
+/**
+ * The saved summary, or null. Read-only on purpose: this is called from a
+ * public page, and generating here meant an anonymous visitor could trigger up
+ * to four paid model calls per view — and see a draft the editorial guard had
+ * rejected for naming the private group chat, because rejected drafts are
+ * returned but never saved, so every view generated (and showed) a new one.
+ * Generation happens only in scripts/ai/regenerate-manager-profiles.ts.
+ */
+export async function getSavedManagerPerformanceSummary(managerId: string): Promise<{ text: string; isMock: boolean } | null> {
   const existing = await prisma.managerPerformanceSummary.findUnique({ where: { managerId } });
-  if (existing) return { text: existing.summary, isMock: existing.isMock };
-  return regenerateManagerPerformanceSummary(managerId);
+  return existing ? { text: existing.summary, isMock: existing.isMock } : null;
 }
 
 /** Force-regenerate + save the summary (admin action). */

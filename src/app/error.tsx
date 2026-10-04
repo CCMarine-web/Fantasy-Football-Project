@@ -33,9 +33,8 @@ export default function Error({
         We couldn&apos;t load this page
       </h1>
       <p className="text-sm text-muted-foreground">
-        {BRAND.name} had trouble reaching its data. This is usually a temporary connection issue —
-        try again in a moment. If it keeps happening, the league database may need to be configured
-        or synced.
+        {BRAND.name} had trouble loading this page. It is usually a brief hiccup — try again in a
+        moment.
       </p>
       <Button onClick={reset}>
         <RotateCw className="h-4 w-4" />

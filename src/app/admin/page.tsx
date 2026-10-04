@@ -1,3 +1,4 @@
+import { auth } from "@/auth";
 import Link from "next/link";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -77,6 +78,8 @@ function StatusBadge({ ok, onLabel, offLabel }: { ok: boolean; onLabel: string; 
 }
 
 export default async function AdminPage() {
+  const session = await auth();
+  if (session?.user?.role !== "ADMIN") throw new Error("Admins only");
   const overview = await getAdminOverview();
   const sleeperConfigured = isSleeperConfigured();
   const aiConfigured = isAIConfigured();
@@ -160,7 +163,7 @@ export default async function AdminPage() {
             <p className="text-sm text-muted-foreground">
               Map Sleeper user IDs and future chat-export participants to canonical Manager records.
             </p>
-            <Button size="sm" variant="outline" className="mt-3" disabled>
+            <Button size="sm" variant="outline" className="mt-3" render={<Link href="/admin/manager-mappings" />} nativeButton={false}>
               Manage Mappings
             </Button>
           </CardContent>
@@ -231,8 +234,8 @@ export default async function AdminPage() {
                 </div>
               ))
             )}
-            <Button size="sm" variant="outline" className="mt-2" disabled>
-              Go to Chat Lore Import
+            <Button size="sm" variant="outline" className="mt-2" render={<Link href="/admin/chat-import" />} nativeButton={false}>
+              Go to Chat Import
             </Button>
           </CardContent>
         </Card>
@@ -299,9 +302,8 @@ export default async function AdminPage() {
 
       <Separator className="my-8" />
       <p className="text-xs text-muted-foreground">
-        Most actions on this page are placeholders for this build — the underlying services (sync,
-        AI generation, chat import) already exist under <code>src/server/</code> and will be wired
-        to these controls in a subsequent phase.
+        Disabled buttons are tools that have not been built yet. Syncing and the weekly writing run
+        from Weekly Refresh; everything else on this page links to its working screen.
       </p>
     </div>
   );

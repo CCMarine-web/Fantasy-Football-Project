@@ -128,7 +128,8 @@ export interface HistoryNarrativeSection {
  */
 export async function listApprovedHistorySections(): Promise<HistoryNarrativeSection[]> {
   const rows = await prisma.leagueHistorySection.findMany({
-    where: { approvalStatus: "APPROVED", sectionType: { not: "OTHER" } },
+    // Anything marked SENSITIVE or REDACTED stays off the public site.
+    where: { approvalStatus: "APPROVED", sensitivity: "NONE", sectionType: { not: "OTHER" } },
     orderBy: [{ year: "desc" }, { sortOrder: "asc" }],
     select: { id: true, year: true, title: true, body: true, sourceRef: true },
   });

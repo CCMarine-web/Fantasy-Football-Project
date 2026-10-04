@@ -19,18 +19,36 @@ function weightPercents(weights: { weight: number }[]): number[] {
   return distributePercentages(weights.map((w) => w.weight));
 }
 
+/*
+ * The underlying figures arrive rounded to a number, so a whole value printed
+ * as "112 pts/gm" beside "108.4 pts/gm" — two precisions in one breakdown.
+ * Every measured figure is shown to one decimal. Records ("8-3"), counts and
+ * the whole-percent roster coverage are left as they are.
+ */
+const ONE_DECIMAL_FIGURE =
+  /\d+(?:\.\d+)?(?=%? (?:pts|points|starter pts|bench pts|projected points|exp\. wins|capital|vs season|variation|of optimal)\b)/g;
+
+function formatRaw(raw: string): string {
+  return raw.replace(ONE_DECIMAL_FIGURE, (n) => Number(n).toFixed(1));
+}
+
+/*
+ * Below `sm` a factor is two lines: name and value, then a full-width bar. In
+ * one row at 390px the fixed label and value columns wrapped ("89.8% of /
+ * optimal") and left every row a different height.
+ */
 function FactorBar({ label, percent, value, raw }: { label: string; percent: number; value: number; raw: string }) {
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-32 shrink-0 text-[13px] text-muted-foreground">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 sm:flex-nowrap sm:items-center sm:justify-start sm:gap-2">
+      <span className="min-w-0 text-[13px] text-muted-foreground sm:w-32 sm:shrink-0">
         {label} <span className="text-muted-foreground/60">{percent}%</span>
       </span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+      <span className="text-right font-mono text-[13px] tabular-nums text-muted-foreground sm:order-last sm:w-28 sm:shrink-0">
+        {formatRaw(raw)}
+      </span>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted sm:w-auto sm:flex-1">
         <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, value)}%` }} />
       </div>
-      <span className="w-28 shrink-0 text-right font-mono text-[13px] tabular-nums text-muted-foreground">
-        {raw}
-      </span>
     </div>
   );
 }
@@ -217,7 +235,7 @@ export default async function PowerRankingsPage() {
                     {row.score.toFixed(1)}
                   </span>
                 </div>
-                <div className="space-y-1">
+                <div className="space-y-2.5 sm:space-y-1">
                   {(() => {
                     const percents = weightPercents(row.factors);
                     return row.factors.map((f, i) => (

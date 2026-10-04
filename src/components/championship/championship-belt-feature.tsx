@@ -105,7 +105,8 @@ export function ChampionshipBeltFeature({
               </blockquote>
             ) : null}
 
-            <div className="flex items-center gap-4 pt-1">
+            {/* Wraps on a phone: the counter alone is wider than a 390px card. */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pt-1">
               <DaysAsChampion
                 isoStart={champion.championSince}
                 initial={nowMs != null ? initialElapsed(champion.championSince, nowMs) : null}

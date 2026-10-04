@@ -125,7 +125,7 @@ export default async function HistoryPage() {
           ) : (
             <div className="space-y-3">
               {seasons.map((season) => (
-                <Link key={season.id} href={`/history/${season.year}`}>
+                <Link key={season.id} href={`/history/${season.year}`} className="block">
                   <Card className="transition-colors hover:border-primary/60">
                     <CardContent className="flex items-center justify-between gap-4">
                       <div>

@@ -63,7 +63,7 @@ export default async function ChampionshipBeltPage() {
         <>
           {/* Hero — reigning champion */}
           <section className="mt-8">
-            <Card className="ring-primary/30">
+            <Card className="border-primary/30">
               <CardContent className="flex flex-col gap-6 sm:flex-row sm:items-start">
                 <div className="flex shrink-0 flex-col items-center gap-2">
                   {champion.trophyPhotoUrl ? (
@@ -207,41 +207,52 @@ export default async function ChampionshipBeltPage() {
           {/* Title history / lineage */}
           <section className="mt-10">
             <h2 className="mb-3 flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
-              <Trophy className="h-5 w-5" /> Title History
+              <Trophy className="h-5 w-5 shrink-0" /> Title History
             </h2>
             {lineage.length === 0 ? (
               <EmptyState title="No titles recorded yet" />
             ) : (
               <div className="overflow-x-auto rounded-lg border border-border/60">
+                {/* Tighter cell padding below `sm`: at 390px the desktop
+                    padding wrapped every name and the Runner-Up header. */}
                 <table className="w-full text-sm">
                   <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
                     <tr>
-                      <th className="px-4 py-2 text-left">Season</th>
-                      <th className="px-4 py-2 text-left">Champion</th>
+                      <th className="px-2.5 py-2 text-left sm:px-4">Season</th>
+                      <th className="px-2.5 py-2 text-left sm:px-4">Champion</th>
                       {/* The team name is the least essential column and the
                           widest; hiding it below `sm` keeps Runner-Up on screen
                           instead of clipped past the right edge on a phone. */}
                       <th className="hidden px-4 py-2 text-left sm:table-cell">Team</th>
-                      <th className="px-4 py-2 text-left">Runner-Up</th>
+                      <th className="px-2.5 py-2 text-left whitespace-nowrap sm:px-4">
+                        {/* Screen readers always hear "Runner-Up"; a phone shows "2nd". */}
+                        <span className="sm:hidden" aria-hidden>
+                          2nd
+                        </span>
+                        <span className="sr-only sm:not-sr-only">Runner-Up</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
                     {lineage.map((row) => (
                       <tr key={row.seasonId}>
-                        <td className="px-4 py-2 font-medium tabular-nums">{row.year}</td>
-                        <td className="px-4 py-2">
+                        <td className="px-2.5 py-2 font-medium tabular-nums sm:px-4">{row.year}</td>
+                        <td className="px-2.5 py-2 sm:px-4">
                           <Link
                             href={`/managers/${row.championManagerId}`}
                             className="inline-flex items-center gap-1.5 font-medium hover:text-primary"
                           >
-                            <Crown className="h-3.5 w-3.5 text-primary" />
+                            {/* shrink-0: as a flex child the icon was squeezed
+                                to a different size on every row whose name
+                                wrapped. */}
+                            <Crown className="h-3.5 w-3.5 shrink-0 text-primary" />
                             {row.championName}
                           </Link>
                         </td>
                         <td className="hidden px-4 py-2 text-muted-foreground sm:table-cell">
                           {row.championTeamName}
                         </td>
-                        <td className="px-4 py-2 text-muted-foreground">{row.runnerUpName ?? "—"}</td>
+                        <td className="px-2.5 py-2 text-muted-foreground sm:px-4">{row.runnerUpName ?? "—"}</td>
                       </tr>
                     ))}
                   </tbody>

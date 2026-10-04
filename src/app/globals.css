@@ -119,8 +119,8 @@
   --sidebar-ring: oklch(0.708 0 0);
   --field: oklch(0.42 0.09 152);
   --field-foreground: oklch(0.985 0 0);
-  --gold: oklch(0.795 0.16 86);
-  --gold-foreground: oklch(0.2 0.02 86);
+  --gold: oklch(0.6 0.13 236);
+  --gold-foreground: oklch(0.985 0 0);
 }
 
 .dark {
@@ -156,9 +156,11 @@
   --sidebar-accent-foreground: oklch(0.96 0.005 250);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.72 0.13 236 / 60%);
-  /* Win/positive stays green (semantic), separate from the blue accent. */
-  --field: oklch(0.5 0.1 152);
-  --field-foreground: oklch(0.98 0 0);
+  /* Win/positive stays green (semantic), separate from the blue accent.
+     Light enough to pass WCAG AA as small text on the background and on
+     cards; solid green fills (form pips) carry dark text. */
+  --field: oklch(0.74 0.15 152);
+  --field-foreground: oklch(0.17 0.03 152);
   /* `--gold` kept as a token name for compatibility, now the light-blue
      accent so championship/trophy elements match the rest of the UI. */
   --gold: oklch(0.72 0.13 236);

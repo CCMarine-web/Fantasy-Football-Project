@@ -4,7 +4,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
-import { isAIConfigured } from "@/lib/env";
 import { GradeLetter } from "@/generated/prisma/client";
 import {
   getDraftReportCards,
@@ -37,14 +36,34 @@ const CONFIDENCE_LABEL = {
   LOW: "Low data confidence",
 } as const;
 
-/** Color family for a grade: A green, B primary/blue, C amber, D/F red. */
+/** The last season imported from ESPN; Sleeper seasons start the year after. */
+const LAST_ESPN_SEASON = 2022;
+
+/**
+ * Color family for a grade: A field green, B primary blue, C neutral, D a red
+ * tint, F solid red. Theme tokens only — the C band was a leftover amber, and
+ * the scale has no gold in it. Every chip clears 4.5:1.
+ */
 function gradeColorClasses(grade: GradeLetter | null): string {
   if (!grade) return "bg-muted text-muted-foreground";
-  if (grade.startsWith("A")) return "bg-green-500/15 text-green-500";
+  if (grade.startsWith("A")) return "bg-field/15 text-field";
   if (grade.startsWith("B")) return "bg-primary/15 text-primary";
-  if (grade.startsWith("C")) return "bg-amber-500/15 text-amber-500";
-  return "bg-destructive/15 text-destructive"; // D, F
+  if (grade.startsWith("C")) return "bg-muted text-muted-foreground";
+  if (grade === "D") return "bg-destructive/10 text-destructive";
+  return "bg-destructive text-background"; // F
 }
+
+/**
+ * Joins confidence reasons into one sentence. The reasons are clauses written
+ * to follow a semicolon, so the first needs its capital and the end a stop.
+ */
+function asSentence(reasons: string[]): string {
+  const text = reasons.join("; ").replace(/\.$/, "");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
+}
+
+/** The season-wide ADP caveat, which the methodology panel already states. */
+const ADP_REASON = /average draft position/i;
 
 function FactorBar({ factor, percent }: { factor: DraftFactor; percent: number }) {
   return (
@@ -75,8 +94,14 @@ export default async function DraftReportCardsPage({
   );
 
   const isComplete = view.status === "COMPLETE";
+  const isEspnEra = view.seasonYear != null && view.seasonYear <= LAST_ESPN_SEASON;
   const originalPercents = weightPercents(view.weights);
   const revisitPercents = weightPercents(view.revisitWeights);
+  // When ADP is missing it already has its own line above the confidence note,
+  // so the note leaves it out rather than saying it twice.
+  const seasonReasons = view.adpAvailable
+    ? view.confidenceReasons
+    : view.confidenceReasons.filter((r) => !ADP_REASON.test(r));
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -139,15 +164,17 @@ export default async function DraftReportCardsPage({
                   <strong className="text-foreground">
                     {CONFIDENCE_LABEL[view.confidence]} for {view.seasonYear}.
                   </strong>{" "}
-                  {view.confidenceReasons.join("; ")}. Every team&rsquo;s own confidence is shown on its
-                  card.
+                  {seasonReasons.length > 0
+                    ? asSentence(seasonReasons)
+                    : "The missing average draft position, noted above, is the only gap."}{" "}
+                  Every team&rsquo;s own confidence is shown on its card.
                 </span>
               </div>
             ) : null}
 
             {/* The second, separate grade. */}
             <div className="mt-5 border-t border-border/40 pt-4">
-              <h3 className="font-heading text-base font-semibold">And the revisited grade</h3>
+              <h3 className="font-heading text-base font-semibold">The revisited grade (hindsight)</h3>
               {view.revisitAvailable ? (
                 <>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -178,22 +205,21 @@ export default async function DraftReportCardsPage({
               ) : (
                 <p className="mt-1 flex items-start gap-2 text-sm text-muted-foreground">
                   <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                  Not available for this season. A hindsight grade needs per-player weekly scoring,
-                  and ESPN does not expose that for its archived seasons. Rather than fall back to
-                  final standings — which would grade the season instead of the draft — no revisited
-                  grade is issued.
+                  {/* Why it is missing depends on the season: the ESPN
+                      explanation was shown for the current Sleeper season too,
+                      where the grade is simply not due yet. */}
+                  <span>
+                    {!isComplete && view.status != null
+                      ? `The hindsight grade is written once the ${view.seasonYear} season ends.`
+                      : isEspnEra
+                        ? "Not available for this season. A hindsight grade needs per-player weekly scoring, and ESPN does not expose that for its archived seasons. Rather than fall back to final standings — which would grade the season instead of the draft — no revisited grade is issued."
+                        : "Not available for this season. A hindsight grade needs per-player weekly scoring, and none is on record for it. Rather than fall back to final standings — which would grade the season instead of the draft — no revisited grade is issued."}
+                  </span>
                 </p>
               )}
             </div>
           </CardContent>
         </Card>
-      ) : null}
-
-      {!isAIConfigured() ? (
-        <p className="mt-6 rounded-md border border-dashed border-border/60 bg-card/30 px-4 py-3 text-xs text-muted-foreground">
-          Written commentary is placeholder text without an OPENAI_API_KEY. The letter grades and
-          factor scores are computed deterministically and are accurate regardless.
-        </p>
       ) : null}
 
       {/*
@@ -292,7 +318,9 @@ export default async function DraftReportCardsPage({
                           imageUrl={card.avatarUrl}
                           className="shrink-0"
                         />
-                        <span className="min-w-0 flex-1 truncate font-heading text-lg font-semibold">
+                        {/* Wraps rather than truncates: "Michael Barkeme…" is
+                            not a name anyone in the league goes by. */}
+                        <span className="min-w-0 flex-1 font-heading text-lg font-semibold break-words">
                           {card.managerName}
                         </span>
                         <span
@@ -311,7 +339,7 @@ export default async function DraftReportCardsPage({
                     <div className="mb-4 flex flex-wrap items-center gap-3">
                       <Link
                         href={`/managers/${card.managerId}`}
-                        className="min-w-0 truncate text-sm font-medium hover:text-primary"
+                        className="min-w-0 text-sm font-medium break-words hover:text-primary"
                       >
                         View {card.managerName}&rsquo;s profile
                       </Link>
@@ -333,7 +361,7 @@ export default async function DraftReportCardsPage({
 
                     {card.confidenceReasons.length > 0 ? (
                       <p className="mb-3 text-xs text-muted-foreground">
-                        {card.confidenceReasons.join("; ")}.
+                        {asSentence(card.confidenceReasons)}
                       </p>
                     ) : null}
 

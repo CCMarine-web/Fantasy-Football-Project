@@ -21,8 +21,7 @@ export default async function LoginPage({
         <CardContent>
           <LoginForm callbackUrl={callbackUrl ?? "/"} />
           <p className="mt-6 text-center text-xs text-muted-foreground">
-            Don&apos;t have an account? Ask your league admin, or use one of the seeded demo
-            accounts listed in the project README.
+            Don&apos;t have an account? Ask the commissioner for one.
           </p>
         </CardContent>
       </Card>

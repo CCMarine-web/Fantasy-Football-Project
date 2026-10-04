@@ -1,6 +1,7 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag } from "next/cache";
+import { CACHE_TAGS } from "@/server/cache";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { MediaCategory } from "@/generated/prisma/client";
@@ -12,6 +13,11 @@ async function requireAdmin(): Promise<void> {
 
 function revalidate(): void {
   revalidatePath("/admin/media");
+  // The public gallery reads through the data cache; a rejected or unpublished
+  // photo must leave it now, not when the hour-long cache happens to expire.
+  updateTag(CACHE_TAGS.league);
+  updateTag(CACHE_TAGS.managers);
+  revalidatePath("/hall-of-shame");
 }
 
 const MEDIA_CATEGORY_VALUES = Object.values(MediaCategory) as string[];

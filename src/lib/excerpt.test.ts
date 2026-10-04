@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { excerpt, paragraphsOf, wordCount } from "./excerpt";
+import { excerpt, paragraphsOf, sentencesOf, wordCount } from "./excerpt";
 
 /** n words, as one sentence ending in a full stop. */
 function sentence(n: number, marker = "word"): string {
@@ -76,6 +76,19 @@ describe("excerpt", () => {
   it("is stable across calls", () => {
     const text = [sentence(80), sentence(80), sentence(80)].join("\n\n");
     expect(excerpt(text, BAND)).toBe(excerpt(text, BAND));
+  });
+});
+
+describe("sentencesOf", () => {
+  it("does not end a sentence at a decimal point", () => {
+    expect(sentencesOf("He went 43-41, averaging 105.3 points. Then he won it all.")).toEqual([
+      "He went 43-41, averaging 105.3 points. ",
+      "Then he won it all.",
+    ]);
+  });
+
+  it("keeps a trailing unpunctuated fragment", () => {
+    expect(sentencesOf("One. Two without a stop")).toEqual(["One. ", "Two without a stop"]);
   });
 });
 

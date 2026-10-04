@@ -142,6 +142,13 @@ export async function getStandingsView(seasonId: string): Promise<StandingsView>
       if (b.wins !== a.wins) return b.wins - a.wins;
       return b.pointsFor - a.pointsFor;
     });
+    /*
+     * A stored rank exists only once a season has been finalised. While it is
+     * in progress the position IS the order above — wins, then points for, the
+     * same order Sleeper ranks by — so number it, rather than showing a column
+     * of dashes (and "0th in the table" on the Matchup of the Week).
+     */
+    if (rows.some((r) => !r.rank)) rows.forEach((r, i) => (r.rank = i + 1));
     return {
       rows,
       ordering: "STANDINGS",

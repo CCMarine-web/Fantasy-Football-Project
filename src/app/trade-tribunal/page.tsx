@@ -17,7 +17,7 @@ export const metadata = { title: "Trade Tribunal" };
 const VERDICT_STYLE: Record<Lopsidedness, string> = {
   HIGHWAY_ROBBERY: "bg-destructive text-destructive-foreground",
   FLEECED: "bg-primary text-primary-foreground",
-  CLEAR_WINNER: "bg-gold text-gold-foreground",
+  CLEAR_WINNER: "border border-primary/50 bg-primary/15 text-primary",
   SLIGHT_EDGE: "border border-border/60 bg-muted text-muted-foreground",
   EVEN_DEAL: "border border-border/60 bg-muted text-muted-foreground",
 };
@@ -142,7 +142,7 @@ export default async function TradeTribunalPage({
             description={
               all.length === 0
                 ? "Once managers start wheeling and dealing, every trade lands here for judgment."
-                : "Every trade on record came out close to even. Use the archive link above to see them all."
+                : "Every trade on record came out close to even. Use “Show every trade” above to see them all."
             }
           />
         ) : (
@@ -158,6 +158,20 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
     t.lopsidedness === "HIGHWAY_ROBBERY" ||
     t.lopsidedness === "FLEECED" ||
     t.lopsidedness === "CLEAR_WINNER";
+
+  /*
+   * The winner's share of all the value that changed hands. This replaces a
+   * multiple of the AVERAGE haul, which is exactly 2.0× whenever the losing
+   * side banked nothing — the most common one-sided trade — so it said the
+   * same thing on every card. Values are floored at zero, so the share is a
+   * true percentage. Never rounded up to 100% while the other side got any.
+   */
+  const total = t.sides.reduce((sum, s) => sum + s.value, 0);
+  const winnerValue = t.sides.find((s) => s.managerId === t.winnerManagerId)?.value;
+  const winnerShare =
+    t.sides.length === 2 && winnerValue != null && total > 0
+      ? Math.min(winnerValue === total ? 100 : 99, Math.round((winnerValue / total) * 100))
+      : null;
 
   return (
     <Card className={decisive ? "border-primary/40" : undefined}>
@@ -187,19 +201,16 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
               <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
                 Value differential
               </p>
-              <p className="font-mono text-lg font-semibold tabular-nums text-primary">
-                +{t.differential.toFixed(0)}
+              {/* One decimal, matching the verdict prose (+41 above a verdict
+                  that says 41.2 read as two different numbers). Body face with
+                  tabular figures, like every other value on the card. */}
+              <p className="text-lg font-semibold tabular-nums text-primary">
+                +{t.differential.toFixed(1)}
               </p>
               <p className="text-xs text-muted-foreground">
                 position-adjusted points above replacement
-                {/* The relative figure is the gap measured against the AVERAGE
-                    haul, so it routinely exceeds 100% — "189% gap between the
-                    two hauls" reads as a percentage of something and is not
-                    one. Expressed as a multiple above 1, it says what it means. */}
-                {t.relativeDifferential != null
-                  ? t.relativeDifferential >= 1
-                    ? ` · ${t.relativeDifferential.toFixed(1)}× the average haul in this trade`
-                    : ` · ${Math.round(t.relativeDifferential * 100)}% of the average haul in this trade`
+                {winnerShare != null
+                  ? ` · ${t.winnerName ?? "the winner"} got ${winnerShare}% of the value in the deal`
                   : ""}
               </p>
             </div>
@@ -227,11 +238,13 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
                   <span className="block text-[11px] tracking-wide text-muted-foreground uppercase">
                     Value received
                   </span>
+                  {/* Not Geist Mono: its slashed zero made a 0 look like a
+                      different kind of value from every other figure. */}
                   <span
-                    className="block font-mono text-sm tabular-nums text-foreground"
+                    className="block text-sm tabular-nums text-foreground"
                     title="Position-adjusted points above replacement, banked per game actually played"
                   >
-                    {side.value.toFixed(0)}
+                    {side.value.toFixed(1)}
                   </span>
                 </span>
               </div>
@@ -315,13 +328,13 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
                   {t.benchmarks.map((b) => (
                     <tr key={b.position}>
                       <td className="py-1 pr-4">{positionLabel(b.position)}</td>
-                      <td className="py-1 pr-4 text-right font-mono tabular-nums">
+                      <td className="py-1 pr-4 text-right tabular-nums">
                         {b.replacementPpg.toFixed(1)} pts/gm
                       </td>
-                      <td className="py-1 pr-4 text-right font-mono tabular-nums">
+                      <td className="py-1 pr-4 text-right tabular-nums">
                         {b.scarcity.toFixed(2)}×
                       </td>
-                      <td className="py-1 text-right font-mono tabular-nums text-muted-foreground">
+                      <td className="py-1 text-right tabular-nums text-muted-foreground">
                         {b.sampleSize}
                       </td>
                     </tr>

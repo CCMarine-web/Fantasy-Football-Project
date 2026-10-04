@@ -133,22 +133,29 @@ export function LuckScorePanel({
       </div>
 
       {career.score != null ? (
-        <div className="mt-4 space-y-2">
+        <div className="mt-4 space-y-4 sm:space-y-2">
+          {/* Below `sm` each factor stacks — name and weight, a full-width bar,
+              then the description. Side by side on a phone the description got
+              about 100px, set one word per line, and an unbreakable word like
+              "Championship-bracket" pushed the page wider than the screen. */}
           {career.components.map((c) => (
-            <div key={c.key} className="grid grid-cols-[9rem_1fr] items-start gap-3 text-sm sm:grid-cols-[11rem_1fr]">
-              <div className="min-w-0">
-                <p className="truncate font-medium">{c.label}</p>
-                <p className="text-xs text-muted-foreground">
+            <div
+              key={c.key}
+              className="text-sm sm:grid sm:grid-cols-[11rem_minmax(0,1fr)] sm:items-start sm:gap-3"
+            >
+              <div className="flex min-w-0 items-baseline justify-between gap-3 sm:block">
+                <p className="min-w-0 font-medium break-words sm:truncate">{c.label}</p>
+                <p className="shrink-0 text-xs text-muted-foreground">
                   {c.available
                     ? `${(c.weight * 100).toFixed(0)}% of the score`
                     : "not measured"}
                 </p>
               </div>
-              <div className="min-w-0">
+              <div className="mt-1.5 min-w-0 sm:mt-0">
                 {c.available && c.deviation != null ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:gap-2">
                     {/* A centre-anchored bar: right of centre is lucky. */}
-                    <div className="relative h-2 w-24 shrink-0 rounded-full bg-muted" aria-hidden>
+                    <div className="relative h-2 w-full shrink-0 rounded-full bg-muted sm:w-24" aria-hidden>
                       <div className="absolute inset-y-0 left-1/2 w-px bg-border" />
                       <div
                         className={`absolute inset-y-0 rounded-full ${c.deviation >= 0 ? "bg-field" : "bg-destructive"}`}
@@ -159,10 +166,10 @@ export function LuckScorePanel({
                         }
                       />
                     </div>
-                    <span className="min-w-0 text-xs text-muted-foreground">{c.detail}</span>
+                    <span className="min-w-0 text-xs break-words text-muted-foreground">{c.detail}</span>
                   </div>
                 ) : (
-                  <span className="text-xs text-muted-foreground">{c.detail}</span>
+                  <span className="block text-xs break-words text-muted-foreground">{c.detail}</span>
                 )}
               </div>
             </div>

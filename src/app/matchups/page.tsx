@@ -124,9 +124,13 @@ export default async function MatchupsPage({
 
       {/* ── Where the season actually is, and the week switcher ─────────── */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
+        {/* How current the data is — never the week picked in the selector. */}
         <Badge className="bg-primary text-primary-foreground">
-          {inSeason && hub.week != null ? `Updated through Week ${hub.week}` : periodLabel}
+          {inSeason && hub.phase.currentWeek != null ? `Updated through Week ${hub.phase.currentWeek}` : periodLabel}
         </Badge>
+        {inSeason && hub.week != null && hub.week !== hub.phase.currentWeek ? (
+          <Badge variant="outline">Viewing Week {hub.week}</Badge>
+        ) : null}
         {!inSeason ? (
           <span className="text-sm text-muted-foreground">
             {hub.phase.phase === "PRESEASON"
@@ -194,7 +198,7 @@ export default async function MatchupsPage({
           ["#standings", "Standings"] as const,
           ["#power", "Power Rankings"] as const,
           ["#wire", "Transactions"] as const,
-          ["#form", "Streaks & Records"] as const,
+          ["#form", "Streaks & Season Marks"] as const,
           ["#news", "News"] as const,
         ].map(([href, label]) => (
           <a key={href} href={href} className="text-primary hover:underline">
@@ -387,7 +391,9 @@ export default async function MatchupsPage({
         {!hub.hasTransactionData ? (
           <p className="rounded-md border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
             {inSeason
-              ? `No transactions are on record for ${hub.seasonYear}. For the ESPN-era seasons that is missing data rather than a quiet year — the platform does not retain transaction history for archived seasons.`
+              ? hub.seasonYear < 2023
+                ? `No transactions are on record for ${hub.seasonYear}. For the ESPN-era seasons that is missing data rather than a quiet year — the platform does not retain transaction history for archived seasons.`
+                : `Nobody has made a move in ${hub.seasonYear} yet.`
               : `Nobody has made a move yet in ${hub.seasonYear}. The wire opens once rosters exist.`}
           </p>
         ) : hub.successfulTransactions.length === 0 && hub.failedClaims.length === 0 ? (

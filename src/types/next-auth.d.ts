@@ -20,5 +20,7 @@ declare module "@auth/core/jwt" {
     id: string;
     role: "ADMIN" | "MEMBER";
     managerId?: string | null;
+    /** When role/managerId were last re-read from the database (epoch ms). */
+    checkedAt?: number;
   }
 }

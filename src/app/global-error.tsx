@@ -33,15 +33,14 @@ export default function GlobalError({
           gap: "1rem",
           padding: "2rem",
           textAlign: "center",
-          background: "#16181d",
+          background: "#090e12",
           color: "#e9eaec",
           fontFamily: "system-ui, sans-serif",
         }}
       >
         <h1 style={{ fontSize: "1.5rem", fontWeight: 600 }}>{BRAND.name} is unavailable</h1>
         <p style={{ maxWidth: "32rem", color: "#a0a4ab", fontSize: "0.9rem" }}>
-          The site couldn&apos;t start up. This usually means a required server setting (such as the
-          database connection or auth secret) is missing or invalid.
+          Something broke on our end. Give it a minute and try again.
         </p>
         <button
           onClick={reset}
@@ -49,8 +48,8 @@ export default function GlobalError({
             padding: "0.5rem 1rem",
             borderRadius: "0.5rem",
             border: "none",
-            background: "#e6b325",
-            color: "#1a1500",
+            background: "#41b0eb",
+            color: "#04131d",
             fontWeight: 600,
             cursor: "pointer",
           }}

@@ -22,10 +22,14 @@ function FormBadge({ result }: { result: "W" | "L" | "T" }) {
 /**
  * `caption` states what the order means. It is not decoration: before week 1
  * there are no standings, and a table that silently lists ten 0-0 teams as
- * positions 1 to 10 is telling every reader something untrue. When a row has no
- * recorded position the cell shows a dash rather than the row index.
+ * positions 1 to 10 is telling every reader something untrue. So before any
+ * game is played a row with no recorded position shows a dash. Once games have
+ * been played the rows arrive already in standings order, and a season still
+ * in progress has no stored rank yet — there the position in the list is the
+ * rank, rather than a column of dashes.
  */
 export function StandingsTable({ rows, caption }: { rows: StandingsRow[]; caption?: string }) {
+  const gamesPlayed = rows.some((r) => r.wins + r.losses + r.ties > 0);
   return (
     <div className="overflow-x-auto rounded-lg border border-border/60">
       {caption ? (
@@ -48,24 +52,28 @@ export function StandingsTable({ rows, caption }: { rows: StandingsRow[]; captio
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => (
+          {rows.map((row, index) => (
             <TableRow key={row.fantasyTeamId}>
-              <TableCell className="font-mono text-muted-foreground">{row.rank || "—"}</TableCell>
-              <TableCell>
+              <TableCell className="font-mono text-muted-foreground">
+                {row.rank || (gamesPlayed ? index + 1 : "—")}
+              </TableCell>
+              {/* The team cell wraps instead of truncating: at 390px a 7rem
+                  cap cut names to "Marvin's Ro…". Wrapping keeps the table
+                  inside the screen (its width no longer follows the longest
+                  name), and the avatar drops below `sm` to give the name room. */}
+              <TableCell className="whitespace-normal">
                 <Link
                   href={`/managers/${row.managerId}`}
                   className="flex items-center gap-3 hover:text-primary"
                 >
-                  <TeamAvatar name={row.managerName} imageUrl={row.avatarUrl} className="h-8 w-8 shrink-0" />
-                  {/* A max-width is required for `truncate` to engage: without
-                      one the cell takes its intrinsic content width, which held
-                      the table at 431px and clipped the points columns
-                      mid-number on any phone. */}
-                  <span className="min-w-0 max-w-[7rem] sm:max-w-none">
-                    <span className="block truncate text-sm font-semibold">{row.teamName}</span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {row.managerName}
-                    </span>
+                  <TeamAvatar
+                    name={row.managerName}
+                    imageUrl={row.avatarUrl}
+                    className="hidden h-8 w-8 shrink-0 sm:flex"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-sm leading-snug font-semibold break-words">{row.teamName}</span>
+                    <span className="block text-xs break-words text-muted-foreground">{row.managerName}</span>
                   </span>
                 </Link>
               </TableCell>
@@ -110,6 +118,11 @@ export function StandingsTable({ rows, caption }: { rows: StandingsRow[]; captio
           ))}
         </TableBody>
       </Table>
+      {/* PA, All-Play and the rest are hidden on a phone; say so, or the
+          table reads as the whole picture. */}
+      <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground sm:hidden">
+        More columns on a wider screen
+      </p>
     </div>
   );
 }

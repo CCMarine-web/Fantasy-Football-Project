@@ -116,6 +116,11 @@ export async function upsertPrediction(input: UpsertPredictionInput): Promise<vo
   if (!input.adminOverride) {
     const season = await prisma.season.findUniqueOrThrow({ where: { id: input.seasonId }, select: { year: true, status: true } });
     if (isPredictionLocked(season)) throw new Error("Predictions are locked — the deadline has passed.");
+    const current = await prisma.prediction.findUnique({
+      where: { seasonId_managerId: { seasonId: input.seasonId, managerId: input.managerId } },
+      select: { locked: true },
+    });
+    if (current?.locked) throw new Error("This prediction was entered by the commissioner and is locked.");
   }
 
   const data = {

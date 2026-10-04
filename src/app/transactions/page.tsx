@@ -36,8 +36,33 @@ const OUTCOME_STYLE: Record<TransactionView["outcome"], string> = {
   SUCCESSFUL: "bg-field/15 text-field border-field/40",
   FAILED: "bg-muted text-muted-foreground border-border/60",
   PENDING: "bg-gold/15 text-gold border-gold/40",
-  REVERSED: "bg-destructive/15 text-destructive border-destructive/40",
+  // /10 rather than /15: the red text drops under 4.5:1 on a heavier tint.
+  REVERSED: "bg-destructive/10 text-destructive border-destructive/40",
 };
+
+/*
+ * One look per kind of move. Every completed move used to wear the outcome's
+ * green, so a Drop was indistinguishable from an Add at a glance. Each pairing
+ * here clears 4.5:1 on a card.
+ */
+const KIND_STYLE = {
+  add: "bg-primary/15 text-primary border-primary/40",
+  addDrop: "bg-transparent text-primary border-primary/60",
+  drop: "bg-muted text-muted-foreground border-border/60",
+  trade: "bg-transparent text-foreground border-foreground/40",
+  commissioner: "bg-transparent text-muted-foreground border-border",
+} as const;
+
+/** Mirrors kindLabelFor in the repository, so the colour always matches the label. */
+function kindStyle(tx: TransactionView): string {
+  if (tx.type === "TRADE") return KIND_STYLE.trade;
+  if (tx.type === "COMMISSIONER") return KIND_STYLE.commissioner;
+  // A claim's label carries its outcome, so one that lost keeps the outcome's look.
+  if (tx.type === "WAIVER") return tx.outcome === "SUCCESSFUL" ? KIND_STYLE.add : OUTCOME_STYLE[tx.outcome];
+  if (tx.added.length > 0 && tx.dropped.length > 0) return KIND_STYLE.addDrop;
+  if (tx.dropped.length > 0) return KIND_STYLE.drop;
+  return KIND_STYLE.add;
+}
 
 interface Filters {
   season: string;
@@ -347,7 +372,7 @@ export default async function TransactionsPage({
                             label does not carry it. These used to render
                             identically, so seven managers all appeared to have
                             signed the same player. */}
-                        <Badge className={`border ${OUTCOME_STYLE[tx.outcome]}`}>{tx.kindLabel}</Badge>
+                        <Badge className={`border ${kindStyle(tx)}`}>{tx.kindLabel}</Badge>
                         {tx.type !== "WAIVER" && tx.outcome !== "SUCCESSFUL" ? (
                           <Badge className={`border ${OUTCOME_STYLE[tx.outcome]}`}>
                             {tx.outcomeLabel}

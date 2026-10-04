@@ -1,14 +1,59 @@
+import { prisma } from "@/lib/db";
 import { ManagerLink } from "@/components/shared/manager-link";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
-import { getComputedRecords } from "@/server/repositories/computed-records-repository";
+import {
+  getComputedRecords,
+  type RecordEntry,
+} from "@/server/repositories/computed-records-repository";
 import { Award } from "lucide-react";
 
 export const metadata = { title: "Records" };
 
+/**
+ * The Closest Game margin is printed to two decimals but its detail line to
+ * one, so a 0.08-point win read "122.9–122.8" — a 0.1 margin. Under a point,
+ * the game is looked up and both scores are shown to two decimals as well.
+ *
+ * The record carries only display strings, so the game is found by its holder
+ * and the "Week N, YYYY" in the detail, and is accepted only if its margin is
+ * the one in the headline. Anything that does not match keeps the stored line.
+ */
+async function withPreciseClosestGame(records: RecordEntry[]): Promise<RecordEntry[]> {
+  const closest = records.find((r) => r.key === "closest");
+  if (!closest?.holderManagerId) return records;
+  const margin = Number.parseFloat(closest.value);
+  const when = /Week (\d+), (\d{4})/.exec(closest.detail);
+  if (!Number.isFinite(margin) || margin >= 1 || !when) return records;
+
+  const game = await prisma.matchup.findFirst({
+    where: {
+      week: Number(when[1]),
+      season: { year: Number(when[2]) },
+      teams: { some: { isWinner: true, fantasyTeam: { managerId: closest.holderManagerId } } },
+    },
+    select: {
+      teams: { select: { score: true, isWinner: true, fantasyTeam: { select: { managerId: true } } } },
+    },
+  });
+  const winner = game?.teams.find(
+    (t) => t.isWinner === true && t.fantasyTeam.managerId === closest.holderManagerId,
+  );
+  const loser = game?.teams.find((t) => t !== winner);
+  if (winner?.score == null || loser?.score == null) return records;
+  // The headline margin is rounded to 0.01, so the real one is within half of that.
+  if (Math.abs(winner.score - loser.score - margin) > 0.006) return records;
+
+  const detail = closest.detail.replace(
+    /^[\d.]+–[\d.]+/,
+    `${winner.score.toFixed(2)}–${loser.score.toFixed(2)}`,
+  );
+  return records.map((r) => (r === closest ? { ...r, detail } : r));
+}
+
 export default async function RecordsPage() {
-  const records = await getComputedRecords();
+  const records = await withPreciseClosestGame(await getComputedRecords());
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">

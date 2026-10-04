@@ -9,6 +9,18 @@ import Link from "next/link";
 
 export const metadata = { title: "Drafts" };
 
+/**
+ * A defence's public position label is "Team D/ST", which beside "Houston
+ * Texans" filled a phone row and truncated mid-label. On the board it is the
+ * short "D/ST" tag, and a name that already ends in D/ST is not doubled.
+ */
+function pickLabel(player: { firstName: string; lastName: string; position: string }) {
+  const name = `${player.firstName} ${player.lastName}`.trim();
+  const position = positionLabel(player.position);
+  if (position !== "Team D/ST") return { name, position };
+  return { name: name.replace(/\s+D\/?ST$/i, ""), position: "D/ST" };
+}
+
 export default async function DraftsPage({
   searchParams,
 }: {
@@ -58,30 +70,39 @@ export default async function DraftsPage({
                   Round {round}
                 </h2>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {picks.map((pick) => (
-                    <div
-                      key={pick.id}
-                      className="flex items-center justify-between rounded-md border border-border/60 bg-card/30 px-3 py-2 text-sm"
-                    >
-                      <span className="font-mono text-xs text-muted-foreground">{pick.pickNumber}.</span>
-                      <span className="flex-1 truncate px-2">
-                        {pick.player ? `${pick.player.firstName} ${pick.player.lastName}` : "—"}
-                        {pick.player ? (
-                          <span className="ml-1 text-xs text-muted-foreground">
-                            {positionLabel(pick.player.position)}
+                  {picks.map((pick) => {
+                    const label = pick.player ? pickLabel(pick.player) : null;
+                    return (
+                      <div
+                        key={pick.id}
+                        className="flex items-center gap-2 rounded-md border border-border/60 bg-card/30 px-3 py-2 text-sm"
+                      >
+                        <span className="shrink-0 font-mono text-xs text-muted-foreground">{pick.pickNumber}.</span>
+                        {/* Up to two lines, so a long name beside a KEEP badge
+                            or a long manager name wraps rather than truncating. */}
+                        <span className="line-clamp-2 min-w-0 flex-1 break-words">
+                          {label ? label.name : "—"}
+                          {label ? (
+                            <span className="ml-1 text-xs whitespace-nowrap text-muted-foreground">
+                              {label.position}
+                            </span>
+                          ) : null}
+                        </span>
+                        {/* The manager side is capped so it can never squeeze
+                            the player name down to nothing. */}
+                        <span className="flex max-w-[45%] shrink-0 items-center gap-2">
+                          <span className="truncate text-xs text-muted-foreground">
+                            {pick.manager?.displayName}
                           </span>
-                        ) : null}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {pick.manager?.displayName}
-                      </span>
-                      {pick.isKeeper ? (
-                        <Badge variant="outline" className="ml-2 text-[11px]">
-                          KEEP
-                        </Badge>
-                      ) : null}
-                    </div>
-                  ))}
+                          {pick.isKeeper ? (
+                            <Badge variant="outline" className="shrink-0 text-[11px]">
+                              KEEP
+                            </Badge>
+                          ) : null}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ))}

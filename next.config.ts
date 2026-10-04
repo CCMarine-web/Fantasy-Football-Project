@@ -10,6 +10,23 @@ const nextConfig: NextConfig = {
   async redirects() {
     return [{ source: "/weekly", destination: "/matchups", permanent: true }];
   },
+  /**
+   * The site is never meant to be framed: a page that can be embedded in
+   * someone else's frame can have its buttons clickjacked.
+   */
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Frame-Options", value: "DENY" },
+          { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+        ],
+      },
+    ];
+  },
   images: {
     // AVIF first (roughly 20-30% smaller than WebP at equal quality), WebP as
     // the fallback. The league photos used as page backgrounds are the largest

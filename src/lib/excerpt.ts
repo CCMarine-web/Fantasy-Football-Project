@@ -39,9 +39,21 @@ export function paragraphsOf(text: string): string[] {
     .filter(Boolean);
 }
 
-/** Splits prose into sentences, keeping their trailing punctuation and space. */
-function sentencesOf(text: string): string[] {
-  return text.match(/[^.!?]+[.!?]+(?:["'”’)]+)?\s*/g) ?? (text.trim() ? [text] : []);
+/**
+ * Splits prose into sentences, keeping their trailing punctuation and space.
+ *
+ * A decimal point is not a full stop. Manager profiles are full of numbers,
+ * and splitting "averaging 105.3 points" at the "." cut four cards off at
+ * "…averaging 105." — so decimals are masked before splitting and restored after.
+ */
+const DECIMAL_MASK = "\u0000";
+export function sentencesOf(text: string): string[] {
+  const masked = text.replace(/(\d)\.(\d)/g, `$1${DECIMAL_MASK}$2`);
+  const parts: string[] = [...(masked.match(/[^.!?]+[.!?]+(?:["'”’)]+)?\s*/g) ?? (masked.trim() ? [masked] : []))];
+  // Whatever trails the last full stop (an unpunctuated tail) is still text.
+  const joined = parts.join("");
+  if (joined.length < masked.length && masked.slice(joined.length).trim()) parts.push(masked.slice(joined.length));
+  return parts.map((p) => p.split(DECIMAL_MASK).join("."));
 }
 
 export function excerpt(

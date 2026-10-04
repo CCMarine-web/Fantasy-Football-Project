@@ -187,6 +187,21 @@ export async function getFeaturedMatchup(
       .map((g) => resultOf(g.score, g.opponentScore));
   };
 
+  /**
+   * The form strip shown on the card: this season only, through this game once
+   * it is final, oldest first — the same reading as the standings table. The
+   * strip used to reach back into last season and stop short of the game on
+   * screen, so a 0-3 team showed "L L W".
+   */
+  const displayFormFor = (managerId: string | null, throughThisWeek: boolean): ("W" | "L" | "T")[] => {
+    if (!managerId) return [];
+    return (gamesByManager.get(managerId) ?? [])
+      .filter((g) => !g.isPlayoff && g.year === seasonYear && (throughThisWeek ? g.week <= week : g.week < week))
+      .sort((a, b) => a.week - b.week)
+      .slice(-3)
+      .map((g) => resultOf(g.score, g.opponentScore));
+  };
+
   const candidates: FeaturedCandidate[] = playable.map((m) => {
     const [a, b] = m.teams;
     const managerAId = a.fantasyTeam.manager?.id ?? null;
@@ -276,7 +291,7 @@ export async function getFeaturedMatchup(
       isWinner: side.isWinner,
       powerRank: powerRankOf.get(side.fantasyTeamId) ?? null,
       standing: standingOf.get(side.fantasyTeamId) ?? null,
-      recentForm: formFor(managerId),
+      recentForm: displayFormFor(managerId, isFinal),
       keyPlayers: keyPlayers.get(side.fantasyTeamId) ?? [],
     };
   };

@@ -57,7 +57,7 @@ export const primaryNav: NavItem[] = [
       { href: "/history", label: "Season History" },
       { href: "/records", label: "Records" },
       { href: "/hall-of-shame", label: "Hall of Shame" },
-      { href: "/championship-belt", label: "Championship History" },
+      { href: "/championship-belt", label: "Championship Belt" },
       { href: "/drafts", label: "Drafts" },
     ],
   },

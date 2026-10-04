@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ManagerLink } from "@/components/shared/manager-link";
 import Link from "next/link";
@@ -10,7 +11,12 @@ import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repositor
 import { LOPSIDEDNESS_LABEL } from "@/server/stats/trade-value";
 import { Sparkles, Trophy } from "lucide-react";
 
-export const metadata = { title: "Season History" };
+export async function generateMetadata({ params }: { params: Promise<{ season: string }> }): Promise<Metadata> {
+  const { season } = await params;
+  const title = `${season} Season`;
+  const description = `The ${season} season of The Rat Trap: the champion, the playoff bracket, the standings and the trades.`;
+  return { title, description, openGraph: { title, description } };
+}
 
 const SEASON_STATUS_LABEL: Record<string, string> = {
   UPCOMING: "Upcoming",
@@ -18,6 +24,28 @@ const SEASON_STATUS_LABEL: Record<string, string> = {
   COMPLETE: "Complete",
 };
 
+/**
+ * Where a bracket section sits on the page: the title game first, because it
+ * is what a reader came for, then the rest of the winners bracket, then the
+ * placement and consolation games.
+ *
+ * Sections used to appear in whatever order their first row came back, which
+ * put a consolation game above the semifinals. The names are the ones the
+ * importers write (scripts/import/backfill-bracket-types.ts for Sleeper,
+ * scripts/import/espn/import-season.ts for ESPN).
+ */
+function bracketSectionRank(round: string): number {
+  const name = round.toLowerCase();
+  if (name.startsWith("consolation")) return 6;
+  if (name === "championship") return 0;
+  if (name.startsWith("semifinal")) return 1;
+  if (name.startsWith("quarterfinal")) return 2;
+  // Earlier winners-bracket rounds in a deeper bracket.
+  if (name.startsWith("playoff round")) return 3;
+  if (name.startsWith("third")) return 4;
+  if (name.startsWith("fifth")) return 5;
+  return 7;
+}
 
 export default async function SeasonHistoryPage({
   params,
@@ -44,13 +72,32 @@ export default async function SeasonHistoryPage({
     pointsFor: t.pointsFor,
   }));
 
-  const playoffRounds = new Map<string, typeof playoffMatchups>();
-  for (const m of playoffMatchups) {
+  // Ties are rare enough that a "-T" column would be noise most seasons.
+  const anyTies = season.fantasyTeams.some((t) => t.ties > 0);
+  const gamesPlayed = season.fantasyTeams.some((t) => t.wins + t.losses + t.ties > 0);
+
+  /*
+   * A bracket game needs two teams. Sleeper writes a one-sided row for a team
+   * with no postseason opponent that week — a bye, or an eliminated team still
+   * being scored — and those rendered as a "Playoffs" section of single-team
+   * cards with nobody to beat.
+   */
+  const bracketGames = playoffMatchups.filter((m) => m.teams.length >= 2);
+  const playoffRounds = new Map<string, typeof bracketGames>();
+  for (const m of bracketGames) {
     const key = m.roundName ?? "Playoffs";
     const list = playoffRounds.get(key) ?? [];
     list.push(m);
     playoffRounds.set(key, list);
   }
+  const lastWeek = (games: typeof bracketGames) => Math.max(...games.map((g) => g.week));
+  const orderedRounds = Array.from(playoffRounds.entries()).sort(
+    ([a, aGames], [b, bGames]) =>
+      bracketSectionRank(a) - bracketSectionRank(b) ||
+      // Same rank (e.g. two unnamed early rounds): the later round first.
+      lastWeek(bGames) - lastWeek(aGames) ||
+      a.localeCompare(b),
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -92,7 +139,7 @@ export default async function SeasonHistoryPage({
                 <tr>
                   <th className="px-3 py-2 text-left">#</th>
                   <th className="px-3 py-2 text-left">Team</th>
-                  <th className="px-3 py-2 text-right">W-L-T</th>
+                  <th className="px-3 py-2 text-right whitespace-nowrap">{anyTies ? "W-L-T" : "W-L"}</th>
                   <th className="px-3 py-2 text-right">PF</th>
                 </tr>
               </thead>
@@ -102,11 +149,14 @@ export default async function SeasonHistoryPage({
                     <td className="px-3 py-2 font-mono text-muted-foreground">
                       {t.regularSeasonRank ?? i + 1}
                     </td>
+                    {/* The manager always gets a line of their own. Inline, a
+                        short team name pulled it up beside it and a long one
+                        split the manager's name across two lines. */}
                     <td className="px-3 py-2">
                       <ManagerLink managerId={t.managerId}>{t.teamName}</ManagerLink>
-                      <span className="ml-1 text-xs text-muted-foreground">{t.manager.displayName}</span>
+                      <span className="block text-xs text-muted-foreground">{t.manager.displayName}</span>
                     </td>
-                    <td className="px-3 py-2 text-right font-mono">
+                    <td className="px-3 py-2 text-right font-mono whitespace-nowrap">
                       {t.wins}-{t.losses}
                       {t.ties ? `-${t.ties}` : ""}
                     </td>
@@ -136,11 +186,11 @@ export default async function SeasonHistoryPage({
         <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
           Playoff Bracket
         </h2>
-        {playoffMatchups.length === 0 ? (
+        {bracketGames.length === 0 ? (
           <EmptyState title="No playoff data for this season yet" />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            {Array.from(playoffRounds.entries()).map(([round, matchups]) => (
+            {orderedRounds.map(([round, matchups]) => (
               <div key={round}>
                 <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
                   {round}
@@ -206,16 +256,26 @@ export default async function SeasonHistoryPage({
             <CardTitle className="uppercase">Highest Scorer</CardTitle>
           </CardHeader>
           <CardContent>
+            {/* Inline figures use the body face: Geist Mono gives the decimal
+                point a full-width cell, so "55.4" read as "55 . 4" in prose. */}
             {highestScore ? (
               <p className="text-sm">
                 <strong>
                   {highestScore.player.firstName} {highestScore.player.lastName}
                 </strong>{" "}
-                dropped <strong className="font-mono">{(highestScore.points ?? 0).toFixed(1)}</strong> points
+                dropped <strong className="tabular-nums">{(highestScore.points ?? 0).toFixed(1)}</strong> points
                 for {highestScore.roster.fantasyTeam.manager.displayName} in Week {highestScore.roster.week}.
               </p>
             ) : (
-              <p className="text-sm text-muted-foreground">No scoring data yet.</p>
+              <p className="text-sm text-muted-foreground">
+                {/* "No scoring data yet" on a finished ESPN season read as if
+                    it might still arrive. It will not: ESPN never kept it. */}
+                {season.dataSource === "ESPN"
+                  ? "Player-level scoring isn’t available for the ESPN era (2017–2022)."
+                  : gamesPlayed
+                    ? "No player-level scoring is on record for this season."
+                    : "No scoring data yet."}
+              </p>
             )}
           </CardContent>
         </Card>
@@ -241,7 +301,7 @@ export default async function SeasonHistoryPage({
             ) : (
               <div className="space-y-3">
                 <p className="text-sm">
-                  <strong className="font-mono">{seasonTrades.length}</strong> trade
+                  <strong className="tabular-nums">{seasonTrades.length}</strong> trade
                   {seasonTrades.length === 1 ? "" : "s"} on record
                   {biggestTrade?.lopsidedness && biggestTrade.lopsidedness !== "EVEN_DEAL"
                     ? `, the most one-sided judged ${LOPSIDEDNESS_LABEL[biggestTrade.lopsidedness].toLowerCase()}.`

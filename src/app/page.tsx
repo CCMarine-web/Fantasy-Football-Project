@@ -35,6 +35,20 @@ const TRANSACTION_LABEL: Record<string, string> = {
   COMMISSIONER: "Commissioner action",
 };
 
+/**
+ * Sleeper files a plain drop as a "free_agent" transaction, so the type alone
+ * labelled every drop a pickup. Trades and commissioner moves keep their type;
+ * everything else is named by what actually moved.
+ */
+function transactionLabel(type: string, assets: { direction: string; player: unknown }[]): string {
+  if (type === "TRADE" || type === "COMMISSIONER") return TRANSACTION_LABEL[type];
+  const adds = assets.some((a) => a.player && a.direction === "ADD");
+  const drops = assets.some((a) => a.player && a.direction === "DROP");
+  if (adds && drops) return type === "WAIVER" ? "Waiver claim + drop" : "Add/Drop";
+  if (drops) return "Drop";
+  return TRANSACTION_LABEL[type] ?? "Move";
+}
+
 export default async function HomePage() {
   const [data, seasonNarrative, champion, powerPreview, calendar] = await Promise.all([
     getHomepageData(),
@@ -60,13 +74,8 @@ export default async function HomePage() {
         <EmptyState
           icon={Trophy}
           title={`Welcome to ${BRAND.name}`}
-          description="No active season is configured yet. Seed the database or configure a Sleeper league from the admin dashboard to bring this homepage to life."
+          description="The new season isn't set up yet. Check back soon."
         />
-        <div className="mt-6 flex justify-center">
-          <Button render={<Link href="/admin" />} nativeButton={false}>
-            Go to Admin
-          </Button>
-        </div>
       </div>
     );
   }
@@ -211,7 +220,8 @@ export default async function HomePage() {
               {upcomingMatchups.length > 0 ? (
                 <section>
                   <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
-                    Up Next — Week {currentWeek + 1}
+                    {upcomingMatchups.some((m) => m.status === "IN_PROGRESS") ? "In Progress" : "Up Next"} — Week{" "}
+                    {currentWeek + 1}
                   </h2>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {upcomingMatchups.map((m) => (
@@ -383,9 +393,15 @@ export default async function HomePage() {
                   recentTransactions.map((tx) => (
                     <div key={tx.id} className="text-sm">
                       {/* A readable label, not the database enum. */}
-                      <Badge variant="outline" className="mb-1 text-[12px]">
-                        {TRANSACTION_LABEL[tx.type]}
-                      </Badge>
+                      <div className="mb-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <Badge variant="outline" className="text-[12px]">
+                          {transactionLabel(tx.type, tx.assets)}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {tx.assets.find((a) => a.fantasyTeam)?.fantasyTeam?.teamName}
+                          {tx.week != null ? ` · Week ${tx.week}` : ""}
+                        </span>
+                      </div>
                       <p className="text-muted-foreground">
                         {tx.assets
                           .filter((a) => a.player)
@@ -393,7 +409,7 @@ export default async function HomePage() {
                             (a) =>
                               `${a.direction === "ADD" ? "+" : "−"}${a.player!.firstName} ${a.player!.lastName}`,
                           )
-                          .join(", ") || "no players recorded"}
+                          .join(", ") || "No players recorded"}
                       </p>
                     </div>
                   ))

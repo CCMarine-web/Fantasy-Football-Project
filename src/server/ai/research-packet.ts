@@ -38,7 +38,7 @@ export async function buildManagerResearchPacket(managerId: string): Promise<Man
 
   const [knowledge, relsA, relsB] = await Promise.all([
     prisma.leagueKnowledge.findMany({
-      where: { approvalStatus: "APPROVED", privacyStatus: "PUBLIC_SAFE", managers: { some: { managerId } } },
+      where: { approvalStatus: "APPROVED", privacyStatus: "PUBLIC_SAFE", sensitivity: "NONE", managers: { some: { managerId } } },
       select: { title: true },
       take: 8,
     }),

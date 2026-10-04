@@ -326,7 +326,7 @@ async function main() {
     }
 
     const narrative = await prisma.leagueHistorySection.findMany({
-      where: { year: season.year, approvalStatus: "APPROVED", sectionType: { not: "OTHER" } },
+      where: { year: season.year, approvalStatus: "APPROVED", sensitivity: "NONE", sectionType: { not: "OTHER" } },
       orderBy: { sortOrder: "asc" },
       select: { body: true },
     });

@@ -47,6 +47,23 @@ export default async function SubmitPredictionPage() {
   const session = await auth();
   const user = session?.user;
 
+  if (!user && info.locked) {
+    return (
+      <Shell year={info.season.year}>
+        <Card>
+          <CardContent className="space-y-4 py-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              Predictions for {info.season.year} are locked — the draft has happened.
+            </p>
+            <Button render={<Link href="/predictions" />} nativeButton={false} variant="outline">
+              See everyone&apos;s picks
+            </Button>
+          </CardContent>
+        </Card>
+      </Shell>
+    );
+  }
+
   if (!user) {
     return (
       <Shell year={info.season.year}>
