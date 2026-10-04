@@ -11,6 +11,7 @@ import { prisma } from "@/lib/db";
 import { deriveFinalPlacements } from "./final-placements";
 import { getEnv } from "@/lib/env";
 import { deriveWeekStatus, type WeekStatus } from "@/lib/nfl-schedule";
+import { LEAGUE_CONFIG } from "@/lib/league-config";
 import {
   SyncType,
   SyncStatus,
@@ -428,7 +429,10 @@ async function resolveWeekStatuses(
       nowMs,
       leagueComplete: league.status === "complete",
       lastScoredLeg: league.settings.last_scored_leg ?? null,
-      seasonStartDate: sameSeason ? (state.season_start_date ?? null) : null,
+      // Sleeper's calendar first; the hand-set fallback only for its own season.
+      seasonStartDate:
+        (sameSeason ? state.season_start_date : null) ??
+        (LEAGUE_CONFIG.nflSeasonStartDate.startsWith(`${league.season}-`) ? LEAGUE_CONFIG.nflSeasonStartDate : null),
       currentLeg: sameSeason && state.season_type === "regular" ? state.leg : null,
     });
 }

@@ -32,8 +32,8 @@ const ENV_VARS = [
   },
   {
     name: "CRON_SECRET",
-    what: "When set, /api/cron/weekly requires it as a bearer token. Vercel Cron sends it automatically.",
-    required: false,
+    what: "/api/cron/weekly requires it as a bearer token, and Vercel Cron sends it automatically. Without it the scheduled refresh is disabled in production rather than left open.",
+    required: true,
   },
 ] as const;
 

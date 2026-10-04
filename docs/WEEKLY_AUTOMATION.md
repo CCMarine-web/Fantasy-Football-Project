@@ -98,7 +98,7 @@ a response, an audit-log row, or an error message: every message passes through
 | `DATABASE_URL` | yes | Nothing works. |
 | `SLEEPER_LEAGUE_ID` | no | The sync step is **skipped**, not failed. |
 | `OPENAI_API_KEY` | no | The writing step is **skipped**. Placeholder copy is never saved, so pages keep their honest empty states. |
-| `CRON_SECRET` | recommended | Without it `/api/cron/weekly` is open to anyone who guesses the path. When set, the endpoint requires `Authorization: Bearer <CRON_SECRET>`, which Vercel Cron sends automatically. |
+| `CRON_SECRET` | yes | The endpoint requires `Authorization: Bearer <CRON_SECRET>`, which Vercel Cron sends automatically. It fails closed: in a production build (Vercel production or preview, or `next start`) a missing secret disables the endpoint with a 503 instead of opening it. Only `next dev` accepts an unauthenticated request — trigger it locally with `npm run cron:trigger`. |
 
 ## Audit trail
 

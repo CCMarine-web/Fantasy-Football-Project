@@ -8,7 +8,7 @@ import { LEAGUE_CONFIG } from "./league-config";
  * silently shift the countdown by an hour, so pin the absolute instant here.
  */
 describe("LEAGUE_CONFIG.draftDate", () => {
-  const target = new Date(LEAGUE_CONFIG.draftDate);
+  const target = new Date(LEAGUE_CONFIG.draftDate ?? "");
 
   it("is a valid date", () => {
     expect(Number.isNaN(target.getTime())).toBe(false);

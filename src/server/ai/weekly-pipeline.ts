@@ -13,6 +13,7 @@ import { getContentSafeguards } from "@/server/repositories/ai-config-repository
 import { generateMatchupRecap } from "@/server/ai/services/matchup-recap";
 import { generateMatchupPreview } from "@/server/ai/services/matchup-preview";
 import { computeWeeklyAwards } from "@/server/repositories/weekly-awards-repository";
+import { isPlayedMatchup } from "@/server/ai/matchup-guards";
 
 export interface WeeklyPipelineResult {
   seasonId: string | null;
@@ -168,8 +169,7 @@ export async function generateWeeklyContent(opts: Opts = {}): Promise<WeeklyPipe
     include: { teams: { include: { fantasyTeam: { include: { manager: true } } } } },
     orderBy: { week: "asc" },
   });
-  const isPlayed = (m: (typeof matchups)[number]) =>
-    m.status === "FINAL" && m.teams.length === 2 && m.teams.every((t) => t.score != null);
+  const isPlayed = isPlayedMatchup;
 
   const finalWeeks = [...new Set(matchups.filter(isPlayed).map((m) => m.week))];
   const latestFinal = finalWeeks.at(-1) ?? null;
@@ -256,7 +256,7 @@ export async function generateWeeklyContent(opts: Opts = {}): Promise<WeeklyPipe
 
   // Deterministic weekly awards for the completed weeks (boom/bust/luck/bench),
   // before the model calls so a failed generation cannot hold them back.
-  for (const week of recapWeeks) await computeWeeklyAwards(season.id, week);
+  for (const week of recapWeeks.filter((w) => finalWeeks.includes(w))) await computeWeeklyAwards(season.id, week);
 
   await runPool(tasks, CONCURRENCY);
 

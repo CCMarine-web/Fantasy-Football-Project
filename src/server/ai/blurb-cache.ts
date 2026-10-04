@@ -11,6 +11,7 @@
 import { createHash } from "node:crypto";
 
 import { prisma } from "@/lib/db";
+import { assertMatchupPlayed } from "./matchup-guards";
 
 /**
  * Bumped whenever the power-ranking blurb PROMPT changes.
@@ -87,6 +88,9 @@ export async function putBlurb(args: {
   const text = args.text.trim();
   if (!text) return false;
   if (args.providerName === "mock" || text.includes("[MOCK AI CONTENT]")) return false;
+  // Featured-matchup recap keys are "<year>:<week>:<matchupId>"; a recap is
+  // only ever cached for a game that has actually been played.
+  if (args.kind === "MATCHUP_RECAP") await assertMatchupPlayed(args.subjectKey.split(":").at(-1));
 
   await prisma.aIBlurbCache.upsert({
     where: { kind_subjectKey: { kind: args.kind, subjectKey: args.subjectKey } },

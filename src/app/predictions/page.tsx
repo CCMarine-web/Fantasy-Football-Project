@@ -77,7 +77,11 @@ export default async function PredictionsPage() {
       ) : null}
 
       <p className="mt-4 text-xs text-muted-foreground">
-        {locked ? (
+        {locked && !deadline ? (
+          <>Predictions are locked.</>
+        ) : !deadline ? (
+          <>Predictions lock at the draft — date TBD.</>
+        ) : locked ? (
           <>
             Predictions locked{" "}
             <span className="text-foreground">

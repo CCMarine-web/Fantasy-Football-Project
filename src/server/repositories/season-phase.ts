@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { LEAGUE_CONFIG } from "@/lib/league-config";
+import { draftDateFor } from "@/lib/draft-date";
 
 /**
  * Where the current season actually is, so the site stops announcing "Week 1"
@@ -61,7 +61,9 @@ export async function getSeasonPhase(seasonId: string, year: number): Promise<Se
   ]);
 
   const draftPickCount = draft?._count.picks ?? 0;
-  const draftIso = LEAGUE_CONFIG.draftDate ?? null;
+  // Only a date for THIS season counts — last year's, left in config, is not
+  // evidence that this year's draft has happened.
+  const draftIso = draftDateFor(year);
   const nowMs = Date.now();
   const draftDatePassed = draftIso ? nowMs >= new Date(draftIso).getTime() : false;
 

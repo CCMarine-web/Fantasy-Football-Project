@@ -3,6 +3,7 @@
 import { ArticleType } from "@/generated/prisma/client";
 import { getAIProvider } from "../get-ai-provider";
 import { logGeneration } from "../log-generation";
+import { assertMatchupPlayed } from "../matchup-guards";
 import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
 import type { ContentSafeguards } from "../types";
 
@@ -40,6 +41,8 @@ export async function generateMatchupRecap(
   input: MatchupRecapInput,
   safeguards: ContentSafeguards
 ): Promise<MatchupRecapResult> {
+  // Checked before the model is called, so an unplayed game costs nothing.
+  await assertMatchupPlayed(input.matchupId);
   const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
   const userPrompt = `Structured matchup result data:\n${formatStructuredInput(input)}`;
 

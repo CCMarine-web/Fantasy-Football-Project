@@ -5,6 +5,7 @@
 
 import { prisma } from "@/lib/db";
 import type { AIContentGeneration, ArticleType, Prisma } from "@/generated/prisma/client";
+import { assertMatchupPlayed } from "./matchup-guards";
 
 export interface LogGenerationInput {
   contentType: ArticleType;
@@ -30,6 +31,10 @@ export function isMockOutput(providerName: string, outputText: string): boolean 
 
 export async function logGeneration(input: LogGenerationInput): Promise<AIContentGeneration | null> {
   if (isMockOutput(input.providerName, input.outputText)) return null;
+  // The last line of defence: no recap is stored for a game not yet played.
+  if (input.contentType === "MATCHUP_RECAP") {
+    await assertMatchupPlayed((input.inputSummary as { matchupId?: string } | null)?.matchupId);
+  }
 
   return prisma.aIContentGeneration.create({
     data: {

@@ -20,9 +20,10 @@ import { getCurrentChampion } from "@/server/repositories/championship-belt-repo
 import { getPowerRankingsPreview } from "@/server/repositories/power-rankings-repository";
 import { BRAND } from "@/lib/branding";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
-import { DraftCountdown } from "@/components/home/draft-countdown";
+import { SeasonCountdown } from "@/components/home/season-countdown";
 import { initialRemaining } from "@/lib/countdown";
-import { nextKickoff } from "@/lib/nfl-schedule";
+import { chooseSeasonCountdown } from "@/lib/season-countdown";
+import { getNflCalendar, seasonStartDateFor } from "@/server/nfl-calendar";
 import { OffseasonPanel } from "@/components/home/offseason-panel";
 import { getSeasonPhase } from "@/server/repositories/season-phase";
 import { getOffseasonData } from "@/server/repositories/offseason-repository";
@@ -35,13 +36,14 @@ const TRANSACTION_LABEL: Record<string, string> = {
 };
 
 export default async function HomePage() {
-  const [data, seasonNarrative, champion, powerPreview] = await Promise.all([
+  const [data, seasonNarrative, champion, powerPreview, calendar] = await Promise.all([
     getHomepageData(),
     getLastSeasonNarrative(),
     getCurrentChampion(),
     // Same computation as /power-rankings, just truncated, so the preview can
     // never disagree with the page it links to.
     getPowerRankingsPreview(5),
+    getNflCalendar(),
   ]);
 
   // Where the season actually is. The page used to announce "Week 1" in July
@@ -69,23 +71,21 @@ export default async function HomePage() {
     );
   }
 
-  // Before the draft, count down to it. After it, count down to the next
-  // week's Thursday-night kickoff; once the last week has kicked off, nothing.
-  const nextWeek = phase
-    ? nextKickoff(LEAGUE_CONFIG.nflSeasonStartDate, phase.nowMs, data.season.playoffStartWeek + 2)
-    : null;
-  const countdown = !LEAGUE_CONFIG.showDraftCountdown
-    ? null
-    : phase?.phase === "PRESEASON" && !phase.draftDatePassed
-      ? { isoDate: LEAGUE_CONFIG.draftDate, heading: "Countdown to Draft", passedHeading: "Draft is here", passedMessage: "It's draft time — good luck." }
-      : nextWeek
-        ? {
-            isoDate: new Date(nextWeek.kickoffMs).toISOString(),
-            heading: `Countdown to Week ${nextWeek.week} Kickoff`,
-            passedHeading: `Week ${nextWeek.week} is live`,
-            passedMessage: "Games are under way.",
-          }
-        : null;
+  // The draft in the offseason, the next kickoff in the regular season, the
+  // championship in the playoffs — dated from Sleeper's NFL calendar.
+  const countdown =
+    LEAGUE_CONFIG.showDraftCountdown && phase
+      ? chooseSeasonCountdown({
+          nowMs: phase.nowMs,
+          seasonYear: data.season.year,
+          seasonComplete: data.season.status === "COMPLETE",
+          drafted: phase.phase !== "PRESEASON",
+          configuredDraftDate: LEAGUE_CONFIG.draftDate,
+          seasonStartDate: seasonStartDateFor(calendar, data.season.year),
+          playoffStartWeek: data.season.playoffStartWeek,
+          championshipWeek: data.season.playoffStartWeek + 2,
+        })
+      : null;
 
   const {
     season,
@@ -120,13 +120,10 @@ export default async function HomePage() {
         </div>
         {countdown ? (
           <div className="w-full shrink-0 lg:max-w-xs">
-            <DraftCountdown
-              isoDate={countdown.isoDate}
+            <SeasonCountdown
+              countdown={countdown}
               timeZone={LEAGUE_CONFIG.draftTimeZone}
-              initial={phase ? initialRemaining(countdown.isoDate, phase.nowMs) : null}
-              heading={countdown.heading}
-              passedHeading={countdown.passedHeading}
-              passedMessage={countdown.passedMessage}
+              initial={phase && countdown.isoDate ? initialRemaining(countdown.isoDate, phase.nowMs) : null}
             />
           </div>
         ) : null}

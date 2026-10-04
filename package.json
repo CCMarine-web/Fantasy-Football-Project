@@ -22,7 +22,8 @@
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
     "sync:sleeper": "tsx scripts/sync-sleeper.ts",
-    "generate:weekly": "tsx scripts/generate-weekly.ts"
+    "generate:weekly": "tsx scripts/generate-weekly.ts",
+    "cron:trigger": "tsx scripts/cron-trigger.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -33,7 +34,7 @@
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "lucide-react": "^1.25.0",
-    "next": "16.2.12",
+    "next": "16.3.8",
     "next-auth": "^5.0.0-beta.31",
     "pg": "^8.22.0",
     "prisma": "^7.8.0",
@@ -59,7 +60,7 @@
     "@vitest/ui": "^4.1.10",
     "dotenv": "^17.4.2",
     "eslint": "^9",
-    "eslint-config-next": "16.2.12",
+    "eslint-config-next": "16.3.8",
     "jsdom": "^29.1.1",
     "prettier": "^3.9.5",
     "prettier-plugin-tailwindcss": "^0.8.1",

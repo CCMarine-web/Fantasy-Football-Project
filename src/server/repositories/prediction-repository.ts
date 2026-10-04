@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/db";
-import { LEAGUE_CONFIG } from "@/lib/league-config";
+import { draftDateFor } from "@/lib/draft-date";
 import type { Prediction, Season } from "@/generated/prisma/client";
 
 // ---------------------------------------------------------------------------
@@ -41,20 +41,30 @@ export const PROPHET_WEIGHTS = {
 
 export interface PredictionSeasonInfo {
   season: Season;
-  /** The moment predictions lock (defaults to the league draft time). */
-  deadline: Date;
+  /** The moment predictions lock — the season's draft — or null while that is TBD. */
+  deadline: Date | null;
   /** True once the deadline has passed — predictions can no longer be edited. */
   locked: boolean;
 }
 
-function predictionDeadline(): Date {
-  return new Date(LEAGUE_CONFIG.draftDate);
+function predictionDeadline(seasonYear: number): Date | null {
+  const iso = draftDateFor(seasonYear);
+  return iso ? new Date(iso) : null;
+}
+
+/**
+ * A season past its draft is locked whatever the config says: a missing or
+ * stale draft date must never reopen picks for a season already under way.
+ */
+function isPredictionLocked(season: Pick<Season, "year" | "status">): boolean {
+  const deadline = predictionDeadline(season.year);
+  return season.status !== "UPCOMING" || (deadline != null && Date.now() >= deadline.getTime());
 }
 
 /**
  * The season that predictions are FOR: the current (isCurrent) UPCOMING or
  * IN_PROGRESS season, else the most recent season overall. Returns the season
- * plus whether the LEAGUE_CONFIG.draftDate deadline has already passed.
+ * plus whether its draft (the prediction deadline) has already passed.
  */
 export async function getPredictionSeason(): Promise<PredictionSeasonInfo | null> {
   let season = await prisma.season.findFirst({
@@ -66,8 +76,7 @@ export async function getPredictionSeason(): Promise<PredictionSeasonInfo | null
   }
   if (!season) return null;
 
-  const deadline = predictionDeadline();
-  return { season, deadline, locked: Date.now() >= deadline.getTime() };
+  return { season, deadline: predictionDeadline(season.year), locked: isPredictionLocked(season) };
 }
 
 // ---------------------------------------------------------------------------
@@ -104,8 +113,9 @@ export interface UpsertPredictionInput {
  * are stored `locked: true` (they are historical backfills).
  */
 export async function upsertPrediction(input: UpsertPredictionInput): Promise<void> {
-  if (!input.adminOverride && Date.now() >= predictionDeadline().getTime()) {
-    throw new Error("Predictions are locked — the deadline has passed.");
+  if (!input.adminOverride) {
+    const season = await prisma.season.findUniqueOrThrow({ where: { id: input.seasonId }, select: { year: true, status: true } });
+    if (isPredictionLocked(season)) throw new Error("Predictions are locked — the deadline has passed.");
   }
 
   const data = {

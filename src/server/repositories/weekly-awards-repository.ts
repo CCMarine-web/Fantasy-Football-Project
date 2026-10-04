@@ -25,12 +25,19 @@ export const WEEKLY_AWARD_LABELS: Record<WeeklyAwardType, string> = {
  * (seasonId, week, type).
  */
 export async function computeWeeklyAwards(seasonId: string, week: number): Promise<number> {
-  const teams = await prisma.matchupTeam.findMany({
+  const candidates = await prisma.matchupTeam.findMany({
     // Unverified scores (abandoned teams, unplayed weeks) cannot win or lose
-    // an award. See scripts/import/audit-suspect-scores.ts.
-    where: { matchup: { seasonId, week, isPlayoff: false }, score: { not: null }, verifiedScore: true },
-    include: { fantasyTeam: { select: { id: true, managerId: true, manager: { select: { displayName: true } } } } },
+    // an award. See scripts/import/audit-suspect-scores.ts. Only FINAL games
+    // count: an unplayed week once synced as 0-0 "finals" handed out a full
+    // set of awards for games nobody had played.
+    where: { matchup: { seasonId, week, isPlayoff: false, status: "FINAL" }, score: { not: null }, verifiedScore: true },
+    include: {
+      matchup: { select: { status: true } },
+      fantasyTeam: { select: { id: true, managerId: true, manager: { select: { displayName: true } } } },
+    },
   });
+  // Belt and braces: whatever the query returned, nothing unfinished survives.
+  const teams = candidates.filter((t) => t.matchup.status === "FINAL" && t.score != null);
   // A week with no verified scores has no awards. Clearing rather than
   // returning early is what removes awards computed from scores that have
   // since been withdrawn — an unplayed week once synced as 0-0, say.

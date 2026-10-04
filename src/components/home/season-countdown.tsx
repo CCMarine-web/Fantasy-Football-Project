@@ -1,0 +1,107 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { CalendarClock } from "lucide-react";
+import { computeRemaining, type Remaining } from "@/lib/countdown";
+import type { SeasonCountdown as SeasonCountdownData } from "@/lib/season-countdown";
+
+function Unit({ value, label }: { value: number; label: string }) {
+  return (
+    <div className="flex flex-col items-center">
+      <span className="font-heading text-3xl font-semibold tabular-nums text-primary-foreground">
+        {String(value).padStart(2, "0")}
+      </span>
+      <span className="text-[12px] tracking-[0.15em] text-primary-foreground/70 uppercase">{label}</span>
+    </div>
+  );
+}
+
+/**
+ * Live countdown to whatever the season is waiting for — the draft, the next
+ * kickoff, the championship — as chosen by chooseSeasonCountdown() on the
+ * server, or a plain "Draft date TBD" card when there is no date.
+ *
+ * The server passes a starting figure so the first paint shows real digits,
+ * and the date label is formatted in a FIXED locale and timezone so the server
+ * (UTC) and the browser render identical text — formatting with the viewer's
+ * locale trips a hydration mismatch. League time is also just more useful:
+ * everyone sees the same time the commissioner announced.
+ */
+export function SeasonCountdown({
+  countdown,
+  timeZone = "America/Chicago",
+  initial = null,
+}: {
+  countdown: SeasonCountdownData;
+  timeZone?: string;
+  /** Server-computed starting figure, used by both the server and first client render. */
+  initial?: Remaining | null;
+}) {
+  const { isoDate, heading, passedHeading, passedMessage, tbdMessage } = countdown;
+  const targetMs = isoDate ? new Date(isoDate).getTime() : Number.NaN;
+  const [remaining, setRemaining] = useState<Remaining | null>(initial);
+
+  useEffect(() => {
+    if (Number.isNaN(targetMs)) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const tick = () => {
+      setRemaining(computeRemaining(targetMs, Date.now()));
+      timer = setTimeout(tick, 1000);
+    };
+    // Schedule the first tick asynchronously (not synchronously in the effect
+    // body) so state is only set from a timer callback.
+    timer = setTimeout(tick, 0);
+    return () => clearTimeout(timer);
+  }, [targetMs]);
+
+  const card = (title: string, body: React.ReactNode, footer?: string) => (
+    <div className="rounded-xl bg-primary px-5 py-4 text-primary-foreground shadow-lg">
+      <div className="flex items-center gap-2">
+        <CalendarClock className="h-4 w-4" />
+        <p className="text-xs font-semibold tracking-[0.2em] uppercase">{title}</p>
+      </div>
+      {body}
+      {footer ? <p className="mt-3 text-xs text-primary-foreground/70">{footer}</p> : null}
+    </div>
+  );
+
+  if (!isoDate || Number.isNaN(targetMs)) {
+    return card(heading, <p className="mt-2 font-heading text-2xl font-semibold uppercase">{tbdMessage ?? "Date TBD"}</p>);
+  }
+
+  // Fixed locale + timezone => byte-identical on server and client.
+  const dateLabel = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
+  }).format(new Date(isoDate));
+
+  if (remaining?.passed) {
+    return card(passedHeading, <p className="mt-2 font-heading text-2xl font-semibold uppercase">{passedMessage}</p>, dateLabel);
+  }
+
+  return card(
+    heading,
+    remaining ? (
+      <div className="mt-3 flex items-center justify-between gap-1">
+        <Unit value={remaining.days} label="Days" />
+        <span className="font-heading text-xl text-primary-foreground/40">:</span>
+        <Unit value={remaining.hours} label="Hrs" />
+        <span className="font-heading text-xl text-primary-foreground/40">:</span>
+        <Unit value={remaining.minutes} label="Min" />
+        <span className="font-heading text-xl text-primary-foreground/40">:</span>
+        <Unit value={remaining.seconds} label="Sec" />
+      </div>
+    ) : (
+      // Only reachable if no starting figure was supplied. Says what it is
+      // doing rather than showing a row of zeros that reads as "expired".
+      <p className="mt-3 font-heading text-lg font-semibold">Calculating countdown…</p>
+    ),
+    dateLabel,
+  );
+}

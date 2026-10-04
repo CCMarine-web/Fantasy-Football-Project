@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getEnv } from "@/lib/env";
 import { runWeeklyRefresh, safeError } from "@/server/jobs/weekly-refresh";
+import { authorizeCronRequest } from "@/server/jobs/cron-auth";
 
 /**
  * The scheduled weekly refresh.
@@ -12,15 +13,18 @@ import { runWeeklyRefresh, safeError } from "@/server/jobs/weekly-refresh";
  * that is not final, which is the one thing a recap must not do.
  *
  * ── Environment ───────────────────────────────────────────────────────────
- * Required for the job to do anything:
+ * Required:
  *   DATABASE_URL         the Supabase pooler connection (already required)
+ *   CRON_SECRET          this endpoint requires
+ *                        `Authorization: Bearer <CRON_SECRET>`, which Vercel
+ *                        Cron sends automatically. In a production build a
+ *                        missing secret disables the endpoint (503) rather
+ *                        than opening it — see server/jobs/cron-auth.ts. Only
+ *                        `next dev` runs it without one, for local testing
+ *                        (`npm run cron:trigger`).
+ * Optional:
  *   SLEEPER_LEAGUE_ID    without it the sync step is skipped, not failed
  *   OPENAI_API_KEY       without it the writing step is skipped, not failed
- * Strongly recommended:
- *   CRON_SECRET          when set, this endpoint requires
- *                        `Authorization: Bearer <CRON_SECRET>`, which Vercel
- *                        Cron sends automatically. Without it the endpoint is
- *                        open to anyone who guesses the path.
  *
  * No value of any of these is ever written to the response or to the audit log
  * — see `safeError` in server/jobs/weekly-refresh.ts.
@@ -34,12 +38,13 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
 export async function GET(request: Request) {
-  const secret = getEnv().CRON_SECRET.trim();
-  if (secret) {
-    const auth = request.headers.get("authorization");
-    if (auth !== `Bearer ${secret}`) {
-      return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-    }
+  const access = authorizeCronRequest({
+    secret: getEnv().CRON_SECRET,
+    authorization: request.headers.get("authorization"),
+    nodeEnv: process.env.NODE_ENV,
+  });
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
 
   try {
