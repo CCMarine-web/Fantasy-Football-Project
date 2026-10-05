@@ -3,9 +3,10 @@
 // (MANAGER_PROFILE) so it can be generate-once-reused. Mock without a key.
 
 import { ArticleType } from "@/generated/prisma/client";
-import { getAIProvider } from "../get-ai-provider";
 import { logGeneration } from "../log-generation";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const SCOUTING_REPORT_PROMPT_VERSION = "scouting-report-v1";
@@ -37,10 +38,10 @@ export async function generateScoutingReport(
   input: ScoutingReportInput,
   safeguards: ContentSafeguards,
 ): Promise<ScoutingReportResult> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "scouting-report", safeguards);
   const userPrompt = `Manager scouting facts:\n${formatStructuredInput(input)}`;
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: SCOUTING_REPORT_PROMPT_VERSION,
     systemPrompt,
     userPrompt,

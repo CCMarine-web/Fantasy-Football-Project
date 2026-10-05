@@ -2,8 +2,8 @@
 // power-ranking-blurb: cheap with the mock provider; the weekly cron should
 // pre-generate with a real provider instead of calling per request.
 
-import { getAIProvider } from "../get-ai-provider";
-import { buildSystemPrompt } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const RIVALRY_BLURB_PROMPT_VERSION = "rivalry-blurb-v1";
@@ -29,19 +29,22 @@ export async function generateRivalryBlurb(
   input: RivalryBlurbInput,
   safeguards: ContentSafeguards,
 ): Promise<string> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "rivalry", safeguards);
   const userPrompt = [
     `${input.managerA} vs ${input.managerB}: ${input.record} over ${input.gamesPlayed} meetings (${input.playoffMeetings} in the playoffs).`,
     `Closest game decided by ${input.closestMargin} pts; biggest blowout ${input.biggestMargin} pts.`,
     `Current streak: ${input.currentStreak}.`,
   ].join("\n");
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: RIVALRY_BLURB_PROMPT_VERSION,
     systemPrompt,
     userPrompt,
     humorLevel: safeguards.humorLevel,
-    maxOutputTokens: 80,
+    // Reasoning models spend the budget on reasoning first; a tiny cap came
+    // back empty. The prompt asks for one sentence, which is the real limit.
+    maxOutputTokens: 2000,
+    reasoningEffort: "low",
   });
   return result.text.trim();
 }

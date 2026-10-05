@@ -1,19 +1,13 @@
 import "../lib/load-env";
 import { prisma } from "@/lib/db";
-import { getEnv, isAIConfigured } from "@/lib/env";
-import { getAIProvider } from "@/server/ai/get-ai-provider";
-import { buildSystemPrompt } from "@/server/ai/prompt-helpers";
-import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
-import { buildLeagueVoiceGuidance } from "@/server/ai/research-packet";
-import { getRecentlyUsedMaterial, avoidRepetitionInstruction, recordContentUsage } from "@/server/ai/content-memory";
-import { hashInputs, putBlurb, POWER_BLURB_VERSION } from "@/server/ai/blurb-cache";
-import {
-  findEditorialProblems,
-  rewriteWithoutProblemsInstruction,
-} from "@/server/ai/editorial-guards";
-import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
+import { isAIConfigured } from "@/lib/env";
+import { recordContentUsage } from "@/server/ai/content-memory";
+import { hashInputs, putBlurb } from "@/server/ai/blurb-cache";
+import { findEditorialProblems } from "@/server/ai/editorial-guards";
+import { getPowerRankings, powerBlurbHash } from "@/server/repositories/power-rankings-repository";
 import { getTradeTribunal, tradeVerdictKey } from "@/server/repositories/trade-tribunal-repository";
-import { tradeVerdictPrompt } from "@/server/ai/site-blurbs";
+import { buildBlurbContext, powerBlurbPrompt, tradeVerdictPrompt, writeBlurb, type BlurbContext } from "@/server/ai/site-blurbs";
+import { activeVoice, type VoiceContentType } from "@/server/ai/voice";
 import type { AIUsage } from "@/server/ai/types";
 
 /**
@@ -66,68 +60,31 @@ class Meter {
 }
 
 interface Ctx {
-  systemBase: string;
-  voice: string;
-  avoid: string;
-  model: string;
+  blurb: BlurbContext;
   meter: Meter;
   dryRun: boolean;
 }
 
 /**
- * Generates one piece of copy, and refuses to hand back a draft with defects a
- * reader would see.
- *
- * Every generator in this script funnels through here, so the retry applies to
- * power-ranking blurbs, rivalry summaries and trade verdicts alike. This is
- * where "the closet game was a 1.84-point nail-biter" — printed on an official
- * rivalry card — is caught: the writer is shown its own offending phrase and
- * asked again. Two attempts, then the caller is told to skip rather than save.
+ * Generates one piece of copy through the shared writer (server/ai/site-blurbs),
+ * which applies the active voice, the editorial guards and — in the unhinged
+ * voice — the verified-numbers check. Returns null in a dry run, for mock
+ * output, or when the writer refuses a draft after three attempts.
  */
 async function write(
   ctx: Ctx,
   userPrompt: string,
   maxTokens: number,
+  contentType: VoiceContentType,
 ): Promise<{ text: string; provider: string; model: string } | null> {
   if (ctx.dryRun) return null;
-
-  const base = [ctx.voice, ctx.avoid, userPrompt].filter(Boolean).join("\n\n");
-  let prompt = base;
-  let text = "";
-  let provider = "";
-  let model = "";
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const result = await getAIProvider().generate({
-      promptVersion: "site-blurb-v2",
-      systemPrompt: ctx.systemBase,
-      userPrompt: prompt,
-      humorLevel: 3,
-      maxOutputTokens: maxTokens,
-      reasoningEffort: "low",
-      model: ctx.model,
-    });
-    if (result.providerName === "mock") return null;
-    ctx.meter.record(result.model, result.usage);
-    text = result.text.trim();
-    provider = result.providerName;
-    model = result.model;
-
-    const problems = findEditorialProblems(text);
-    if (problems.length === 0) return { text, provider, model };
-
-    if (attempt === 2) {
-      console.log(
-        `      refused after 3 attempts: ${problems.map((p) => p.label).join("; ")}`,
-      );
-      return null;
-    }
-    prompt = `${base}\n\n${rewriteWithoutProblemsInstruction(problems)}\n\nPrevious draft:\n${text}`;
-  }
-  return null;
+  const out = await writeBlurb(ctx.blurb, userPrompt, maxTokens, contentType).catch((e: Error) => {
+    console.log(`      refused: ${e.message}`);
+    return null;
+  });
+  if (out) ctx.meter.record(out.model, out.usage);
+  return out;
 }
-
-const SYSTEM = `You are a staff writer for "The Rat Trap", a fantasy-football league newspaper. Write with personality — dry, needling, confident — but NEVER invent a statistic, event, quote, or storyline. You may only characterise the numbers you are given. If the numbers are thin, be brief rather than padding with invention. Do not mention that you are an AI, do not mention prompts or data sources, and do not quote anyone. Output plain prose only: no markdown, no headings, no quotation marks around the whole response.`;
 
 // --- purge ------------------------------------------------------------------
 
@@ -161,86 +118,12 @@ async function backfillPowerRankings(ctx: Ctx, limit: number | null) {
   const rows = limit ? data.rows.slice(0, limit) : data.rows;
   console.log(`[power] ${data.seasonYear} (${data.mode}, through week ${data.throughWeek}): ${rows.length} team(s)`);
 
-  /*
-   * The factors that actually carried weight this run, and nothing else.
-   *
-   * The blurbs were praising keeper value in a league with no keeper data and
-   * calling drafts strong before a draft had happened, because the prompt named
-   * every possible factor whether or not it had been measured. A factor that
-   * was dropped or scored zero weight is not mentioned at all now — it is not
-   * in the packet to mention.
-   */
-  const BASIS: Record<typeof data.mode, string> = {
-    MANAGER_BASELINE:
-      "before the draft — this ranks MANAGERS on previous seasons only. There is no roster, no draft board and no keeper information for this year, so nothing about this year's team can be characterised",
-    PRESEASON:
-      "after the draft, before week 1 — this ranks the freshly drafted rosters. No games have been played this season",
-    IN_SEASON: `through week ${data.throughWeek} of live results`,
-  };
-
   for (const r of rows) {
-    const usedFactors = r.factors.filter((f) => f.weight > 0);
-    const inSeason = data.mode === "IN_SEASON";
-    // Only figures the rating actually used, so the copy cannot cite a stat the
-    // page doesn't show. Record is passed as context and explicitly labelled as
-    // not being an input.
-    const facts = {
-      season: data.seasonYear,
-      basis: BASIS[data.mode],
-      rank: r.rank,
-      of: data.rows.length,
-      previousRank: r.previousRank,
-      team: r.teamName,
-      manager: r.managerName,
-      powerScore: r.score,
-      pointsPerGame: r.weightedPointsPerGame,
-      // In-season-only measures. Before week 1 these are zeros and an empty
-      // all-play record, which reads as a real 0-0 rather than as "not yet".
-      ...(inSeason
-        ? {
-            allPlay: `${r.allPlayWins}-${r.allPlayLosses}`,
-            expectedWins: r.expectedWins,
-            actualRecordForContextOnly: r.record,
-            lineupEfficiencyPct: r.lineupEfficiency,
-          }
-        : {}),
-      factorsThatDecidedThisRanking: usedFactors.map((f) => ({
-        factor: f.label,
-        shareOfScore: `${Math.round(f.weight * 100)}%`,
-        scoreOutOf100: f.value,
-        detail: f.raw,
-      })),
-      strongest: [...usedFactors].sort((a, b) => b.value - a.value)[0]?.label ?? null,
-      weakest: [...usedFactors].sort((a, b) => a.value - b.value)[0]?.label ?? null,
-    };
-    const inputHash = hashInputs({
-      // Bumped when the prompt changed, so blurbs written from the old one —
-      // the ones discussing keepers and drafts that did not exist — are
-      // regenerated rather than served forever from an unchanged score.
-      promptVersion: POWER_BLURB_VERSION,
-      rank: r.rank,
-      score: r.score,
-      ppg: r.weightedPointsPerGame,
-      allPlay: r.allPlayPct,
-      exp: r.expectedWins,
-      week: data.throughWeek,
-      mode: data.mode,
-    });
+    // Prompt and cache key are shared with the weekly refresh (server/ai/site-blurbs).
+    const inputHash = powerBlurbHash(r, data.throughWeek, data.mode);
     const subjectKey = `${data.seasonYear}:${r.fantasyTeamId}`;
-
-    const prompt = [
-      `Write ONE sentence (max 32 words) about this team's standing in the ${data.seasonYear} rankings.`,
-      ``,
-      `These rankings measure team QUALITY, not results: win-loss record is NOT an input. Do not claim the ranking is based on wins, championships or playoff finish, and do not restate the record as if it drove the rating.`,
-      ``,
-      `"factorsThatDecidedThisRanking" is the COMPLETE list of what went into this number. You may only characterise factors on that list. A factor that is not listed was not measured and carried no weight — say nothing about it, in any direction. In particular: never mention keepers, keeper value, a draft, draft picks, draft capital or roster construction unless a factor about it appears in that list. Praising a draft that has not happened, or keeper value that was never recorded, has been printed on this page before.`,
-      ``,
-      `The "basis" field says what stage of the season this is. Do not imply games have been played when they have not.`,
-      ``,
-      `Verified facts:`,
-      JSON.stringify(facts, null, 2),
-    ].join("\n");
-    const out = await write(ctx, prompt, 2200);
+    const prompt = powerBlurbPrompt(data, r);
+    const out = await write(ctx, prompt, 2200, "power-ranking");
     if (!out) {
       console.log(`  [dry/mock] ${r.managerName}`);
       continue;
@@ -377,7 +260,7 @@ async function backfillRivalries(ctx: Ctx, limit: number | null) {
     ]
       .filter(Boolean)
       .join("\n");
-    const out = await write(ctx, prompt, 2600);
+    const out = await write(ctx, prompt, 2600, "rivalry");
     if (!out) {
       console.log(`  [dry/mock] ${r.managerA.displayName} vs ${r.managerB.displayName}`);
       continue;
@@ -407,7 +290,7 @@ async function backfillTrades(ctx: Ctx, limit: number | null) {
     // Prompt and key are shared with the weekly refresh (server/ai/site-blurbs).
     const inputHash = tradeVerdictKey(t);
     const prompt = tradeVerdictPrompt(t);
-    const out = await write(ctx, prompt, 2200);
+    const out = await write(ctx, prompt, 2200, "trade-verdict");
     if (!out) {
       console.log(`  [dry/mock] ${t.seasonYear} wk ${t.week}`);
       continue;
@@ -442,21 +325,9 @@ async function main() {
     return;
   }
 
-  const safeguards = await getContentSafeguards();
-  const [voice, used] = await Promise.all([
-    buildLeagueVoiceGuidance(),
-    getRecentlyUsedMaterial({ limit: 60 }),
-  ]);
-
-  const ctx: Ctx = {
-    systemBase: buildSystemPrompt(SYSTEM, safeguards),
-    voice,
-    avoid: avoidRepetitionInstruction(used),
-    model: getEnv().OPENAI_MODEL,
-    meter: new Meter(),
-    dryRun,
-  };
-  console.log(`league voice guidance: ${voice ? `${voice.length} chars` : "none"}`);
+  const blurb = await buildBlurbContext();
+  const ctx: Ctx = { blurb, meter: new Meter(), dryRun };
+  console.log(`league voice guidance: ${blurb.voice ? `${blurb.voice.length} chars` : "none"} | voice: ${activeVoice().mode}`);
 
   if (kinds.includes("power")) await backfillPowerRankings(ctx, limit);
   if (kinds.includes("rivalry")) await backfillRivalries(ctx, limit);

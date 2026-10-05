@@ -36,6 +36,13 @@ interface Opts {
   /** Preview only this week. Default: every week up to the next unplayed one. */
   previewWeek?: number;
   sync?: boolean;
+  /**
+   * Write even where a recap/preview already exists, at most this many of each
+   * (voice samples; pair with AI_NO_PERSIST so nothing is stored).
+   */
+  regenerate?: { maxPerKind: number };
+  /** Receives each piece as it is written (voice samples). */
+  onWritten?: (kind: "recap" | "preview", label: string, text: string) => void;
 }
 
 /**
@@ -194,8 +201,10 @@ export async function generateWeeklyContent(opts: Opts = {}): Promise<WeeklyPipe
   const tasks: (() => Promise<void>)[] = [];
 
   // --- Recaps for completed weeks ---
-  const recapCandidates = matchups.filter((m) => recapWeeks.includes(m.week) && isPlayed(m));
-  const recapped = await generatedMatchupIds("MATCHUP_RECAP", recapCandidates.map((m) => m.id));
+  const recapCandidates = matchups
+    .filter((m) => recapWeeks.includes(m.week) && isPlayed(m))
+    .slice(0, opts.regenerate?.maxPerKind ?? Infinity);
+  const recapped = opts.regenerate ? new Set<string>() : await generatedMatchupIds("MATCHUP_RECAP", recapCandidates.map((m) => m.id));
   for (const m of recapCandidates) {
     if (recapped.has(m.id)) {
       skipped += 1;
@@ -204,7 +213,7 @@ export async function generateWeeklyContent(opts: Opts = {}): Promise<WeeklyPipe
     tasks.push(async () => {
       const [a, b] = m.teams;
       const [aStars, bStars] = await Promise.all([topStarters(a.fantasyTeamId, m.week, 2), topStarters(b.fantasyTeamId, m.week, 2)]);
-      await generateMatchupRecap(
+      const recap = await generateMatchupRecap(
         {
           matchupId: m.id,
           week: m.week,
@@ -219,13 +228,16 @@ export async function generateWeeklyContent(opts: Opts = {}): Promise<WeeklyPipe
         },
         safeguards,
       );
+      opts.onWritten?.("recap", `${a.fantasyTeam.manager.displayName} vs ${b.fantasyTeam.manager.displayName}, Week ${m.week}`, recap.text);
       recapsGenerated += 1;
     });
   }
 
   // --- Previews, written from what was known before each week kicked off ---
-  const previewCandidates = matchups.filter((m) => previewWeeks.includes(m.week) && m.teams.length === 2);
-  const previewed = await generatedMatchupIds("MATCHUP_PREVIEW", previewCandidates.map((m) => m.id));
+  const previewCandidates = matchups
+    .filter((m) => previewWeeks.includes(m.week) && m.teams.length === 2)
+    .slice(0, opts.regenerate?.maxPerKind ?? Infinity);
+  const previewed = opts.regenerate ? new Set<string>() : await generatedMatchupIds("MATCHUP_PREVIEW", previewCandidates.map((m) => m.id));
   for (const m of previewCandidates) {
     if (previewed.has(m.id)) {
       skipped += 1;
@@ -249,7 +261,8 @@ export async function generateWeeklyContent(opts: Opts = {}): Promise<WeeklyPipe
           m.week,
         ),
       ]);
-      await generateMatchupPreview({ matchupId: m.id, week: m.week, season: season.year, teamA, teamB, headToHeadSummary: h2h }, safeguards);
+      const preview = await generateMatchupPreview({ matchupId: m.id, week: m.week, season: season.year, teamA, teamB, headToHeadSummary: h2h }, safeguards);
+      opts.onWritten?.("preview", `${teamA.managerName} vs ${teamB.managerName}, Week ${m.week}`, preview.text);
       previewsGenerated += 1;
     });
   }

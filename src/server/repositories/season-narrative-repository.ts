@@ -11,7 +11,7 @@ export interface SeasonNarrative {
 }
 
 /** Builds the structured, factual input for the last completed season's summary. */
-async function buildSeasonSummaryInput(seasonId: string, year: number): Promise<SeasonSummaryInput | null> {
+export async function buildSeasonSummaryInput(seasonId: string, year: number): Promise<SeasonSummaryInput | null> {
   const [championship, teams, topGame] = await Promise.all([
     prisma.championship.findUnique({
       where: { seasonId },

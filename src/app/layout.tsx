@@ -30,6 +30,8 @@ export const metadata: Metadata = {
     template: `%s | ${BRAND.name}`,
   },
   description: BRAND.description,
+  // Never indexed: real names next to roasts. See app/robots.ts.
+  robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
 };
 
 export default async function RootLayout({

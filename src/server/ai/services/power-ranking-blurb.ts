@@ -5,8 +5,8 @@
 // mock provider it's instant; with a real provider the weekly cron should
 // pre-generate and persist instead of calling this per request.
 
-import { getAIProvider } from "../get-ai-provider";
-import { buildSystemPrompt } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const POWER_RANKING_BLURB_PROMPT_VERSION = "power-ranking-blurb-v1";
@@ -28,7 +28,7 @@ export async function generatePowerRankingBlurb(
   input: PowerRankingBlurbInput,
   safeguards: ContentSafeguards,
 ): Promise<string> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "power-ranking", safeguards);
   const movement =
     input.previousRank == null
       ? "new to the rankings"
@@ -43,12 +43,15 @@ export async function generatePowerRankingBlurb(
     `Biggest strength: ${input.topFactor}. Biggest weakness: ${input.weakestFactor}.`,
   ].join("\n");
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: POWER_RANKING_BLURB_PROMPT_VERSION,
     systemPrompt,
     userPrompt,
     humorLevel: safeguards.humorLevel,
-    maxOutputTokens: 80,
+    // Reasoning models spend the budget on reasoning first; a tiny cap came
+    // back empty. The prompt asks for one sentence, which is the real limit.
+    maxOutputTokens: 2000,
+    reasoningEffort: "low",
   });
   return result.text.trim();
 }

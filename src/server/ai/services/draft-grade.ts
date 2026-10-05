@@ -7,8 +7,9 @@
 // OPENAI_API_KEY. These functions never write to the database; the repository
 // owns persistence (grades live in the DraftGrade table, not AIContentGeneration).
 
-import { getAIProvider } from "../get-ai-provider";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { generateVoiced } from "../voiced-generate";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
 import {
   findEditorialProblems,
   findHindsight,
@@ -38,7 +39,9 @@ async function writeWithGuard(args: {
   humorLevel: number;
   checkHindsight: boolean;
 }): Promise<DraftRationaleResult> {
-  const provider = getAIProvider();
+  // Voiced generation: in the unhinged voice every number is checked against
+  // the data handed over (server/ai/voiced-generate.ts).
+  const provider = { generate: generateVoiced };
   const generate = (userPrompt: string) =>
     provider.generate({
       promptVersion: args.promptVersion,
@@ -158,7 +161,7 @@ export async function generateDraftRationale(
 ): Promise<DraftRationaleResult> {
   return writeWithGuard({
     promptVersion: DRAFT_GRADE_PROMPT_VERSION,
-    systemPrompt: buildSystemPrompt(GRADE_SYSTEM_PROMPT, safeguards),
+    systemPrompt: buildVoicedSystemPrompt(GRADE_SYSTEM_PROMPT, "draft-grade", safeguards),
     userPrompt: `Structured draft data (grade "${input.derivedGrade}" already assigned — justify it):\n${formatStructuredInput(input)}`,
     humorLevel: safeguards.humorLevel,
     checkHindsight: true,
@@ -171,7 +174,7 @@ export async function generateDraftRevisitRationale(
 ): Promise<DraftRationaleResult> {
   return writeWithGuard({
     promptVersion: DRAFT_REVISIT_PROMPT_VERSION,
-    systemPrompt: buildSystemPrompt(REVISIT_SYSTEM_PROMPT, safeguards),
+    systemPrompt: buildVoicedSystemPrompt(REVISIT_SYSTEM_PROMPT, "draft-grade", safeguards),
     userPrompt: `Structured draft-vs-results data (revisited grade "${input.revisitedGrade}" already assigned — justify it):\n${formatStructuredInput(input)}`,
     humorLevel: safeguards.humorLevel,
     // Hindsight is the whole point of this grade.

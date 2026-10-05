@@ -5,7 +5,8 @@
 // regenerated only on demand. Degrades to mock text without an API key.
 
 import { getAIProvider } from "../get-ai-provider";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
 import {
   disclosesItsSource,
   findSourceDisclosures,
@@ -214,7 +215,7 @@ export async function generateManagerPerformanceSummary(
   safeguards: ContentSafeguards,
 ): Promise<ManagerPerfResult> {
   // WRITE stage
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "manager-profile", safeguards);
   const userPrompt = `Verified manager facts:\n${formatStructuredInput(packet)}`;
   const provider = getAIProvider();
   let result = await provider.generate({

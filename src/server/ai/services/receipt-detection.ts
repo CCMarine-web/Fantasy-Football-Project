@@ -22,6 +22,8 @@
 
 import { getAIProvider } from "../get-ai-provider";
 import { buildSystemPrompt } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import { isAIConfigured } from "@/lib/env";
 import type { ContentSafeguards } from "../types";
 
@@ -138,9 +140,9 @@ export async function generateReceiptVerdict(
   outcome: string,
   safeguards: ContentSafeguards,
 ): Promise<string> {
-  const systemPrompt = buildSystemPrompt(VERDICT_SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(VERDICT_SYSTEM_PROMPT, "receipt", safeguards);
   const userPrompt = [`TAKE: ${take.trim()}`, `OUTCOME: ${outcome.trim()}`].join("\n");
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: RECEIPT_VERDICT_PROMPT_VERSION,
     systemPrompt,
     userPrompt,

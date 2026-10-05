@@ -7,12 +7,31 @@ import { prisma } from "@/lib/db";
 
 const schema = z.object({
   managerId: z.string().min(1),
-  photoUrl: z.string().trim().url().optional().or(z.literal("")),
+  // https or a site path only: z.url() alone also accepts javascript: and data:.
+  photoUrl: z
+    .string()
+    .trim()
+    .refine((v) => /^https:\/\//i.test(v) || /^\/(?!\/)/.test(v), "Use an https URL or a /path on this site")
+    .optional()
+    .or(z.literal("")),
   nickname: z.string().trim().max(120).optional().or(z.literal("")),
   nicknameOrigin: z.string().trim().max(1000).optional().or(z.literal("")),
   signatureMove: z.string().trim().max(300).optional().or(z.literal("")),
   bio: z.string().trim().max(1000).optional().or(z.literal("")),
   noRoast: z.string().optional(),
+  /** One topic per line; at most 20, each under 200 characters. */
+  offLimitsTopics: z
+    .string()
+    .max(5000)
+    .optional()
+    .transform((v) =>
+      (v ?? "")
+        .split(/\r?\n/)
+        .map((t) => t.trim())
+        .filter(Boolean)
+        .slice(0, 20)
+        .map((t) => t.slice(0, 200)),
+    ),
 });
 
 export async function saveManagerAction(
@@ -30,6 +49,7 @@ export async function saveManagerAction(
     signatureMove: formData.get("signatureMove") || undefined,
     bio: formData.get("bio") || undefined,
     noRoast: formData.get("noRoast") || undefined,
+    offLimitsTopics: formData.get("offLimitsTopics") ?? undefined,
   });
   if (!parsed.success) return { message: "Invalid input." };
 
@@ -42,6 +62,7 @@ export async function saveManagerAction(
       signatureMove: parsed.data.signatureMove || null,
       bio: parsed.data.bio || null,
       noRoast: parsed.data.noRoast === "on",
+      offLimitsTopics: parsed.data.offLimitsTopics,
     },
   });
   revalidatePath(`/managers/${parsed.data.managerId}`);

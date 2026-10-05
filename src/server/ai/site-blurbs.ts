@@ -1,13 +1,16 @@
 import { getEnv, isAIConfigured } from "@/lib/env";
-import { getAIProvider } from "@/server/ai/get-ai-provider";
-import { buildSystemPrompt } from "@/server/ai/prompt-helpers";
+import { buildVoicedSystemPrompt, type VoiceContentType } from "@/server/ai/voice";
+import { generateVoiced } from "@/server/ai/voiced-generate";
+import type { ContentSafeguards } from "@/server/ai/types";
 import { findEditorialProblems, rewriteWithoutProblemsInstruction } from "@/server/ai/editorial-guards";
 import { buildLeagueVoiceGuidance } from "@/server/ai/research-packet";
 import { avoidRepetitionInstruction, getRecentlyUsedMaterial } from "@/server/ai/content-memory";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
 import { getBlurbs, putBlurb } from "@/server/ai/blurb-cache";
 import type { AIUsage } from "@/server/ai/types";
+import { FACTOR_META } from "@/server/stats/weekly-power-rankings";
 import { tradeVerdictKey, type TradeTribunalView } from "@/server/repositories/trade-tribunal-repository";
+import { powerBlurbHash, type PowerRankingView, type PowerRankingsView } from "@/server/repositories/power-rankings-repository";
 
 /**
  * Short site copy — power-ranking blurbs, rivalry one-liners, trade verdicts —
@@ -22,7 +25,7 @@ import { tradeVerdictKey, type TradeTribunalView } from "@/server/repositories/t
 export const SITE_BLURB_SYSTEM = `You are a staff writer for "The Rat Trap", a fantasy-football league newspaper. Write with personality — dry, needling, confident — but NEVER invent a statistic, event, quote, or storyline. You may only characterise the numbers you are given. If the numbers are thin, be brief rather than padding with invention. Do not mention that you are an AI, do not mention prompts or data sources, and do not quote anyone. Output plain prose only: no markdown, no headings, no quotation marks around the whole response.`;
 
 export interface BlurbContext {
-  systemBase: string;
+  safeguards: ContentSafeguards;
   voice: string;
   avoid: string;
   model: string;
@@ -43,7 +46,7 @@ export async function buildBlurbContext(): Promise<BlurbContext> {
     getRecentlyUsedMaterial({ limit: 60 }),
   ]);
   return {
-    systemBase: buildSystemPrompt(SITE_BLURB_SYSTEM, safeguards),
+    safeguards,
     voice,
     avoid: avoidRepetitionInstruction(used),
     model: getEnv().OPENAI_MODEL,
@@ -56,13 +59,20 @@ export async function buildBlurbContext(): Promise<BlurbContext> {
  * again; after three attempts the caller is told to skip rather than save.
  * Returns null for mock output (nothing is ever cached from it).
  */
-export async function writeBlurb(ctx: BlurbContext, userPrompt: string, maxTokens: number): Promise<WrittenBlurb | null> {
+export async function writeBlurb(
+  ctx: BlurbContext,
+  userPrompt: string,
+  maxTokens: number,
+  contentType: VoiceContentType,
+): Promise<WrittenBlurb | null> {
   const base = [ctx.voice, ctx.avoid, userPrompt].filter(Boolean).join("\n\n");
+  const systemPrompt = buildVoicedSystemPrompt(SITE_BLURB_SYSTEM, contentType, ctx.safeguards);
   let prompt = base;
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const result = await getAIProvider().generate({
+    // generateVoiced holds the unhinged voice to the verified numbers.
+    const result = await generateVoiced({
       promptVersion: "site-blurb-v2",
-      systemPrompt: ctx.systemBase,
+      systemPrompt,
       userPrompt: prompt,
       humorLevel: 3,
       maxOutputTokens: maxTokens,
@@ -77,6 +87,97 @@ export async function writeBlurb(ctx: BlurbContext, userPrompt: string, maxToken
     prompt = `${base}\n\n${rewriteWithoutProblemsInstruction(problems)}\n\nPrevious draft:\n${text}`;
   }
   return null;
+}
+
+// ── Power-ranking blurbs ─────────────────────────────────────────────────────
+
+/**
+ * The prompt for one team's ranking blurb: only the factors that actually
+ * carried weight this run go in the packet, so the copy cannot praise a draft
+ * that has not happened or keeper value that was never recorded.
+ */
+export function powerBlurbPrompt(data: PowerRankingsView, r: PowerRankingView): string {
+  const BASIS: Record<PowerRankingsView["mode"], string> = {
+    MANAGER_BASELINE:
+      "before the draft — this ranks MANAGERS on previous seasons only. There is no roster, no draft board and no keeper information for this year, so nothing about this year's team can be characterised",
+    PRESEASON: "after the draft, before week 1 — this ranks the freshly drafted rosters. No games have been played this season",
+    IN_SEASON: `through week ${data.throughWeek} of live results`,
+  };
+  const usedFactors = r.factors.filter((f) => f.weight > 0);
+  const inSeason = data.mode === "IN_SEASON";
+  const facts = {
+    season: data.seasonYear,
+    basis: BASIS[data.mode],
+    rank: r.rank,
+    of: data.rows.length,
+    previousRank: r.previousRank,
+    team: r.teamName,
+    manager: r.managerName,
+    powerScore: r.score,
+    pointsPerGame: r.weightedPointsPerGame,
+    // Before week 1 these are zeros, which read as a real 0-0 rather than "not yet".
+    ...(inSeason
+      ? {
+          allPlay: `${r.allPlayWins}-${r.allPlayLosses}`,
+          expectedWins: r.expectedWins,
+          actualRecordForContextOnly: r.record,
+          lineupEfficiencyPct: r.lineupEfficiency,
+        }
+      : {}),
+    factorsThatDecidedThisRanking: usedFactors.map((f) => ({
+      factor: f.label,
+      shareOfScore: `${Math.round(f.weight * 100)}%`,
+      // League-normalised, and higher always helped the ranking. Without the
+      // meaning a writer read a soft schedule ("102.4 allowed") as "brutal".
+      scoreOutOf100: f.value,
+      meaning: FACTOR_META[f.key].description,
+      detail: f.raw,
+    })),
+    strongest: [...usedFactors].sort((a, b) => b.value - a.value)[0]?.label ?? null,
+    weakest: [...usedFactors].sort((a, b) => a.value - b.value)[0]?.label ?? null,
+  };
+  return [
+    `Write ONE sentence (max 32 words) about this team's standing in the ${data.seasonYear} rankings.`,
+    ``,
+    `These rankings measure team QUALITY, not results: win-loss record is NOT an input. Do not claim the ranking is based on wins, championships or playoff finish, and do not restate the record as if it drove the rating.`,
+    ``,
+    `Each factor's scoreOutOf100 compares this team with the rest of the league: 100 is the best in the league on that factor, 0 the worst, and a higher score always helped the ranking. Read "meaning" before describing a factor.`,
+    ``,
+    `"factorsThatDecidedThisRanking" is the COMPLETE list of what went into this number. You may only characterise factors on that list. A factor that is not listed was not measured and carried no weight — say nothing about it, in any direction. In particular: never mention keepers, keeper value, a draft, draft picks, draft capital or roster construction unless a factor about it appears in that list.`,
+    ``,
+    `The "basis" field says what stage of the season this is. Do not imply games have been played when they have not.`,
+    ``,
+    `Verified facts:`,
+    JSON.stringify(facts, null, 2),
+  ].join("\n");
+}
+
+/**
+ * The weekly part of the power rankings' commentary: one blurb per team,
+ * written from this week's numbers, in the active voice. A blurb whose numbers
+ * have not changed is left alone.
+ */
+export async function refreshPowerRankingBlurbs(data: PowerRankingsView | null): Promise<{ written: number; unchanged: number }> {
+  if (!data || data.rows.length === 0 || !isAIConfigured()) return { written: 0, unchanged: 0 };
+  const subjects = data.rows.map((r) => ({ subjectKey: `${data.seasonYear}:${r.fantasyTeamId}`, inputHash: powerBlurbHash(r, data.throughWeek, data.mode) }));
+  const stored = await getBlurbs("POWER_RANKING", subjects);
+  let ctx: BlurbContext | null = null;
+  let written = 0;
+  let unchanged = 0;
+  for (const [i, r] of data.rows.entries()) {
+    const { subjectKey, inputHash } = subjects[i];
+    const current = stored.get(subjectKey);
+    if (current && !current.stale) {
+      unchanged += 1;
+      continue;
+    }
+    ctx ??= await buildBlurbContext();
+    const out = await writeBlurb(ctx, powerBlurbPrompt(data, r), 2200, "power-ranking").catch(() => null);
+    if (out && (await putBlurb({ kind: "POWER_RANKING", subjectKey, inputHash, text: out.text, providerName: out.provider, model: out.model }))) {
+      written += 1;
+    }
+  }
+  return { written, unchanged };
 }
 
 // ── Trade verdicts ─────────────────────────────────────────────────────────
@@ -152,7 +253,7 @@ export async function refreshTradeVerdicts(trades: TradeTribunalView[]): Promise
       continue;
     }
     ctx ??= await buildBlurbContext();
-    const out = await writeBlurb(ctx, tradeVerdictPrompt(t), 2200);
+    const out = await writeBlurb(ctx, tradeVerdictPrompt(t), 2200, "trade-verdict").catch(() => null);
     if (!out) continue;
     if (
       await putBlurb({ kind: "TRADE_VERDICT", subjectKey: t.transactionId, inputHash: tradeVerdictKey(t), text: out.text, providerName: out.provider, model: out.model })

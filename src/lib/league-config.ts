@@ -25,6 +25,16 @@ export interface LeagueConfig {
    */
   nflSeasonStartDate: string;
   shameCounter: { enabled: boolean; managerName: string; eventLabel: string; sinceDate: string };
+  /**
+   * The voice of every AI-written piece (see src/server/ai/voice.ts and
+   * VOICE-GUIDE.md).
+   *   mode: "classic" is the voice that has been live all along; "unhinged" is
+   *         the new one. Stays "classic" until the samples in VOICE-GUIDE.md
+   *         are approved — the weekly cron publishes in whatever this says.
+   *   spiceLevel: for the unhinged voice — 1 = PG-13, 2 = R, 3 = unhinged.
+   * AI_VOICE and SPICE_LEVEL env vars override both (used to write samples).
+   */
+  voice: { mode: "classic" | "unhinged"; spiceLevel: 1 | 2 | 3 };
 }
 
 export const LEAGUE_CONFIG: LeagueConfig = {
@@ -61,4 +71,6 @@ export const LEAGUE_CONFIG: LeagueConfig = {
     eventLabel: "last won a playoff game",
     sinceDate: "2021-12-27T00:00:00Z",
   },
+
+  voice: { mode: "classic", spiceLevel: 3 },
 };

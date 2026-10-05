@@ -1,9 +1,10 @@
 // Content service: "how did that trade age" retrospective article.
 
 import { ArticleType } from "@/generated/prisma/client";
-import { getAIProvider } from "../get-ai-provider";
 import { logGeneration } from "../log-generation";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const TRADE_RETROSPECTIVE_PROMPT_VERSION = "trade-retrospective-v1";
@@ -37,10 +38,10 @@ export async function generateTradeRetrospective(
   input: TradeRetrospectiveInput,
   safeguards: ContentSafeguards
 ): Promise<TradeRetrospectiveResult> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "trade-verdict", safeguards);
   const userPrompt = `Structured trade data:\n${formatStructuredInput(input)}`;
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: TRADE_RETROSPECTIVE_PROMPT_VERSION,
     systemPrompt,
     userPrompt,

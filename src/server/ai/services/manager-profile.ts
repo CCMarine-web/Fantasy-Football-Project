@@ -1,9 +1,10 @@
 // Content service: a manager's career profile article.
 
 import { ArticleType } from "@/generated/prisma/client";
-import { getAIProvider } from "../get-ai-provider";
 import { logGeneration } from "../log-generation";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const MANAGER_PROFILE_PROMPT_VERSION = "manager-profile-v1";
@@ -29,10 +30,10 @@ export async function generateManagerProfile(
   input: ManagerProfileInput,
   safeguards: ContentSafeguards
 ): Promise<ManagerProfileResult> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "manager-profile", safeguards);
   const userPrompt = `Structured manager career data:\n${formatStructuredInput(input)}`;
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: MANAGER_PROFILE_PROMPT_VERSION,
     systemPrompt,
     userPrompt,

@@ -206,3 +206,95 @@ export function rewriteWithoutDisclosureInstruction(text: string): string {
     "Rewrite the whole piece. Keep the personality — the needling, the reputation, the habits, the way this manager comes across — but attribute it to the LEAGUE and to what they DO, not to a medium. Say \"he is the league's loudest needler\" rather than \"he needles in the chat\"; say \"quick with a one-liner when a lineup backfires\" rather than \"meme-forward\". Do not mention chats, texts, messages, memes, chatter, threads, archives, models or analysis in any form. Every statistic must stay exactly as it was.",
   ].join("\n");
 }
+
+// ── Numbers the writer was not given ─────────────────────────────────────────
+
+/** Every number in a piece of text, commas removed ("1,560" → 1560). */
+function numbersIn(text: string): { raw: string; value: number }[] {
+  return [...text.matchAll(/(?<![\w.])\d{1,3}(?:,\d{3})+(?:\.\d+)?|(?<![\w.])\d+(?:\.\d+)?/g)].map((m) => ({
+    raw: m[0],
+    value: Number(m[0].replace(/,/g, "")),
+  }));
+}
+
+/**
+ * Numbers in `draft` that cannot be traced to `source` — the prompt the writer
+ * was handed. A number counts as traceable when it appears in the source
+ * (allowing the source's own rounding: 125.34 may be written 125.3 or 125), or
+ * is the gap, sum or percentage of two source numbers (a margin, a combined
+ * score, a share). Small integers (counts, weeks, ranks: 20 and under) and
+ * years are not checked; they are too common to be evidence of anything.
+ *
+ * This is the enforcement behind the voice's hard rule that every stat comes
+ * from verified data. An instruction can be weighed against "be funny"; a
+ * refused draft cannot.
+ */
+export function findUnverifiedNumbers(draft: string, source: string): string[] {
+  const known = [...new Set(numbersIn(source).map((n) => n.value))];
+  const derived = new Set<number>();
+  const big = known.filter((n) => n > 1);
+  for (let i = 0; i < big.length; i++) {
+    for (let j = i + 1; j < big.length; j++) {
+      const a = big[i];
+      const b = big[j];
+      derived.add(Math.abs(a - b));
+      derived.add(a + b);
+      derived.add((a / b) * 100);
+      derived.add((b / a) * 100);
+    }
+  }
+  const candidates = [...known, ...derived];
+  const close = (n: number) =>
+    candidates.some((c) => Math.abs(c - n) < 0.051 || (Number.isInteger(n) && Math.abs(c - n) < 0.5));
+
+  const unverified: string[] = [];
+  for (const { raw, value } of numbersIn(draft)) {
+    if (!Number.isFinite(value)) continue;
+    if (Number.isInteger(value) && value <= 20) continue;
+    if (Number.isInteger(value) && value >= 1990 && value <= 2099) continue;
+    if (!close(value)) unverified.push(raw);
+  }
+  return [...new Set(unverified)];
+}
+
+/**
+ * Rewrites scores and margins to one decimal, the way the site shows them
+ * (125.34 -> 125.3). The writer is asked to do this and mostly forgets. A
+ * figure that would round to zero keeps its precision ("won by 0.04", not
+ * "won by 0.0").
+ */
+export function toOneDecimal(text: string): string {
+  return text.replace(/(?<![\d.,])(\d+)\.(\d{2,})(?![\d.])/g, (match) => {
+    const rounded = Number(match).toFixed(1);
+    return Number(rounded) === 0 ? match : rounded;
+  });
+}
+
+/**
+ * Words the unhinged voice's hard rules forbid, checked rather than trusted:
+ * sexual material aimed at real people, and naming where lore came from. The
+ * prompt already forbids both and the writer still reached for "revenge
+ * porn" and a "Group Chat screenshot". A phrase that is in the source (a
+ * team name, say) is the league's own and passes.
+ */
+const HARD_RULE_PATTERNS: RegExp[] = [
+  /\bporn\w*/i,
+  /\bstrip(?:per|pers| ?clubs?)\b/i,
+  /\borgasm\w*/i,
+  /\bmasturbat\w*/i,
+  /\bjerk(?:s|ed|ing)? (?:it )?off\b/i,
+  /\brap(?:e|ed|es|ing|ist)\b/i,
+  /\bmolest\w*/i,
+  /\bpedo\w*/i,
+  /\bincest\w*/i,
+  /\bgroup ?chats?\b/i,
+];
+
+export function findHardRuleBreaches(draft: string, source: string): string[] {
+  const found = new Set<string>();
+  for (const pattern of HARD_RULE_PATTERNS) {
+    const match = draft.match(pattern);
+    if (match && !source.toLowerCase().includes(match[0].toLowerCase())) found.add(match[0]);
+  }
+  return [...found];
+}

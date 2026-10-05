@@ -30,8 +30,13 @@ export function humorLevelInstruction(humorLevel: number): string {
  * content-service function calls this and appends the result to its system
  * prompt — never skip it, even when the lists are empty.
  */
-export function safeguardInstructions(safeguards: ContentSafeguards): string {
-  const lines: string[] = [humorLevelInstruction(safeguards.humorLevel)];
+export function safeguardInstructions(
+  safeguards: ContentSafeguards,
+  options: { includeHumor?: boolean } = {},
+): string {
+  // The unhinged voice sets its own intensity (spice level) and leaves the
+  // 1-5 humor ladder out, rather than giving the model two conflicting dials.
+  const lines: string[] = options.includeHumor === false ? [] : [humorLevelInstruction(safeguards.humorLevel)];
 
   if (safeguards.sensitiveTopics.length > 0) {
     lines.push(

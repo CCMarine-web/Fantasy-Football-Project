@@ -8,7 +8,8 @@ import { computeWeeklyAwards } from "@/server/repositories/weekly-awards-reposit
 import { recomputeRivalryStats } from "@/server/stats/rivalry-recompute";
 import { summarizeVerification, verifySeasonData } from "@/server/verify/data-verification";
 import { generateWeeklyContent } from "@/server/ai/weekly-pipeline";
-import { refreshTradeVerdicts } from "@/server/ai/site-blurbs";
+import { refreshPowerRankingBlurbs, refreshTradeVerdicts } from "@/server/ai/site-blurbs";
+import { computePowerRankings } from "@/server/repositories/power-rankings-repository";
 import { computeTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
 
 /**
@@ -115,6 +116,7 @@ function secretValues(): string[] {
       env.DIRECT_URL,
       env.AUTH_SECRET,
       env.OPENAI_API_KEY,
+      env.XAI_API_KEY,
       env.CRON_SECRET,
       env.ESPN_S2,
       env.ESPN_SWID,
@@ -125,6 +127,7 @@ function secretValues(): string[] {
       process.env.DIRECT_URL,
       process.env.AUTH_SECRET,
       process.env.OPENAI_API_KEY,
+      process.env.XAI_API_KEY,
       process.env.CRON_SECRET,
       process.env.ESPN_S2,
       process.env.ESPN_SWID,
@@ -300,7 +303,9 @@ export async function runWeeklyRefresh(
         // derived on read); their verdict is rewritten only when the hindsight
         // winner flips, and once more when the season is final.
         const verdicts = await refreshTradeVerdicts(await computeTradeTribunal());
-        return `${result.recapsGenerated} recap(s) and ${result.previewsGenerated} preview(s) written; ${result.skipped} already existed and were left alone. Trade verdicts: ${verdicts.written} rewritten, ${verdicts.unchanged} unchanged.`;
+        // One line per team on the power rankings, from this week's numbers.
+        const blurbs = await refreshPowerRankingBlurbs(await computePowerRankings());
+        return `${result.recapsGenerated} recap(s) and ${result.previewsGenerated} preview(s) written; ${result.skipped} already existed and were left alone. Trade verdicts: ${verdicts.written} rewritten, ${verdicts.unchanged} unchanged. Power-ranking blurbs: ${blurbs.written} written.`;
       }),
     );
   }

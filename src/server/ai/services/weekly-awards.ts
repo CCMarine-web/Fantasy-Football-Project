@@ -4,9 +4,10 @@
 // the winner, it never invents facts of its own.
 
 import { ArticleType } from "@/generated/prisma/client";
-import { getAIProvider } from "../get-ai-provider";
 import { logGeneration } from "../log-generation";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const WEEKLY_AWARDS_PROMPT_VERSION = "weekly-awards-v1";
@@ -39,10 +40,10 @@ export async function generateWeeklyAwards(
   input: WeeklyAwardsInput,
   safeguards: ContentSafeguards
 ): Promise<WeeklyAwardsResult> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "weekly-awards", safeguards);
   const userPrompt = `Structured award candidate data:\n${formatStructuredInput(input)}`;
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: WEEKLY_AWARDS_PROMPT_VERSION,
     systemPrompt,
     userPrompt,

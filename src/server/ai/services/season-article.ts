@@ -10,8 +10,9 @@
 // weaves in the verified record for that season. It preserves the
 // commissioner's voice and meaning; it does not add events.
 
-import { getAIProvider } from "../get-ai-provider";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { generateVoiced } from "../voiced-generate";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
 import { findEditorialProblems, rewriteWithoutProblemsInstruction } from "../editorial-guards";
 import type { ContentSafeguards } from "../types";
 
@@ -129,8 +130,10 @@ export async function generateSeasonArticle(
   facts: SeasonArticleFacts,
   safeguards: ContentSafeguards,
 ): Promise<SeasonArticleResult> {
-  const provider = getAIProvider();
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  // Voiced generation: in the unhinged voice every number is checked against
+  // the data handed over (server/ai/voiced-generate.ts).
+  const provider = { generate: generateVoiced };
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "season-summary", safeguards);
   const userPrompt = `Season ${facts.year}. Write the retrospective.\n\n${formatStructuredInput(facts)}`;
 
   let body = await provider.generate({
@@ -161,7 +164,7 @@ export async function generateSeasonArticle(
 
   const titleResult = await provider.generate({
     promptVersion: `${SEASON_ARTICLE_PROMPT_VERSION}-title`,
-    systemPrompt: buildSystemPrompt(TITLE_PROMPT, safeguards),
+    systemPrompt: buildVoicedSystemPrompt(TITLE_PROMPT, "season-summary", safeguards),
     userPrompt: `Season ${facts.year}.\n\nThe article:\n${body.text}`,
     humorLevel: safeguards.humorLevel,
   });

@@ -583,6 +583,15 @@ export async function getManagerScoutingReport(managerId: string): Promise<Manag
   });
   if (existing) return { text: existing.outputText, isMock: existing.providerName === "mock" };
 
+  const input = await buildScoutingReportInput(managerId, manager.displayName);
+  if (!input) return null;
+  const safeguards = await getContentSafeguards();
+  const result = await generateScoutingReport(input, safeguards);
+  return { text: result.text, isMock: result.providerName === "mock" };
+}
+
+/** The verified facts a scouting report is written from. */
+export async function buildScoutingReportInput(managerId: string, managerName: string) {
   const [assets, r1picks, teams] = await Promise.all([
     prisma.transactionAsset.findMany({
       where: { managerId, direction: "ADD" },
@@ -603,11 +612,9 @@ export async function getManagerScoutingReport(managerId: string): Promise<Manag
   const ties = teams.reduce((s, t) => s + t.ties, 0);
   const finishes = teams.map((t) => t.finalRank).filter((x): x is number => x != null);
 
-  const safeguards = await getContentSafeguards();
-  const result = await generateScoutingReport(
-    {
+  return {
       managerId,
-      managerName: manager.displayName,
+      managerName,
       careerRecord: `${wins}-${losses}${ties ? `-${ties}` : ""}`,
       championships: teams.filter((t) => t.isChampion).length,
       tradeCount,
@@ -617,10 +624,7 @@ export async function getManagerScoutingReport(managerId: string): Promise<Manag
       firstRoundPositions: r1picks.map((p) => p.player?.position ?? "?"),
       bestFinish: finishes.length ? Math.min(...finishes) : null,
       worstFinish: finishes.length ? Math.max(...finishes) : null,
-    },
-    safeguards,
-  );
-  return { text: result.text, isMock: result.providerName === "mock" };
+  };
 }
 
 // ---------------------------------------------------------------------------

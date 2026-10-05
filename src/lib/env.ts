@@ -21,7 +21,20 @@ const envSchema = z.object({
   ESPN_LEAGUE_ID: z.string().optional().default("501874"),
   ESPN_SWID: z.string().optional().default(""),
   ESPN_S2: z.string().optional().default(""),
+  /**
+   * Which model provider writes the site's copy. Both speak the OpenAI Chat
+   * Completions API; xAI's lives at https://api.x.ai/v1 (XAI_API_KEY,
+   * XAI_MODEL). Switching changes nothing else — same prompts, same guards.
+   */
+  AI_PROVIDER: z.enum(["openai", "xai"]).default("openai"),
+  XAI_API_KEY: z.string().optional().default(""),
+  XAI_MODEL: z.string().default("grok-4"),
+  XAI_BASE_URL: z.string().url().default("https://api.x.ai/v1"),
   OPENAI_API_KEY: z.string().optional().default(""),
+  // Override LEAGUE_CONFIG.voice for one process (sample generation). Unset in
+  // production, so the config decides what the cron publishes.
+  AI_VOICE: z.enum(["classic", "unhinged"]).optional(),
+  SPICE_LEVEL: z.coerce.number().int().min(1).max(3).optional(),
   // Default model for bulk work (per-conversation knowledge extraction).
   OPENAI_MODEL: z.string().default("gpt-5-mini"),
   // Stronger model for the handful of high-value synthesis passes
@@ -60,6 +73,8 @@ export function isSleeperConfigured(): boolean {
   return getEnv().SLEEPER_LEAGUE_ID.trim().length > 0;
 }
 
+/** True when the selected provider (AI_PROVIDER) has its API key. */
 export function isAIConfigured(): boolean {
-  return getEnv().OPENAI_API_KEY.trim().length > 0;
+  const env = getEnv();
+  return (env.AI_PROVIDER === "xai" ? env.XAI_API_KEY : env.OPENAI_API_KEY).trim().length > 0;
 }

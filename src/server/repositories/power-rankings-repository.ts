@@ -379,16 +379,7 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
       subjectKey: `${seasonYear}:${r.fantasyTeamId}`,
       // Must stay identical to the hash in scripts/ai/backfill-blurbs.ts, or
       // every blurb reads as stale and nothing is ever shown.
-      inputHash: hashInputs({
-        promptVersion: POWER_BLURB_VERSION,
-        rank: r.rank,
-        score: r.score,
-        ppg: r.weightedPointsPerGame,
-        allPlay: r.allPlayPct,
-        exp: r.expectedWins,
-        week: result.throughWeek,
-        mode: result.mode,
-      }),
+      inputHash: powerBlurbHash(r, result.throughWeek, result.mode),
     })),
   );
 
@@ -424,6 +415,31 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
  * that has any teams. An UPCOMING season is included on purpose — that is what
  * produces the preseason projection rather than an empty page.
  */
+/**
+ * The key a power-ranking blurb is cached under: the numbers it was written
+ * from. One definition, used by this page, the weekly refresh and the backfill
+ * script, so a blurb is only ever shown beside the numbers it describes.
+ */
+export function powerBlurbHash(
+  r: { rank: number; score: number; weightedPointsPerGame: number | null; allPlayPct: number | null; expectedWins: number | null },
+  throughWeek: number,
+  mode: string,
+): string {
+  return hashInputs({
+    promptVersion: POWER_BLURB_VERSION,
+    rank: r.rank,
+    score: r.score,
+    ppg: r.weightedPointsPerGame,
+    allPlay: r.allPlayPct,
+    exp: r.expectedWins,
+    week: throughWeek,
+    mode,
+  });
+}
+
+/** Uncached, for the weekly refresh (it writes before it clears the caches). */
+export const computePowerRankings = () => buildCurrentPowerRankings();
+
 export const getPowerRankings = cached(buildCurrentPowerRankings, ["power-rankings"], {
   tags: [CACHE_TAGS.league, CACHE_TAGS.content],
 });

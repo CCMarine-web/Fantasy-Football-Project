@@ -2,9 +2,10 @@
 // article (see ArticleSectionType.INTRO in prisma/schema.prisma).
 
 import { ArticleType } from "@/generated/prisma/client";
-import { getAIProvider } from "../get-ai-provider";
 import { logGeneration } from "../log-generation";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const WEEKLY_SUMMARY_PROMPT_VERSION = "weekly-summary-v1";
@@ -40,10 +41,10 @@ export async function generateWeeklySummary(
   input: WeeklySummaryInput,
   safeguards: ContentSafeguards
 ): Promise<WeeklySummaryResult> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "matchup-recap", safeguards);
   const userPrompt = `Structured week data:\n${formatStructuredInput(input)}`;
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: WEEKLY_SUMMARY_PROMPT_VERSION,
     systemPrompt,
     userPrompt,

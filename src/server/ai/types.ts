@@ -23,6 +23,17 @@ export interface ContentSafeguards {
   /** Display names of managers with Manager.noRoast = true. Mentions of these
    *  managers must stay strictly factual/neutral — never the target of a joke. */
   noRoastManagerNames: string[];
+  /**
+   * Per-manager real-life topics the copy must never touch (Manager.
+   * offLimitsTopics), keyed by display name. Optional so existing callers and
+   * tests that build safeguards by hand keep working.
+   */
+  offLimitsByManager?: { managerName: string; topics: string[] }[];
+  /**
+   * Verified league history for callbacks (server/ai/league-lore.ts). Loaded
+   * only for the unhinged voice; the classic voice never used it.
+   */
+  lore?: string;
 }
 
 /** A single request to an AI provider. Provider-agnostic — no OpenAI-specific shape leaks in here. */

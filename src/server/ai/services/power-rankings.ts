@@ -1,9 +1,10 @@
 // Content service: weekly power rankings commentary (ArticleSectionType.POWER_RANKINGS).
 
 import { ArticleType } from "@/generated/prisma/client";
-import { getAIProvider } from "../get-ai-provider";
 import { logGeneration } from "../log-generation";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const POWER_RANKINGS_PROMPT_VERSION = "power-rankings-v1";
@@ -36,10 +37,10 @@ export async function generatePowerRankings(
   input: PowerRankingsInput,
   safeguards: ContentSafeguards
 ): Promise<PowerRankingsResult> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "power-ranking", safeguards);
   const userPrompt = `Structured power rankings data:\n${formatStructuredInput(input)}`;
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: POWER_RANKINGS_PROMPT_VERSION,
     systemPrompt,
     userPrompt,

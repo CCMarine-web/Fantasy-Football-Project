@@ -16,6 +16,7 @@ interface Props {
     signatureMove: string | null;
     bio: string | null;
     noRoast: boolean;
+    offLimitsTopics: string[];
   };
 }
 
@@ -60,6 +61,21 @@ export function ManagerEditForm({ manager }: Props) {
         <input type="checkbox" name="noRoast" defaultChecked={manager.noRoast} className="h-4 w-4" />
         No-roast (AI keeps mentions of this manager strictly factual)
       </label>
+      <div className="space-y-1">
+        <Label htmlFor="offLimitsTopics">Off-limits topics (one per line)</Label>
+        <textarea
+          id="offLimitsTopics"
+          name="offLimitsTopics"
+          rows={3}
+          defaultValue={manager.offLimitsTopics.join("\n")}
+          placeholder={"e.g. his divorce\nhis job"}
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+        />
+        <p className="text-xs text-muted-foreground">
+          Real-life sore spots the writer must never mention for this manager, in any voice. Roasts stay on
+          fantasy decisions and league history.
+        </p>
+      </div>
       {state.message ? <p className="text-sm text-field">{state.message}</p> : null}
       <Button type="submit" disabled={pending}>
         {pending ? "Saving…" : "Save"}

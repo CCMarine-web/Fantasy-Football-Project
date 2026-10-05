@@ -5,9 +5,10 @@
 // prompt, generates, logs, and hands back text + the log row id.
 
 import { ArticleType } from "@/generated/prisma/client";
-import { getAIProvider } from "../get-ai-provider";
 import { logGeneration } from "../log-generation";
-import { buildSystemPrompt, formatStructuredInput } from "../prompt-helpers";
+import { formatStructuredInput } from "../prompt-helpers";
+import { buildVoicedSystemPrompt } from "../voice";
+import { generateVoiced } from "../voiced-generate";
 import type { ContentSafeguards } from "../types";
 
 export const MATCHUP_PREVIEW_PROMPT_VERSION = "matchup-preview-v1";
@@ -46,10 +47,10 @@ export async function generateMatchupPreview(
   input: MatchupPreviewInput,
   safeguards: ContentSafeguards
 ): Promise<MatchupPreviewResult> {
-  const systemPrompt = buildSystemPrompt(SYSTEM_PROMPT, safeguards);
+  const systemPrompt = buildVoicedSystemPrompt(SYSTEM_PROMPT, "matchup-preview", safeguards);
   const userPrompt = `Structured matchup data:\n${formatStructuredInput(input)}`;
 
-  const result = await getAIProvider().generate({
+  const result = await generateVoiced({
     promptVersion: MATCHUP_PREVIEW_PROMPT_VERSION,
     systemPrompt,
     userPrompt,

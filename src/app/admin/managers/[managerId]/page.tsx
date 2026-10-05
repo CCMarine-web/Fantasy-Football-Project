@@ -18,7 +18,7 @@ export default async function AdminManagerEditPage({
   const { managerId } = await params;
   const manager = await prisma.manager.findUnique({
     where: { id: managerId },
-    select: { id: true, displayName: true, photoUrl: true, nickname: true, nicknameOrigin: true, signatureMove: true, bio: true, noRoast: true },
+    select: { id: true, displayName: true, photoUrl: true, nickname: true, nicknameOrigin: true, signatureMove: true, bio: true, noRoast: true, offLimitsTopics: true },
   });
   if (!manager) notFound();
 

@@ -104,6 +104,8 @@ export interface GenerateGradesResult {
   seasonId: string;
   created: number;
   skipped: number;
+  /** Only for a preview run: what would have been written. */
+  previews?: { managerName: string; grade: string; score: number; rationale: string }[];
 }
 
 /**
@@ -160,7 +162,8 @@ async function buildPriorPositionalPercentiles(seasonYear: number): Promise<Map<
 
 export async function generateDraftGradesForSeason(
   seasonId: string,
-  options: { force?: boolean } = {}
+  /** preview: generate the write-ups and return them without storing anything. */
+  options: { force?: boolean; preview?: boolean } = {}
 ): Promise<GenerateGradesResult> {
   const draft = await prisma.draft.findUnique({
     where: { seasonId },
@@ -225,9 +228,10 @@ export async function generateDraftGradesForSeason(
 
   let created = 0;
   let skipped = 0;
+  const previews: NonNullable<GenerateGradesResult["previews"]> = [];
 
   for (const [managerId, { managerName, picks }] of byManager) {
-    if (!options.force) {
+    if (!options.force && !options.preview) {
       const existing = await prisma.draftGrade.findUnique({
         where: { seasonId_managerId: { seasonId, managerId } },
         select: { id: true },
@@ -276,6 +280,10 @@ export async function generateDraftGradesForSeason(
       providerName: providerName || "computed",
     };
 
+    if (options.preview) {
+      previews.push({ managerName, grade: gradeLetterToDisplay(grade), score: scored.score, rationale: text });
+      continue;
+    }
     await prisma.draftGrade.upsert({
       where: { seasonId_managerId: { seasonId, managerId } },
       create: { seasonId, managerId, ...data },
@@ -284,7 +292,7 @@ export async function generateDraftGradesForSeason(
     created += 1;
   }
 
-  return { seasonId, created, skipped };
+  return { seasonId, created, skipped, ...(options.preview ? { previews } : {}) };
 }
 
 export interface RevisitGradesResult {

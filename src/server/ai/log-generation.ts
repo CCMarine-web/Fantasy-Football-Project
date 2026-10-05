@@ -35,6 +35,9 @@ export async function logGeneration(input: LogGenerationInput): Promise<AIConten
   if (input.contentType === "MATCHUP_RECAP") {
     await assertMatchupPlayed((input.inputSummary as { matchupId?: string } | null)?.matchupId);
   }
+  // Set only by scripts/ai/voice-samples.ts: samples in an unapproved voice
+  // must never reach a page, and a stored generation is a published one.
+  if (process.env.AI_NO_PERSIST === "1") return null;
 
   return prisma.aIContentGeneration.create({
     data: {

@@ -154,6 +154,10 @@ model Manager {
   isActive       Boolean   @default(true)
   /// Per-manager AI-safeguard opt-out (spec: "per-manager no-roast settings").
   noRoast        Boolean   @default(false)
+  /// Real-life sore spots the AI must never mention for this manager, one
+  /// topic per entry (editable at /admin/managers/[id]). The roast stays on
+  /// fantasy decisions and league lore. See src/server/ai/voice.ts.
+  offLimitsTopics String[] @default([])
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
   deletedAt      DateTime?
