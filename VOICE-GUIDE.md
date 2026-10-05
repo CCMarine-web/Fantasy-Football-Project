@@ -157,6 +157,9 @@ Real league data, unhinged voice, spice 3, OpenAI `gpt-5-mini` (the model the cr
   - Gavin's "championship hat trick" implies titles he doesn't have.
   - Quinn as the "favorite bridesmaid" implies finals Quinn never reached.
   - The "labels are claims" rule above was added after this batch because of these two lines.
+- **Two input bugs this batch exposed, fixed at the source after it ran:**
+  - **Trade counts.** The scouting reports say Anthony made 3 trades and Blake 7. Those counted players received by trade, not trades; the real figures are 2 and 6.
+  - **Career records.** "62-64" was labelled a career record but covers completed seasons only, so it read as stale next to the profile's 2026-inclusive record. The input now says "62-64 in completed seasons (2017-2025)".
 - **Earlier batches** made a Juneteenth joke, used "porn" as a metaphor about a manager and mentioned a "group chat". Each prompted a fix, and none appears below:
   - the identity rule now covers holidays, traditions and stereotypes;
   - a word check now catches the other two.

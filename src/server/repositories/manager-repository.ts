@@ -598,12 +598,13 @@ export async function buildScoutingReportInput(managerId: string, managerName: s
       include: { transaction: { select: { type: true, faabSpent: true } } },
     }),
     prisma.draftPick.findMany({ where: { managerId, round: 1 }, include: { player: { select: { position: true } } } }),
-    prisma.fantasyTeam.findMany({ where: { managerId, season: { status: "COMPLETE" } }, select: { finalRank: true, isChampion: true, wins: true, losses: true, ties: true } }),
+    prisma.fantasyTeam.findMany({ where: { managerId, season: { status: "COMPLETE" } }, select: { finalRank: true, isChampion: true, wins: true, losses: true, ties: true, season: { select: { year: true } } } }),
   ]);
 
   if (assets.length === 0 && r1picks.length === 0 && teams.length === 0) return null;
 
-  const tradeCount = assets.filter((a) => a.transaction.type === "TRADE").length;
+  // One trade can bring in several players; count the trades, not the players.
+  const tradeCount = new Set(assets.filter((a) => a.transaction.type === "TRADE").map((a) => a.transactionId)).size;
   const waiverClaims = assets.filter((a) => a.transaction.type === "WAIVER").length;
   const freeAgentPickups = assets.filter((a) => a.transaction.type === "FREE_AGENT").length;
   const faabSpent = assets.reduce((sum, a) => sum + (a.transaction.faabSpent ?? 0), 0) || null;
@@ -611,11 +612,15 @@ export async function buildScoutingReportInput(managerId: string, managerName: s
   const losses = teams.reduce((s, t) => s + t.losses, 0);
   const ties = teams.reduce((s, t) => s + t.ties, 0);
   const finishes = teams.map((t) => t.finalRank).filter((x): x is number => x != null);
+  const years = teams.map((t) => t.season.year);
+  // Completed seasons only, and labelled as such: a stored report then stays
+  // true all season instead of quoting a record the profile page has moved past.
+  const span = years.length ? ` in completed seasons (${Math.min(...years)}-${Math.max(...years)})` : "";
 
   return {
       managerId,
       managerName,
-      careerRecord: `${wins}-${losses}${ties ? `-${ties}` : ""}`,
+      careerRecord: `${wins}-${losses}${ties ? `-${ties}` : ""}${span}`,
       championships: teams.filter((t) => t.isChampion).length,
       tradeCount,
       waiverClaims,
