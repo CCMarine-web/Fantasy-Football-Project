@@ -68,3 +68,7 @@ next-env.d.ts
 
 .vercel
 .env*
+
+# Artwork drop folder: originals stay local; processed files land in public/brand.
+/asset-inbox/*
+!/asset-inbox/README.md

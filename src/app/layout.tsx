@@ -30,6 +30,8 @@ export const metadata: Metadata = {
     template: `%s | ${BRAND.name}`,
   },
   description: BRAND.description,
+  // Pages' opengraph-image cards, shown full width on X rather than as a thumbnail.
+  twitter: { card: "summary_large_image" },
   // Never indexed: real names next to roasts. See app/robots.ts.
   robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
 };

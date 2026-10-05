@@ -24,7 +24,10 @@
     "sync:sleeper": "tsx scripts/sync-sleeper.ts",
     "generate:weekly": "tsx scripts/generate-weekly.ts",
     "cron:trigger": "tsx scripts/cron-trigger.ts",
-    "verify:data": "tsx scripts/verify-data.ts"
+    "verify:data": "tsx scripts/verify-data.ts",
+    "assets:ingest": "tsx scripts/assets/ingest.ts",
+    "assets:status": "tsx scripts/assets/ingest.ts --status",
+    "assets:icons": "tsx scripts/assets/build-icons.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",
@@ -65,6 +68,7 @@
     "jsdom": "^29.1.1",
     "prettier": "^3.9.5",
     "prettier-plugin-tailwindcss": "^0.8.1",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
     "typescript": "^5",

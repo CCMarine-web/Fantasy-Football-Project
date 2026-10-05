@@ -21,7 +21,7 @@ export default async function PredictionsPage() {
   if (!info) {
     return (
       <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-        <PageHeader freshness eyebrow="Preseason" title="Predictions" />
+        <PageHeader art="header-predictions" freshness eyebrow="Preseason" title="Predictions" />
         <div className="mt-8">
           <EmptyState
             icon={Sparkles}
@@ -47,7 +47,7 @@ export default async function PredictionsPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader freshness
+      <PageHeader art="header-predictions" freshness
         eyebrow={`${season.year} Season`}
         title="Preseason Predictions"
         description="Managers call their shots before the draft. Once the deadline hits, the picks lock and the Prophet Rating tracks who actually saw it coming."

@@ -142,7 +142,10 @@ These timings include about 50-80 ms of round trip per query from this machine. 
 - Matchup, season and weekly pages have their own titles and descriptions.
 - A final game's preview text carries the score, for example "Final: Patrick Schwing 125.3, Michael Shea 115.1".
 
-**Phase 4** adds code-generated preview images and `metadataBase`. See ASSETS.md.
+**After Phase 4:**
+- Code-generated preview images (`next/og`) for the homepage, matchups (with the final score), managers, seasons, rivalries, weekly issues, power rankings and the Trade Tribunal. Every other page uses the homepage's.
+- Link-preview bots are allowed in `robots.txt`; all other crawlers are still disallowed, and the noindex tags still apply. See ASSETS.md.
+- `metadataBase` is left to Next, which uses the Vercel production URL in production.
 
 ---
 
@@ -218,7 +221,7 @@ Ordered within each tier by impact.
 19. **Charts use `--chart-1..5`** instead of hard-coded `var(--gold)` / `var(--primary)`.
 20. **Admin hints** ("A commissioner can add one from the admin manager editor") shown only to admins.
 21. **One tagline.** The Home hero and the footer say the same thing in different words, and "since founding" reads unfinished without a year.
-22. **The remaining disabled admin buttons** (League ID, Seasons, AI Settings, Review Queue, Corrections). Build or remove each. Phase 3 wires "AI Settings" for the voice and off-limits topics.
+22. **The remaining disabled admin buttons** (League ID, Seasons, AI Settings, Review Queue, Corrections). Build or remove each. Phase 3 put per-manager off-limits topics in the manager editor and the voice switch in `league-config.ts`; "AI Settings" is still a disabled button.
 23. **Delete the unused `components/shared/error-state.tsx`.**
 
 ---

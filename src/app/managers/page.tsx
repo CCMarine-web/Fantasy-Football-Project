@@ -42,7 +42,7 @@ export default async function ManagersPage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader freshness
+      <PageHeader art="header-managers" freshness
         eyebrow="The League"
         title="Managers"
         description={`Every manager who has ever fielded a team in ${BRAND.longName}.`}

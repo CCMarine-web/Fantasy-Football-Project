@@ -19,6 +19,7 @@ import { getLastSeasonNarrative } from "@/server/repositories/season-narrative-r
 import { getCurrentChampion } from "@/server/repositories/championship-belt-repository";
 import { getPowerRankingsPreview } from "@/server/repositories/power-rankings-repository";
 import { BRAND } from "@/lib/branding";
+import { ArtPlaceholder, BrandArt } from "@/components/shared/brand-art";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
 import { SeasonCountdown } from "@/components/home/season-countdown";
 import { DataFreshness } from "@/components/shared/data-freshness";
@@ -112,7 +113,25 @@ export default async function HomePage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       {/* 1 — League title + current week + draft countdown */}
-      <section className="flex flex-col gap-6 border-b border-border/60 pb-8 lg:flex-row lg:items-end lg:justify-between">
+      {/* Phones: the hero art as a strip above the title (nothing until it exists). */}
+      <BrandArt
+        slot="hero-home"
+        eager
+        sizes="100vw"
+        className="mb-6 aspect-[12/5] w-full rounded-xl border border-border/60 object-cover lg:hidden"
+      />
+      <section className="relative isolate flex flex-col gap-6 border-b border-border/60 pb-8 lg:flex-row lg:items-end lg:justify-between">
+        {/* Desktop: the art sits behind the right of the masthead and fades out
+            before the title, so the text never sits on the picture. */}
+        <div aria-hidden className="pointer-events-none absolute inset-y-0 right-0 -z-10 hidden w-3/4 overflow-hidden rounded-xl [mask-image:linear-gradient(to_left,black_35%,transparent)] lg:block">
+          <BrandArt
+            slot="hero-home"
+            eager
+            sizes="75vw"
+            className="h-full w-full object-cover opacity-70"
+            fallback={<ArtPlaceholder className="h-full w-full bg-none opacity-60" />}
+          />
+        </div>
         <div>
           <p className="text-xs font-semibold tracking-[0.3em] text-primary uppercase">
             {/* "Week N" only once a week has actually been played. */}

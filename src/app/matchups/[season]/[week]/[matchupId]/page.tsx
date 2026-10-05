@@ -41,7 +41,7 @@ export async function generateMetadata({ params }: { params: Promise<Params> }):
   const description = final
     ? `Final: ${a.fantasyTeam.manager.displayName} ${a.score!.toFixed(1)}, ${b.fantasyTeam.manager.displayName} ${b.score!.toFixed(1)}.`
     : `${a.fantasyTeam.manager.displayName} vs ${b.fantasyTeam.manager.displayName}, ${when}. Lineups, head-to-head history and the preview.`;
-  return { title, description, openGraph: { title, description }, twitter: { title, description } };
+  return { title, description, openGraph: { title, description }, twitter: { card: "summary_large_image", title, description } };
 }
 
 function LineupTable({

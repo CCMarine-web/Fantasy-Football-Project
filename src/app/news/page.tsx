@@ -25,7 +25,7 @@ export default async function NewsPage() {
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader freshness
+      <PageHeader art="header-news" freshness
         eyebrow={BRAND.name}
         title="News Archive"
         description="The weekly league newspaper — recaps, power rankings, awards, and everything in between."

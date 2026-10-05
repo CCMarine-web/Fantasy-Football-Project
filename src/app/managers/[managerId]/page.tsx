@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BRAND } from "@/lib/branding";
+import { BrandArt } from "@/components/shared/brand-art";
+import { managerSlotKey } from "@/lib/brand-assets";
 import { LuckScoreHeadline, LuckScorePanel } from "@/components/managers/luck-score";
 import { LAST_PLACE_METHODOLOGY } from "@/server/stats/last-place";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,12 +117,22 @@ export default async function ManagerProfilePage({
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       {/* Header — identity only. Statistics come first, the biography follows. */}
       <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-6">
-        {manager.photoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={photo ?? undefined} alt={manager.displayName} className="h-24 w-24 shrink-0 rounded-xl border border-border/60 object-cover" />
-        ) : (
-          <TeamAvatar name={manager.displayName} imageUrl={manager.avatarUrl} className="h-20 w-20 shrink-0" />
-        )}
+        {/* The trading card once it has been drawn; the photo until then. */}
+        <BrandArt
+          slot={managerSlotKey("card", manager.displayName)}
+          alt={`${manager.displayName} trading card`}
+          eager
+          sizes="160px"
+          className="h-56 w-40 shrink-0 rounded-xl border border-border/60 object-cover shadow-lg"
+          fallback={
+            manager.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photo ?? undefined} alt={manager.displayName} className="h-24 w-24 shrink-0 rounded-xl border border-border/60 object-cover" />
+            ) : (
+              <TeamAvatar name={manager.displayName} imageUrl={manager.avatarUrl} className="h-20 w-20 shrink-0" />
+            )
+          }
+        />
         <div className="min-w-0">
           <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
             {currentTeam?.teamName ?? "Free Agent"}

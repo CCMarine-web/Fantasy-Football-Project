@@ -4,6 +4,7 @@ import { Crown, Trophy } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/shared/team-avatar";
+import { BrandArt } from "@/components/shared/brand-art";
 import { DaysAsChampion } from "@/components/championship/days-as-champion";
 import { initialElapsed } from "@/lib/countdown";
 import type { CurrentChampion } from "@/server/repositories/championship-belt-repository";
@@ -38,15 +39,24 @@ export function ChampionshipBeltFeature({
                 alt={`${champion.managerName} holding the ${champion.year} championship trophy`}
                 width={1179}
                 height={1348}
-                priority
+                preload
                 sizes="(max-width: 1024px) 40vw, 224px"
                 className="h-32 w-28 shrink-0 rounded-xl border-2 border-gold/60 object-cover object-top shadow-lg sm:h-40 sm:w-36 lg:h-56 lg:w-48"
               />
             ) : (
-              <TeamAvatar
-                name={champion.managerName}
-                imageUrl={champion.photoUrl}
-                className="h-24 w-24 border-2 border-gold/60 shadow-lg lg:h-32 lg:w-32"
+              // Real photo first, then the illustrated belt, then the portrait.
+              <BrandArt
+                slot="belt"
+                alt={`The championship belt, held by ${champion.managerName}`}
+                sizes="(max-width: 1024px) 40vw, 256px"
+                className="h-28 w-auto shrink-0 object-contain drop-shadow-lg sm:h-32 lg:h-40"
+                fallback={
+                  <TeamAvatar
+                    name={champion.managerName}
+                    imageUrl={champion.photoUrl}
+                    className="h-24 w-24 border-2 border-gold/60 shadow-lg lg:h-32 lg:w-32"
+                  />
+                }
               />
             )}
             <div className="lg:mt-2">

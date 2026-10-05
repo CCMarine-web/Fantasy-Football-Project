@@ -14,7 +14,7 @@ export default async function StandingsPage() {
   if (!season) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <PageHeader freshness eyebrow="League" title="Standings" />
+        <PageHeader art="header-standings" freshness eyebrow="League" title="Standings" />
         <div className="mt-8">
           <EmptyState
             icon={BarChart3}
@@ -30,7 +30,7 @@ export default async function StandingsPage() {
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader freshness
+      <PageHeader art="header-standings" freshness
         eyebrow={`${season.year} Season`}
         title="Standings"
         description={

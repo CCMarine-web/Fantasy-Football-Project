@@ -44,7 +44,7 @@ export default async function TradeTribunalPage({
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader freshness
+      <PageHeader art="header-trade-tribunal" freshness
         eyebrow="The Court"
         title="Trade Tribunal"
         description="Every trade in league history, judged on what each player was actually worth at his own position — not on who scored more points. The most one-sided deals are on top."

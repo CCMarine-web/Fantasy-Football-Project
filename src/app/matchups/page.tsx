@@ -9,7 +9,18 @@ import { TeamAvatar } from "@/components/shared/team-avatar";
 import { MatchupOfTheWeek } from "@/components/matchups/matchup-of-the-week";
 import { getWeeklyHub } from "@/server/repositories/weekly-hub-repository";
 import type { TransactionView } from "@/server/repositories/transaction-repository";
-import { AlertTriangle, CalendarDays, Flame, Newspaper, Snowflake, Swords, TrendingUp } from "lucide-react";
+import { AlertTriangle, Armchair, CalendarDays, CloudLightning, Clover, Flame, Newspaper, Snowflake, Swords, ThumbsDown, TrendingUp } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
+import { BrandArt } from "@/components/shared/brand-art";
+
+/** Each weekly award's badge slot and the icon shown until the art exists. */
+const AWARD_ART: Record<string, { slot: string; icon: LucideIcon }> = {
+  BOOM_OF_WEEK: { slot: "award-boom-of-week", icon: Flame },
+  BUST_OF_WEEK: { slot: "award-bust-of-week", icon: ThumbsDown },
+  BENCH_BLUNDER: { slot: "award-bench-blunder", icon: Armchair },
+  LUCKIEST_WIN: { slot: "award-luckiest-win", icon: Clover },
+  UNLUCKIEST_LOSS: { slot: "award-unluckiest-loss", icon: CloudLightning },
+};
 
 export const metadata = {
   title: "Matchups",
@@ -96,7 +107,7 @@ export default async function MatchupsPage({
   if (!hub) {
     return (
       <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-        <PageHeader freshness eyebrow="The League" title="Matchups" />
+        <PageHeader art="header-matchups" freshness eyebrow="The League" title="Matchups" />
         <div className="mt-8">
           <EmptyState
             icon={CalendarDays}
@@ -116,7 +127,7 @@ export default async function MatchupsPage({
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader freshness
+      <PageHeader art="header-matchups" freshness
         eyebrow={`${hub.seasonYear} Season`}
         title="Matchups"
         description="Everything that matters this week — the featured game, every other matchup, standings, rankings, the wire and the news — on one page."
@@ -280,21 +291,41 @@ export default async function MatchupsPage({
 
         {hub.awards.length > 0 ? (
           <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {hub.awards.map((a) => (
-              <div
-                key={a.type}
-                className="rounded-md border border-border/60 bg-card/30 px-3 py-2 text-sm"
-              >
-                <p className="text-xs tracking-wide text-muted-foreground uppercase">{a.label}</p>
-                <Link
-                  href={`/managers/${a.managerId}`}
-                  className="font-medium hover:text-primary"
+            {hub.awards.map((a) => {
+              const art = AWARD_ART[a.type];
+              const Icon = art?.icon;
+              return (
+                <div
+                  key={a.type}
+                  className="flex items-start gap-3 rounded-md border border-border/60 bg-card/30 px-3 py-2 text-sm"
                 >
-                  {a.managerName}
-                </Link>
-                <p className="text-xs text-muted-foreground">{a.description}</p>
-              </div>
-            ))}
+                  {art ? (
+                    <BrandArt
+                      slot={art.slot}
+                      sizes="48px"
+                      className="h-12 w-12 shrink-0 object-contain"
+                      fallback={
+                        Icon ? (
+                          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                            <Icon className="h-4 w-4" aria-hidden />
+                          </span>
+                        ) : null
+                      }
+                    />
+                  ) : null}
+                  <div className="min-w-0">
+                    <p className="text-xs tracking-wide text-muted-foreground uppercase">{a.label}</p>
+                    <Link
+                      href={`/managers/${a.managerId}`}
+                      className="font-medium hover:text-primary"
+                    >
+                      {a.managerName}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">{a.description}</p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </section>

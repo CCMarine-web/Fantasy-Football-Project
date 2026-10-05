@@ -12,6 +12,8 @@ import { getHallOfShame } from "@/server/repositories/hall-of-shame-repository";
 import { LAST_PLACE_METHODOLOGY } from "@/server/stats/last-place";
 import { ordinal } from "@/lib/format";
 import { Camera, Skull } from "lucide-react";
+import { BrandArt, hasBrandArt } from "@/components/shared/brand-art";
+import { managerSlotKey } from "@/lib/brand-assets";
 
 export const metadata = { title: "Hall of Shame" };
 
@@ -33,12 +35,18 @@ export default async function HallOfShamePage() {
     }),
   ]);
   const isAdmin = session?.user?.role === "ADMIN";
+  // Mugshots appear as they are supplied, never for a manager who opted out
+  // of roasts. No query at all until the first one exists.
+  const mugshotFor = (name: string) => managerSlotKey("mugshot", name);
+  const noRoastIds = shame.lastPlace.some((t) => hasBrandArt(mugshotFor(t.managerName)))
+    ? new Set((await prisma.manager.findMany({ where: { noRoast: true }, select: { id: true } })).map((m) => m.id))
+    : new Set<string>();
   const benchCovered = shame.benchYearsCovered;
   const benchGap = shame.allYears.filter((y) => !benchCovered.includes(y));
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader freshness
+      <PageHeader freshness art="header-hall-of-shame"
         eyebrow="The Wall of Woe"
         title="Hall of Shame"
         description="The inverse of the record books — the lows, the blowouts, the last-place finishes, and the punishments that followed."
@@ -123,7 +131,8 @@ export default async function HallOfShamePage() {
       {/* ── 3. Regular-season last place, one uninterrupted table ────────── */}
       <section className="mt-12">
         <h2 className="mb-2 flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
-          <Skull className="h-5 w-5" /> Last Place by Season
+          <BrandArt slot="sacko" sizes="56px" className="h-14 w-14 object-contain" fallback={<Skull className="h-5 w-5" />} />{" "}
+          Last Place by Season
         </h2>
         <p className="mb-3 max-w-3xl text-sm text-muted-foreground">
           {LAST_PLACE_METHODOLOGY}{" "}
@@ -157,6 +166,14 @@ export default async function HallOfShamePage() {
                   <tr key={t.year}>
                     <td className="px-2 py-2 font-medium sm:px-4">{t.year}</td>
                     <td className="px-2 py-2 sm:px-4">
+                      {!noRoastIds.has(t.managerId) ? (
+                        <BrandArt
+                          slot={mugshotFor(t.managerName)}
+                          alt={`${t.managerName} booking photo`}
+                          sizes="32px"
+                          className="mr-2 inline-block h-10 w-8 rounded-sm object-cover align-middle"
+                        />
+                      ) : null}
                       <ManagerLink managerId={t.managerId}>{t.managerName}</ManagerLink>
                       {t.basis === "POINTS_FALLBACK" ? (
                         <Badge variant="secondary" className="ml-2 align-middle text-[10px]">

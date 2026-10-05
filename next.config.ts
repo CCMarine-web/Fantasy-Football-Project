@@ -11,6 +11,15 @@ const nextConfig: NextConfig = {
     return [{ source: "/weekly", destination: "/matchups", permanent: true }];
   },
   /**
+   * The link-preview cards (opengraph-image routes) read their fonts, the rat
+   * mark and the manager photos from disk at request time. Photo paths are
+   * built from data, which file tracing can't follow, so without this the
+   * deployed function would ship without them and fall back to initials.
+   */
+  outputFileTracingIncludes: {
+    "/**/opengraph-image*": ["src/assets/fonts/**/*", "src/app/icon.svg", "public/managers/**/*"],
+  },
+  /**
    * The site is never meant to be framed: a page that can be embedded in
    * someone else's frame can have its buttons clickjacked.
    */
