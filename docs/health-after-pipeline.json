@@ -1,0 +1,73 @@
+{
+  "ok": true,
+  "checkedAt": "2026-11-15T13:35:46.332Z",
+  "lastSuccessfulSync": "2026-11-15T13:33:49.406Z",
+  "lastRun": {
+    "job": "weekly",
+    "status": "SUCCESS",
+    "startedAt": "2026-11-15T13:33:35.007Z",
+    "finishedAt": "2026-11-15T13:35:06.559Z",
+    "stepReached": "revalidate"
+  },
+  "lastSuccessfulRun": {
+    "job": "weekly",
+    "finishedAt": "2026-11-15T13:35:06.559Z"
+  },
+  "running": null,
+  "season": 2026,
+  "phase": "REGULAR_SEASON",
+  "lastCompletedWeek": 9,
+  "lastStoredWeek": 9,
+  "currentWeek": 10,
+  "currentWeekState": "IN_PROGRESS",
+  "syncBehind": false,
+  "dataStale": false,
+  "texts": {
+    "total": 212,
+    "stale": 0,
+    "fallback": 0,
+    "byKind": {
+      "MATCHUP_RECAP": {
+        "total": 45,
+        "stale": 0
+      },
+      "MATCHUP_PREVIEW": {
+        "total": 50,
+        "stale": 0
+      },
+      "POWER_BLURB": {
+        "total": 10,
+        "stale": 0
+      },
+      "WEEKLY_AWARDS": {
+        "total": 9,
+        "stale": 0
+      },
+      "NEWS_ISSUE": {
+        "total": 9,
+        "stale": 0
+      },
+      "RIVALRY": {
+        "total": 45,
+        "stale": 0
+      },
+      "MANAGER_BIO": {
+        "total": 10,
+        "stale": 0
+      },
+      "SCOUTING": {
+        "total": 10,
+        "stale": 0
+      },
+      "DRAFT_REVISIT": {
+        "total": 10,
+        "stale": 0
+      },
+      "TRADE_VERDICT": {
+        "total": 14,
+        "stale": 0
+      }
+    },
+    "staleKeys": []
+  }
+}

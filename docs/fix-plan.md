@@ -80,3 +80,27 @@ Oct 4 commits on `main` already fixed, so that deployment appears to be older th
 **Phase 3.** `GeneratedText` (kind, subject, template with `{{tokens}}`, facts, inputHash, asOfSeason/Week, model, status). Facts builders reuse the page repositories; the model sees only facts; numbers are tokenised and filled on render; a validator checks every literal number and W-L in the output against the facts (2 retries, then a templated fallback); a hash mismatch renders the fallback; the chip reads "AI-generated · as of Week n".
 
 **Phase 4/5.** In the prompt's page order, one chart library (Recharts), one team palette, standard position colours.
+
+## 5. Outcome (Nov 15, 2026)
+
+Deployed to production from `main` (fast-forward of `fix/data-integrity-and-freshness`).
+Additive migrations applied: `PipelineRun`, `PipelineLock`, `PowerRankingSnapshot`, `GeneratedText`.
+
+- Checks: `typecheck` clean, `lint` clean, 425 unit tests pass, production build passes both with the
+  database and without it (see the build guard below). Every page crawled at 1440px and 390px: all 200,
+  no page errors, no sideways page scroll.
+- Data: `verify:data` 0 mismatches; head-to-head identical across rivalry/profile/matchup paths for all 45 pairs.
+- Text: full pipeline run → 212 AI texts, 0 stale, 0 on fallback (`docs/health-after-pipeline.json`).
+- Screenshots: `docs/screenshots/before` (current `main` before this work) and `docs/screenshots/after`.
+
+**Build guard.** Pre-rendered pages query the database during `next build`. The first Vercel Preview build failed
+because that environment has no `DATABASE_URL`. `src/server/build-guard.ts` makes a build that can't reach the
+database render those pages per request instead of failing; Production pre-renders as designed.
+
+**Methodology notes.** No power-ranking, Luck Score, draft-grade or Trade Tribunal formula changed. Changed labels/
+definitions: Luck Score label bands (46–54 Neutral); "Schedule strength" relabelled "Opponent PPG"; the Hall of
+Shame bench record now counts verified head-to-head weeks only (71.6, Javier Wk 14 2024 — the old 79.5 was an
+eliminated team's opponent-less Week 17); Draft Cards "Strongest" skips factors that didn't grade the team.
+
+**Not built.** Live scoring every ~15 minutes (needs Vercel Pro or a GitHub Actions schedule; documented in
+`docs/WEEKLY_AUTOMATION.md`). True win probability (the game-flow chart uses final scores by NFL window).
