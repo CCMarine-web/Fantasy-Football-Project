@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { MultiLineChart, SimpleBars } from "@/components/charts/charts";
@@ -168,7 +169,7 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
               running into the card edge. */}
           <div className="flex items-center justify-between gap-3">
             <Link
-              href={`/managers/${r.managerAId}`}
+              href={managerPath(r.managerAName)}
               className="flex min-w-0 flex-1 basis-0 flex-col items-center gap-2 px-1 hover:text-primary"
             >
               <TeamAvatar name={r.managerAName} imageUrl={r.managerAPhoto} className="h-16 w-16 shrink-0" />
@@ -188,7 +189,7 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
               </div>
             </div>
             <Link
-              href={`/managers/${r.managerBId}`}
+              href={managerPath(r.managerBName)}
               className="flex min-w-0 flex-1 basis-0 flex-col items-center gap-2 px-1 hover:text-primary"
             >
               <TeamAvatar name={r.managerBName} imageUrl={r.managerBPhoto} className="h-16 w-16 shrink-0" />

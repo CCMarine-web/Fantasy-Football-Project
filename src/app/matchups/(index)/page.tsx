@@ -18,6 +18,7 @@ import { BrandArt } from "@/components/shared/brand-art";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { formatOdds } from "@/lib/format";
 import { managerPath } from "@/lib/slug";
+import { LiveRefresh } from "@/components/shared/live-refresh";
 
 /** Each weekly award's badge slot and the icon shown until the art exists. */
 const AWARD_ART: Record<string, { slot: string; icon: LucideIcon }> = {
@@ -152,6 +153,7 @@ export default async function MatchupsPage({
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
+      {hub.clock?.currentWeekState === "IN_PROGRESS" && hub.week === hub.clock.currentWeek ? <LiveRefresh /> : null}
       <PageHeader art="header-matchups" freshness
         eyebrow={`${hub.seasonYear} Season`}
         title="Matchups"
@@ -375,7 +377,7 @@ export default async function MatchupsPage({
                   <div className="min-w-0">
                     <p className="text-xs tracking-wide text-muted-foreground uppercase">{a.label}</p>
                     <Link
-                      href={`/managers/${a.managerId}`}
+                      href={managerPath(a.managerName)}
                       className="font-medium hover:text-primary"
                     >
                       {a.managerName}

@@ -282,3 +282,18 @@ describe("draftCapitalScore", () => {
     expect(draftCapitalScore([])).toBe(0);
   });
 });
+
+describe("weekly power rankings — expected wins match the site's luck number", () => {
+  it("counts a tied weekly score as half an expected win, as stats/luck-wins.ts does", () => {
+    // Week 1: a and b both score 100, c 90, d 80. a out-scores two and ties one:
+    // (2 + 0.5) / 3 = 0.83 expected (it was 2 / 3 = 0.67 when ties counted zero).
+    const a = team({ fantasyTeamId: "a", weeks: weeks([100], [100]) });
+    const b = team({ fantasyTeamId: "b", weeks: weeks([100], [100]) });
+    const c = team({ fantasyTeamId: "c", weeks: weeks([90], [80]) });
+    const d = team({ fantasyTeamId: "d", weeks: weeks([80], [90]) });
+    const row = computeWeeklyPowerRankings([a, b, c, d]).rows.find((r) => r.fantasyTeamId === "a")!;
+    expect(row.expectedWins).toBe(0.8);
+    // The tied game is half a win: 0.5 - 0.83.
+    expect(row.luck).toBe(-0.3);
+  });
+});

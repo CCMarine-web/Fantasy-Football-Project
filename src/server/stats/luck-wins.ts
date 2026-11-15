@@ -212,3 +212,27 @@ export function formatLuckWins(luckWins: number): string {
   const v = Math.round(luckWins * 10) / 10;
   return `${v > 0 ? "+" : v < 0 ? "−" : ""}${Math.abs(v).toFixed(1)} wins`;
 }
+
+/**
+ * Competition ranking at the precision the site shows (one decimal), so two
+ * teams both shown at "+2.1 wins" share a rank instead of one page calling the
+ * first "luckiest" and another page calling the second the same thing.
+ */
+export function rankLuckWins<T extends { luckWins: number }>(items: T[]): (T & { rank: number; tied: number; of: number })[] {
+  const shown = (v: number) => Math.round(v * 10);
+  const sorted = [...items].sort((a, b) => b.luckWins - a.luckWins);
+  return sorted.map((x) => ({
+    ...x,
+    rank: 1 + sorted.filter((y) => shown(y.luckWins) > shown(x.luckWins)).length,
+    tied: sorted.filter((y) => shown(y.luckWins) === shown(x.luckWins)).length,
+    of: sorted.length,
+  }));
+}
+
+/** "luckiest", "tied-luckiest", "unluckiest", "3 of 10", "tied 3rd of 10". */
+export function luckRankText({ rank, tied, of }: { rank: number; tied: number; of: number }): string {
+  const t = tied > 1;
+  if (rank === 1) return t ? "tied-luckiest" : "luckiest";
+  if (rank + tied - 1 === of) return t ? "tied-unluckiest" : "unluckiest";
+  return t ? `tied ${rank} of ${of}` : `${rank} of ${of}`;
+}

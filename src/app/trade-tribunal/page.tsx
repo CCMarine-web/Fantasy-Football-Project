@@ -1,4 +1,5 @@
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
+import { managerPath } from "@/lib/slug";
 import Link from "next/link";
 import { AiText } from "@/components/shared/ai-text";
 import { tradeVerdictTexts } from "@/server/text/page-texts";
@@ -313,7 +314,7 @@ function TradeItem({
             >
               <div className="flex items-center justify-between gap-2">
                 <Link
-                  href={`/managers/${side.managerId}`}
+                  href={managerPath(side.managerName)}
                   className="font-heading text-base font-semibold hover:text-primary"
                 >
                   {side.managerName}

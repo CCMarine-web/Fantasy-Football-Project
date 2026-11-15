@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { heatColor, positionColor } from "@/lib/chart-theme";
 import { cn } from "@/lib/utils";
 import type { DraftBoard as DraftBoardData, DraftBoardCell } from "@/server/repositories/draft-repository";
@@ -256,7 +257,7 @@ export function DraftBoard({
               {board.teams.map((team) => (
                 <th key={team.fantasyTeamId} scope="col" className="w-[7.5rem] px-1 pb-1 align-bottom sm:w-[8.5rem]">
                   {team.managerId ? (
-                    <Link href={`/managers/${team.managerId}`} className="block truncate text-xs font-semibold hover:text-primary">
+                    <Link href={managerPath(team.managerName)} className="block truncate text-xs font-semibold hover:text-primary">
                       {team.managerName}
                     </Link>
                   ) : (
@@ -304,7 +305,9 @@ export function DraftBoard({
         </table>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        Pick numbers read round.pick. Each pick shows its slots gained or lost and points per game; hover a pick for its season total.
+        {showHindsight
+          ? "Pick numbers read round.pick. Each pick shows its slots gained or lost and points per game; hover a pick for its season total."
+          : "Pick numbers read round.pick; the colour is the position. Switch to Steal or bust for what each pick has produced."}
       </p>
     </section>
   );

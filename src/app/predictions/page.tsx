@@ -1,4 +1,5 @@
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
+import { managerPath } from "@/lib/slug";
 import Link from "next/link";
 import { Sparkles, Trophy } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -143,7 +144,7 @@ export default async function PredictionsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <Link
-                            href={`/managers/${s.managerId}`}
+                            href={managerPath(s.managerName)}
                             className="font-medium hover:text-primary"
                           >
                             {s.managerName}
@@ -202,7 +203,7 @@ export default async function PredictionsPage() {
                 <CardContent className="space-y-3">
                   <div className="flex items-center justify-between">
                     <Link
-                      href={`/managers/${p.managerId}`}
+                      href={managerPath(p.managerName)}
                       className="font-heading text-lg font-semibold hover:text-primary"
                     >
                       {p.managerName}
@@ -285,7 +286,7 @@ export default async function PredictionsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <Link
-                            href={`/managers/${c.managerId}`}
+                            href={managerPath(c.managerName)}
                             className="font-medium hover:text-primary"
                           >
                             {c.managerName}

@@ -195,9 +195,23 @@ function assetView(asset: {
   };
 }
 
-function describe(view: Omit<TransactionView, "summary">): string {
+export function describeTransaction(view: Pick<TransactionView, "type" | "outcome" | "added" | "dropped">): string {
   const name = (a: TransactionAssetView) => a.playerName ?? a.otherAsset ?? "an unnamed asset";
   const managers = [...new Set([...view.added, ...view.dropped].map((a) => a.managerName))];
+
+  // A move between two or more rosters that is not a trade — in practice a
+  // commissioner swapping players between teams (Nov 2026: Strange and
+  // Smith-Njigba between Shea and McManus read "Shea was awarded Strange and
+  // Smith-Njigba, dropping Strange and Smith-Njigba"). Say who got what.
+  if (view.type !== "TRADE" && managers.length > 1) {
+    const parts = managers.map((m) => {
+      const got = view.added.filter((a) => a.managerName === m).map(name);
+      const lost = view.dropped.filter((a) => a.managerName === m).map(name);
+      if (got.length > 0) return `${m} received ${got.join(" and ")}`;
+      return `${m} gave up ${lost.join(" and ")}`;
+    });
+    return `${view.type === "COMMISSIONER" ? "Commissioner move: " : ""}${parts.join("; ")}`;
+  }
 
   if (view.type === "TRADE") {
     const byManager = new Map<string, string[]>();
@@ -369,7 +383,7 @@ export async function getTransactionsPage(
       dropped,
       processedAt: t.processedAt,
     };
-    return { ...partial, summary: describe(partial) };
+    return { ...partial, summary: describeTransaction(partial) };
   });
 
   // Same manager, same week, the same players flipped back and forth: one row.

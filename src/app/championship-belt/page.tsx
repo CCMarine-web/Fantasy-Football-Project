@@ -1,4 +1,5 @@
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
+import { managerPath } from "@/lib/slug";
 import { pageMetadata } from "@/lib/indexing";
 import Image from "next/image";
 import Link from "next/link";
@@ -103,7 +104,7 @@ export default async function ChampionshipBeltPage() {
                     Reigning Champion
                   </p>
                   <h2 className="mt-1 font-heading text-3xl font-semibold tracking-wide uppercase sm:text-4xl">
-                    <Link href={`/managers/${champion.managerId}`} className="hover:text-primary">
+                    <Link href={managerPath(champion.managerName)} className="hover:text-primary">
                       {champion.managerName}
                     </Link>
                   </h2>
@@ -249,7 +250,7 @@ export default async function ChampionshipBeltPage() {
                         <td className="px-2.5 py-2 font-medium tabular-nums sm:px-4">{row.year}</td>
                         <td className="px-2.5 py-2 sm:px-4">
                           <Link
-                            href={`/managers/${row.championManagerId}`}
+                            href={managerPath(row.championName)}
                             className="inline-flex items-center gap-1.5 font-medium hover:text-primary"
                           >
                             {/* shrink-0: as a flex child the icon was squeezed

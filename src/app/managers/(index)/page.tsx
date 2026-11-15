@@ -27,7 +27,7 @@ export const metadata = { title: "Managers" };
 /*
  * Server-rendered. The active/retired tab is a search param, which makes the
  * route dynamic, so the caching that matters happens at the data layer:
- * listManagerRows() and getCareerLuck() are both cached (server/cache.ts).
+ * listManagerRows() and getCareerLuckWins() are both cached (server/cache.ts).
  * Re-deriving ten managers' whole careers per visitor bought nothing but a
  * loading skeleton.
  */

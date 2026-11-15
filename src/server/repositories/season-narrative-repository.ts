@@ -62,7 +62,7 @@ export async function buildSeasonSummaryInput(seasonId: string, year: number): P
   }
   if (missedPlayoffTopScorer && missedPlayoffTopScorer.id !== mostPoints?.id) {
     storylines.push(
-      `${missedPlayoffTopScorer.manager.displayName} scored ${missedPlayoffTopScorer.pointsFor.toFixed(0)} points but missed the playoffs — the season's unluckiest team.`,
+      `${missedPlayoffTopScorer.manager.displayName} scored ${missedPlayoffTopScorer.pointsFor.toFixed(0)} points and still missed the playoffs.`,
     );
   }
   if (topGame?.score != null) {

@@ -14,7 +14,7 @@ import {
 } from "../editorial-guards";
 import type { ContentSafeguards } from "../types";
 
-export const MANAGER_PERF_PROMPT_VERSION = "manager-perf-summary-v3";
+export const MANAGER_PERF_PROMPT_VERSION = "manager-perf-summary-v4";
 
 /**
  * Token ceiling for one profile.
@@ -107,11 +107,12 @@ export interface ManagerPerfPacket {
   allPlayRecord: string;
   allPlayWinPct: number;
   /**
-   * Luck Score out of 100, 50 neutral: how much the schedule helped. Null when
-   * too few games have been played to measure it.
+   * Career luck in wins (stats/luck-wins.ts): actual regular-season wins minus
+   * the wins the weekly scores would have earned against the whole league.
+   * Null when too few games have been played to measure it.
    */
-  luckScore: number | null;
-  /** One sentence naming the band, e.g. "Slightly unlucky (43/100)". */
+  careerLuckWins: number | null;
+  /** e.g. "+2.4 wins (Slightly Lucky) over 135 regular-season games". */
   luckSummary: string;
   /** Head-to-head records against the managers played most. */
   topRivalries: { opponent: string; record: string; note: string }[];
@@ -176,14 +177,14 @@ HARD RULES
 - "careerRecord" and every era record are REGULAR SEASON. They are the figures printed in the table beside this profile, so a reader can check them. Never add postseason games into a career or era record. The era records must also sum to the career record; if they do not appear to, cite the packet's figures rather than your own arithmetic.
 - The playoff record covers championship-bracket games ONLY — the games that decide the title. The league's consolation bracket (the "Toilet Bowl") decides nothing and is not recorded anywhere in this packet. Never mention a toilet bowl, a consolation bracket, a placement game or a "loser's bracket": you have no data on them, so anything you say about one is invented.
 - LAST PLACE means finishing bottom of the REGULAR-SEASON standings, and "lastPlaceYears" lists exactly which seasons those were (it may be empty, which means never). Never call anyone a Toilet Bowl loser, and never infer last place from a final placing, a playoff exit or a postseason result.
-- The Luck Score runs 0 to 100 with 50 neutral and measures how much the SCHEDULE helped, not how good the manager is. Above 50 the record flatters the scoring; below 50 it understates it. A high score is not a compliment and a low one is not an insult. If the score is null, there are too few games to say — do not describe that manager as having neutral or average luck.
+- Luck is measured in WINS: actual regular-season wins minus the wins the manager's weekly scores would have earned against the whole league. Positive means the record flatters the scoring; negative means it understates it. Quote it as luckSummary gives it ("+2.4 wins"); never convert it to a score, percentage or rating. A lucky figure is not a compliment and an unlucky one is not an insult. If careerLuckWins is null, there are too few games to say — do not describe that manager as having neutral or average luck.
 - The packet's "unavailable" list names things that are genuinely not on record. Do not speculate about them and do not imply they are known.
 - "personalityProfile", "communicationStyle", "leagueVoice" and "relationships" are PRIVATE research the public never sees. Use them to shape TONE, angle and the target of a joke. Never quote them, never paraphrase anything anyone said, and never attribute a specific saying to anyone. See THE ONE RULE above: the traits are publishable, their origin is not.
 - Those four fields are PROSE and any numbers inside them are unverified. Ignore every figure they contain. Each statistic you cite must come from a numeric field of this packet — "careerRecord", the "eras" rows, the "seasons" rows, "topRivalries", "allPlayRecord" and so on.
 - HEAD-TO-HEAD RECORDS: the packet lists this manager's record against EVERY opponent. If you name an opponent and a record, copy that record from the list character for character, and make sure it is the row for that opponent. Do not reverse it, do not round it, and never write a head-to-head figure that is not in the list. Runs have been produced claiming "a 4-1 edge" over an opponent the manager is 6-5 against and "3-1" over one they trail 6-7 — both invented, both printed next to the real table. If you are not certain which row an opponent is, describe the rivalry without a number.
 - Do not attach a postseason claim to a head-to-head unless the packet supports it. The head-to-head rows carry no round information, so never assert that a pair met in the playoffs.
 - If statsComplete is false, do not present the record as the manager's complete history.
-- Write for a reader, not a debugger. Never print a raw field name from the packet — no "recentPointsPerGame", "winPct", "allPlayRecord", "luckScore", "playoffRecord". Say "10.7 points a game above his career rate", "a .524 win rate", "his all-play record". If a value has no natural English phrasing, leave it out.
+- Write for a reader, not a debugger. Never print a raw field name from the packet — no "recentPointsPerGame", "winPct", "allPlayRecord", "careerLuckWins", "playoffRecord". Say "10.7 points a game above his career rate", "a .524 win rate", "his all-play record". If a value has no natural English phrasing, leave it out.
 - Respect the safeguards.`;
 
 /**
@@ -192,7 +193,7 @@ HARD RULES
  * arithmetic, but it reads like a leaked variable because it is one.
  */
 const PACKET_KEY_PATTERN =
-  /\b(recentPointsPerGame|careerPointsPerGame|allPlayWinPct|allPlayRecord|winPct|luckLabel|luckScore|luckSummary|playoffRecord|lastPlaceYears|postseasonRecord|recentTrajectory|statsComplete|bestFinish|worstFinish|playoffAppearances|finalsAppearances|championshipYears|pointsForPerGame|topRivalries|communicationStyle|approvedKnowledge|historyNotes|seasonsPlayed|currentTeamName|yearsActive|regularSeasonRank|finalRank|madePlayoffs|isChampion|pointsFor|pointsAgainst)\b/;
+  /\b(recentPointsPerGame|careerPointsPerGame|allPlayWinPct|allPlayRecord|winPct|luckLabel|luckScore|careerLuckWins|luckSummary|playoffRecord|lastPlaceYears|postseasonRecord|recentTrajectory|statsComplete|bestFinish|worstFinish|playoffAppearances|finalsAppearances|championshipYears|pointsForPerGame|topRivalries|communicationStyle|approvedKnowledge|historyNotes|seasonsPlayed|currentTeamName|yearsActive|regularSeasonRank|finalRank|madePlayoffs|isChampion|pointsFor|pointsAgainst)\b/;
 
 /** True when the draft leaked packet identifiers into the copy. */
 export function leaksPacketFieldNames(text: string): boolean {

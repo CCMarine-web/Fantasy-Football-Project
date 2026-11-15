@@ -350,6 +350,22 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     }
   }
 
+  const liveMatchups = await withLiveScores(withClockStatus(matchups, clock), clock);
+  // The featured game follows its own card: in progress once the slate kicks
+  // off, with the same live points and "as of" time.
+  const featuredCard = featured ? liveMatchups.find((m) => m.matchupId === featured.matchupId) : undefined;
+  const featuredNow =
+    featured && !featured.isFinal && featuredCard?.status === "IN_PROGRESS"
+      ? {
+          ...featured,
+          inProgress: true,
+          liveAsOf: featuredCard.liveAsOf,
+          teams: featured.teams.map((t) => ({
+            ...t,
+            liveScore: featuredCard.teams.find((c) => c.fantasyTeamId === t.fantasyTeamId)?.liveScore ?? null,
+          })) as typeof featured.teams,
+        }
+      : featured;
   const weekMoves = week != null ? transactions.transactions.filter((t) => t.week === week) : transactions.transactions;
 
   return {
@@ -358,7 +374,7 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     phase,
     clock,
     sync,
-    featured,
+    featured: featuredNow,
     bracketPending: pending
       ? {
           afterWeek: lastRegularWeek(season.playoffStartWeek),
@@ -380,7 +396,7 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     week,
     availableWeeks,
     headline,
-    matchups: await withLiveScores(withClockStatus(matchups, clock), clock),
+    matchups: liveMatchups,
     standings: standingsView.rows,
     standingsOrdering: standingsView.ordering,
     standingsOrderingLabel: standingsView.orderingLabel,

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { SimpleBars } from "@/components/charts/charts";
 import { positionLabel } from "@/lib/format";
@@ -94,7 +95,7 @@ export function BestPickups({
                 </th>
                 <td className="px-3 py-2 whitespace-nowrap">
                   <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ background: colors[p.managerId] }} aria-hidden />
-                  <Link href={`/managers/${p.managerId}`} className="hover:text-primary">
+                  <Link href={managerPath(p.managerName)} className="hover:text-primary">
                     {p.managerName}
                   </Link>
                 </td>

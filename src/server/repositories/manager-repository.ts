@@ -18,7 +18,8 @@ import {
   type VerifiedGameRow,
 } from "@/server/repositories/verified-games";
 import { seriesByOpponent } from "@/server/repositories/head-to-head-repository";
-import { getManagerLuck } from "@/server/repositories/luck-repository";
+import { getCareerLuckWins } from "@/server/repositories/luck-repository";
+import { formatLuckWins } from "@/server/stats/luck-wins";
 import { getLastPlaceBySeason } from "@/server/repositories/hall-of-shame-repository";
 import { cached, CACHE_TAGS } from "@/server/cache";
 import type { ManagerSummary } from "@/types/view-models";
@@ -482,18 +483,13 @@ export async function getManagerProfileDetailed(managerId: string) {
     }),
   );
 
-  // The Luck Score, computed from recorded scores; see server/stats/luck.ts.
-  const [luck, lastPlaceAll] = await Promise.all([
-    getManagerLuck(managerId),
-    getLastPlaceBySeason(),
-  ]);
+  const lastPlaceAll = await getLastPlaceBySeason();
   const lastPlaceYears = lastPlaceAll.filter((l) => l.managerId === managerId).map((l) => l.year);
 
   return {
     manager,
     seasonLines,
     eraStats,
-    luck,
     /** Seasons finished bottom of the REGULAR-SEASON standings, newest first. */
     lastPlaceYears,
     teamNameRuns: buildTeamNameRuns(
@@ -906,6 +902,8 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
   // able to mention has to be gathered here as a verified number.
 
   const detailed = await getManagerProfileDetailed(managerId);
+  // The site's one luck number (stats/luck-wins.ts), same as the profile shows.
+  const careerLuck = (await getCareerLuckWins()).get(managerId) ?? null;
   const seasonFacts: ManagerSeasonFact[] = (detailed?.seasonLines ?? [])
     .filter((line) => line.wins + line.losses + line.ties > 0)
     .map((line) => ({
@@ -1096,12 +1094,11 @@ async function buildPerfPacket(managerId: string): Promise<ManagerPerfPacket | n
     recentTrajectory: trajectory,
     allPlayRecord: detailed ? `${detailed.stats.allPlay.wins}-${detailed.stats.allPlay.losses}` : "—",
     allPlayWinPct: detailed?.stats.allPlay.winPct ?? 0,
-    luckScore: detailed?.luck.career?.score ?? null,
-    luckSummary: detailed?.luck.career
-      ? detailed.luck.career.score == null
-        ? "too few games to measure schedule luck"
-        : `${detailed.luck.career.label} (${detailed.luck.career.score}/100, where 50 is neutral)`
-      : "too few games to measure schedule luck",
+    careerLuckWins: careerLuck && careerLuck.tone !== "insufficient" ? Math.round(careerLuck.luckWins * 10) / 10 : null,
+    luckSummary:
+      careerLuck && careerLuck.tone !== "insufficient"
+        ? `${formatLuckWins(careerLuck.luckWins)} (${careerLuck.label}) over ${careerLuck.games} regular-season games`
+        : "too few games to measure luck",
     topRivalries,
     tendencies,
     // Mock profiles are placeholder text and would mislead the writer.

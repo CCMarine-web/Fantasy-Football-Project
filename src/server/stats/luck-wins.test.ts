@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeLuckWins, formatLuckWins, labelRank, luckLabelFromZ, weekExpected, type LuckGameRow } from "./luck-wins";
+import { computeLuckWins, formatLuckWins, labelRank, luckLabelFromZ, luckRankText, rankLuckWins, weekExpected, type LuckGameRow } from "./luck-wins";
 
 /** A random-but-seeded league: n teams, w weeks, round-robin-ish pairings. */
 function league(n: number, weeks: number, seed = 1, year = 2026): LuckGameRow[] {
@@ -109,5 +109,68 @@ describe("labels", () => {
     expect(formatLuckWins(2.13)).toBe("+2.1 wins");
     expect(formatLuckWins(-2.78)).toBe("−2.8 wins");
     expect(formatLuckWins(0.01)).toBe("0.0 wins");
+  });
+});
+
+describe("rankLuckWins — ties at the shown precision share a rank", () => {
+  // Nov 2026: Jones 7 W vs 4.89 and Javier 6 W vs 3.89 were both +2.1; the
+  // standings named Jones the luckiest while Javier's profile said "luckiest".
+  const ranked = rankLuckWins([
+    { id: "jones", luckWins: 7 - 44 / 9 },
+    { id: "javier", luckWins: 6 - 35 / 9 },
+    { id: "mire", luckWins: 1.11 },
+    { id: "shea", luckWins: -2.78 },
+  ]);
+  const by = (id: string) => ranked.find((r) => r.id === id)!;
+
+  it("gives both +2.1 teams rank 1 and marks the tie", () => {
+    expect([by("jones").rank, by("javier").rank]).toEqual([1, 1]);
+    expect(by("jones").tied).toBe(2);
+    expect(luckRankText(by("javier"))).toBe("tied-luckiest");
+  });
+
+  it("skips the shared places for the next team", () => {
+    expect(by("mire").rank).toBe(3);
+    expect(luckRankText(by("mire"))).toBe("3 of 4");
+    expect(luckRankText(by("shea"))).toBe("unluckiest");
+  });
+
+  it("separates values that differ at one decimal", () => {
+    const r = rankLuckWins([{ luckWins: 2.14 }, { luckWins: 2.16 }]);
+    expect(r.map((x) => x.rank)).toEqual([1, 2]);
+    expect(luckRankText(r[0])).toBe("luckiest");
+  });
+});
+
+describe("computeLuckWins — ties, playoffs and incomplete weeks", () => {
+  const g = (managerId: string, opp: string, week: number, score: number, opponentScore: number, extra: Partial<LuckGameRow> = {}): LuckGameRow => ({
+    managerId, opponentManagerId: opp, year: 2026, week, isPlayoff: false, bracket: null, score, opponentScore, isWinner: score > opponentScore ? true : score < opponentScore ? false : null, ...extra,
+  });
+  // Week 1: A and B tie at 100 (both beat C, lose to D). Week 2: a playoff game.
+  const rows = [
+    g("A", "B", 1, 100, 100), g("B", "A", 1, 100, 100),
+    g("C", "D", 1, 90, 120), g("D", "C", 1, 120, 90),
+    g("A", "C", 2, 150, 80, { isPlayoff: true, bracket: "WINNERS" }), g("C", "A", 2, 80, 150, { isPlayoff: true, bracket: "WINNERS" }),
+  ];
+  const luck = computeLuckWins(rows);
+
+  it("a tied game is half a win and half an expected win against the other tied team", () => {
+    // A out-scored C, tied B, lost to D: (1 + 0.5) / 3 = 0.5 expected; 0.5 actual.
+    expect(luck.get("A")!.wins).toBe(0.5);
+    expect(luck.get("A")!.expected).toBeCloseTo(0.5, 10);
+    expect(luck.get("A")!.luckWins).toBeCloseTo(0, 10);
+  });
+
+  it("playoff games never count toward luck", () => {
+    expect(luck.get("A")!.games).toBe(1);
+    expect(luck.get("C")!.games).toBe(1);
+  });
+
+  it("an unplayed or unverified game is simply absent: the week pool uses the teams that played", () => {
+    // Only C and D's game is on record in week 3: each is measured against one opponent.
+    const partial = computeLuckWins([...rows, g("C", "D", 3, 110, 100), g("D", "C", 3, 100, 110)]);
+    expect(partial.get("C")!.games).toBe(2);
+    expect(partial.get("C")!.expected).toBeCloseTo(0 + 1, 10);
+    expect(partial.get("A")!.games).toBe(1);
   });
 });

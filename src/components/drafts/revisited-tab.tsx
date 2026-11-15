@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { AiText } from "@/components/shared/ai-text";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -184,7 +185,7 @@ export function RevisitedTab({
                       </span>
                       <TeamAvatar name={card.managerName} imageUrl={card.avatarUrl} className="shrink-0" />
                       <Link
-                        href={`/managers/${card.managerId}`}
+                        href={managerPath(card.managerName)}
                         className="min-w-0 flex-1 font-heading text-lg font-semibold break-words hover:text-primary"
                       >
                         {card.managerName}

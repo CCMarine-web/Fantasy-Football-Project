@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { AiText } from "@/components/shared/ai-text";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -78,7 +79,7 @@ export function GradesTab({
                         {index + 1}
                       </td>
                       <td className="px-2 py-2 sm:px-4">
-                        <Link href={`/managers/${card.managerId}`} className="font-medium hover:text-primary">
+                        <Link href={managerPath(card.managerName)} className="font-medium hover:text-primary">
                           {card.managerName}
                         </Link>
                       </td>
@@ -159,7 +160,7 @@ export function GradesTab({
                       <div className="border-t border-border/50 px-6 py-4">
                         <div className="mb-4 flex flex-wrap items-center gap-3">
                           <Link
-                            href={`/managers/${card.managerId}`}
+                            href={managerPath(card.managerName)}
                             className="min-w-0 text-sm font-medium break-words hover:text-primary"
                           >
                             View {card.managerName}&rsquo;s profile

@@ -48,6 +48,9 @@ export async function StandingsPageView({ season }: { season: Season | null }) {
       value: Number(l!.luckWins.toFixed(1)),
       detail: `${r.wins}-${r.losses}${r.ties ? `-${r.ties}` : ""}, ${l!.expected.toFixed(1)} expected · ${l!.label}`,
     }));
+  // Teams level at the shown precision are named together.
+  const topLuck = Math.max(...ledger.map((d) => d.value));
+  const luckiest = ledger.filter((d) => d.value === topLuck);
   // Playoff odds by week: one row per week, one key per team.
   const oddsWeeks = [...new Set(oddsHistory.map((o) => o.week))].sort((a, b) => a - b);
   const oddsData = oddsWeeks.map((w) => {
@@ -117,7 +120,7 @@ export async function StandingsPageView({ season }: { season: Season | null }) {
             <ChartFrame
               title="Luck ledger"
               caption="Wins above or below what each team's weekly scores would have earned against the whole league. Right of zero: the record flatters them."
-              summary={`Luck in wins for ${ledger.length} teams. Luckiest: ${[...ledger].sort((x, y) => y.value - x.value)[0].label} (${formatLuckWins([...ledger].sort((x, y) => y.value - x.value)[0].value)}).`}
+              summary={`Luck in wins for ${ledger.length} teams. Luckiest: ${luckiest.map((d) => d.label).join(" and ")} (${formatLuckWins(luckiest[0].value)}).`}
               table={{ headers: ["Team", "Luck (wins)", "Record and expected"], rows: ledger.map((d) => [d.label, d.value.toFixed(1), d.detail]) }}
               height="h-auto"
             >

@@ -1,7 +1,7 @@
 import "../lib/load-env";
 import { prisma } from "@/lib/db";
 import { listManagerRows } from "@/server/repositories/manager-repository";
-import { getCareerLuck } from "@/server/repositories/luck-repository";
+import { getCareerLuckWins } from "@/server/repositories/luck-repository";
 import { getLastPlaceBySeason } from "@/server/repositories/hall-of-shame-repository";
 
 /**
@@ -18,13 +18,13 @@ import { getLastPlaceBySeason } from "@/server/repositories/hall-of-shame-reposi
 async function main() {
   const [rows, luck, lastPlace] = await Promise.all([
     listManagerRows(),
-    getCareerLuck(),
+    getCareerLuckWins(),
     getLastPlaceBySeason(),
   ]);
 
   console.log("=== record definitions audit ===\n");
   console.log(
-    "manager              regular      win%   playoffs  last  titles  luck  confidence",
+    "manager              regular      win%   playoffs  last  titles   luck  label",
   );
   for (const r of [...rows].sort((a, b) => b.winningPercentage - a.winningPercentage)) {
     const l = luck.get(r.managerId);
@@ -34,7 +34,7 @@ async function main() {
         `${`${r.playoffWins}-${r.playoffLosses}`.padStart(8)}  ` +
         `${String(r.lastPlaceFinishes).padStart(4)}  ` +
         `${String(r.championships).padStart(6)}  ` +
-        `${String(l?.score ?? "—").padStart(4)}  ${l?.confidence ?? "—"}`,
+        `${(l ? l.luckWins.toFixed(1) : "—").padStart(5)}  ${l?.label ?? "—"}`,
     );
   }
 

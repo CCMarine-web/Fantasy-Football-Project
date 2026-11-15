@@ -119,7 +119,7 @@ export const FACTOR_META: Record<FactorKey, { label: string; description: string
   expectedWins: {
     label: "Expected wins",
     description:
-      "The wins a team should have, from how many teams it out-scored each week. Measures earned results rather than actual ones.",
+      "All-play expressed in wins: the share of the league out-scored each week, added up. With every team on the same number of games it moves in step with All-play win%, so the two together carry that part of the score.",
   },
   recentForm: {
     label: "Recent form",
@@ -139,7 +139,7 @@ export const FACTOR_META: Record<FactorKey, { label: string; description: string
   starterStrength: {
     label: "Starter strength",
     description:
-      "Average output of the players in starting slots, i.e. the quality of the first-choice roster.",
+      "Points per game from the starting lineup — the same points as Scoring, without the extra weight on recent weeks.",
   },
   benchDepth: {
     label: "Bench depth",
@@ -148,7 +148,7 @@ export const FACTOR_META: Record<FactorKey, { label: string; description: string
   scheduleStrength: {
     label: "Opponent PPG",
     description:
-      "Average quality of opponents faced so far, so a hard slate is not held against a team.",
+      "Points per game scored against the team. A higher figure adds a little to the score as credit for a tough draw; it says nothing about the team's own play.",
   },
   draftCapital: {
     label: "Draft capital",
@@ -456,17 +456,22 @@ function inSeasonRankings(
     for (const a of entries) {
       const rec = allPlay.get(a.id)!;
       let beaten = 0;
+      let tied = 0;
       for (const b of entries) {
         if (a.id === b.id) continue;
         if (a.points > b.points) {
           rec.w++;
           beaten++;
         } else if (a.points < b.points) rec.l++;
-        else rec.t++;
+        else {
+          rec.t++;
+          tied++;
+        }
       }
       // Expected wins: the share of the league you out-scored that week is the
-      // probability you'd have beaten a random opponent.
-      if (opponents > 0) expected.set(a.id, (expected.get(a.id) ?? 0) + beaten / opponents);
+      // probability you'd have beaten a random opponent; a tie counts half,
+      // exactly as in the site's luck number (stats/luck-wins.ts).
+      if (opponents > 0) expected.set(a.id, (expected.get(a.id) ?? 0) + (beaten + 0.5 * tied) / opponents);
     }
   }
 
@@ -529,7 +534,9 @@ function inSeasonRankings(
       allPlay: ap,
       allPlayPct: apTotal > 0 ? (ap.w + 0.5 * ap.t) / apTotal : 0,
       expectedWins: expected.get(t.fantasyTeamId) ?? 0,
-      actualWins: t.weeks.filter((w) => w.pointsFor > w.pointsAgainst).length,
+      actualWins:
+        t.weeks.filter((w) => w.pointsFor > w.pointsAgainst).length +
+        0.5 * t.weeks.filter((w) => w.pointsFor === w.pointsAgainst).length,
     };
   });
 

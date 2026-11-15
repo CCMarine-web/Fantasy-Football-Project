@@ -3,7 +3,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { FormChips } from "@/components/shared/form-chips";
-import { ordinal } from "@/lib/format";
+import { formatAsOf, ordinal } from "@/lib/format";
+import { managerPath } from "@/lib/slug";
 import type { FeaturedMatchupView, FeaturedTeam } from "@/server/repositories/featured-matchup-repository";
 import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
 import { AiText } from "@/components/shared/ai-text";
@@ -44,7 +45,7 @@ function TeamSide({
           <p className="truncate font-heading text-lg font-semibold">{team.teamName}</p>
           {team.managerId ? (
             <Link
-              href={`/managers/${team.managerId}`}
+              href={managerPath(team.managerName)}
               className="truncate text-sm text-muted-foreground hover:text-primary"
             >
               {team.managerName}
@@ -84,6 +85,15 @@ function TeamSide({
             className={`font-heading text-4xl font-semibold tabular-nums ${team.isWinner ? "text-primary" : "text-muted-foreground"}`}
           >
             {team.score.toFixed(1)}
+          </p>
+        ) : team.liveScore != null ? (
+          <p className="font-heading text-4xl font-semibold tabular-nums">
+            {team.liveScore.toFixed(1)}
+            {team.projectedScore != null ? (
+              <span className="ml-2 align-middle text-xs font-normal text-muted-foreground">
+                projected {team.projectedScore.toFixed(1)}
+              </span>
+            ) : null}
           </p>
         ) : team.projectedScore != null ? (
           <p className="font-heading text-3xl font-semibold tabular-nums text-muted-foreground">
@@ -145,7 +155,18 @@ export function MatchupOfTheWeek({ featured }: { featured: FeaturedMatchupView }
               <Badge variant="outline">{featured.rivalry.label}</Badge>
             </Link>
           ) : null}
-          <Badge variant="secondary">{featured.isFinal ? "Final" : "Preview"}</Badge>
+          {featured.isFinal ? (
+            <Badge variant="secondary">Final</Badge>
+          ) : featured.inProgress && featured.liveAsOf ? (
+            <>
+              <Badge variant="outline">Live</Badge>
+              <span className="text-xs text-muted-foreground">{formatAsOf(featured.liveAsOf)}</span>
+            </>
+          ) : featured.inProgress ? (
+            <Badge variant="secondary">In progress</Badge>
+          ) : (
+            <Badge variant="secondary">Preview</Badge>
+          )}
         </div>
 
         {/* ── The two sides ──────────────────────────────────────────────── */}

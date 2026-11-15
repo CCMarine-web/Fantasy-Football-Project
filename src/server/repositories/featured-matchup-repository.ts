@@ -43,6 +43,8 @@ export interface FeaturedTeam {
   record: string | null;
   score: number | null;
   projectedScore: number | null;
+  /** Points so far while the game is being played (Sleeper, never stored). */
+  liveScore?: number | null;
   isWinner: boolean | null;
   /** Power-ranking position and the number of teams ranked. */
   powerRank: number | null;
@@ -75,6 +77,10 @@ export interface FeaturedMatchupView {
   week: number;
   /** True once both scores are in — the card shows a recap rather than a preview. */
   isFinal: boolean;
+  /** Kicked off but not final: set from the league clock by the weekly hub. */
+  inProgress?: boolean;
+  /** When the live points were fetched; only set with live points. */
+  liveAsOf?: string;
   isPlayoff: boolean;
   roundName: string | null;
   teams: [FeaturedTeam, FeaturedTeam];

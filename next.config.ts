@@ -17,11 +17,15 @@ const nextConfig: NextConfig = {
        * the real domain. 308 to www with the path; Next carries the query
        * string across. (Bare domain -> www and http -> https are Vercel domain
        * settings, not code.)
+       *
+       * /api/ is left alone: a scheduled job or webhook addressed to the alias
+       * must reach the function, and a cron request does not follow a redirect
+       * (it would also lose its Authorization header crossing hosts).
        */
       {
-        source: "/:path*",
+        source: "/:path((?!api/).*)",
         has: [{ type: "host", value: "fantasy-football-project-jade.vercel.app" }],
-        destination: "https://www.rattrapfantasy.com/:path*",
+        destination: "https://www.rattrapfantasy.com/:path",
         permanent: true,
       },
       { source: "/weekly", destination: "/matchups", permanent: true },

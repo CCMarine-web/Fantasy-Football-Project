@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { heatColor } from "@/lib/chart-theme";
 import type { ActivityGridView } from "@/server/repositories/transaction-repository";
 import type { MoveType } from "@/server/stats/transaction-activity";
@@ -52,7 +53,7 @@ export function ActivityGrid({ activity, seasonYear }: { activity: ActivityGridV
             {managers.map((m) => (
               <tr key={m.id}>
                 <th scope="row" className="sticky left-0 z-10 bg-card pr-2 text-left font-medium whitespace-nowrap">
-                  <Link href={`/managers/${m.id}`} className="hover:text-primary">
+                  <Link href={managerPath(m.name)} className="hover:text-primary">
                     {m.name}
                   </Link>
                 </th>

@@ -27,6 +27,7 @@ import { ArtPlaceholder, BrandArt } from "@/components/shared/brand-art";
 import { LEAGUE_CONFIG } from "@/lib/league-config";
 import { SeasonCountdown } from "@/components/home/season-countdown";
 import { DataFreshness } from "@/components/shared/data-freshness";
+import { LiveRefresh } from "@/components/shared/live-refresh";
 import { initialRemaining } from "@/lib/countdown";
 import { chooseSeasonCountdown } from "@/lib/season-countdown";
 import { getNflCalendar, seasonStartDateFor } from "@/server/nfl-calendar";
@@ -150,6 +151,7 @@ export default async function HomePage() {
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <WebsiteJsonLd />
+      {data.clock?.currentWeekState === "IN_PROGRESS" ? <LiveRefresh /> : null}
       {/* 1 — League title + current week + draft countdown */}
       {/* Phones: the hero art as a strip above the title (nothing until it exists). */}
       <BrandArt

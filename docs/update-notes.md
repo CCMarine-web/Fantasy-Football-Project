@@ -121,3 +121,21 @@ Also fixed while checking: the Matchups hub listed the whole season's moves as "
 | `/api/auth/*` | NextAuth | public by design |
 | `/api/health` | none | public; job names and text counts only |
 | `/login` | none | public, `noindex` |
+
+## Final audit pass (Nov 15, 2026)
+
+| Defect found | Fix | Test |
+|---|---|---|
+| Jones and Javier both +2.1 luck wins (2026); standings called Jones the luckiest while Javier's profile said "luckiest" | Luck ranks are competition ranks at the shown precision; ties read "tied-luckiest", and the standings name both | `luck-wins.test.ts` (rankLuckWins) |
+| The old 0–100 Luck Score still fed the manager-summary AI packet (and was computed on every profile render) | Packet uses luck in wins; `stats/luck.ts` and its repository functions removed | typecheck |
+| Power rankings counted a tied weekly score as zero expected wins (luck-wins counts half) | Ties count half in both | `weekly-power-rankings.test.ts` |
+| Power-ranking explanations: Starter strength described as a different measure (it is unweighted PPG); Expected wins as separate from All-play (they move together); Opponent PPG as "a hard slate is not held against a team" (it is a bonus for high-scoring opponents) | Descriptions say what each factor is; weights unchanged | — |
+| Matchup of the Week said "Preview" with no score while its game was being played | Follows its own card: Live + points + "as of", or In progress | — |
+| Open pages never refreshed during games | `LiveRefresh`: router.refresh every 5 min while the week is in progress and the tab is visible (cached page; no Sleeper calls of its own; no text generation) | `live-refresh.test.tsx` |
+| `/managers/<unknown>` and `/matchups/<season>/<week>/<unknown>` answered 200 (loading.tsx streamed before notFound); legacy id URLs redirected via meta refresh | Index loading states moved into `(index)` route groups; detail pages now 404 / 308 properly | checked on the build |
+| Manager links used database ids in 18 places | `managerPath(name)` everywhere | — |
+| Commissioner swap read "Shea was awarded Strange and Smith-Njigba, dropping Strange and Smith-Njigba" | Moves touching two rosters say who received what | `transaction-describe.test.ts` |
+| The `*.vercel.app` alias redirect also caught `/api/*`, so a cron or webhook sent to the alias got a 308 | `/api/` excluded from that redirect | — |
+| Draft board caption described hindsight numbers in the position view; history narrative called the top scorer who missed the playoffs "the season's unluckiest team" | Caption follows the view; claim removed | — |
+
+Luck was re-derived independently from raw `MatchupTeam` rows (pairwise per week, ties half, regular season only, both sides verified): all 10 managers match the site to 1e-15 for career and 2026; every season sums to 0. Pipeline lock checked with two concurrent runs (second SKIPPED); row counts unchanged apart from one new Sleeper transaction.

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { CalendarClock, Crown, Trophy, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -155,7 +156,7 @@ export function OffseasonPanel({
                   <TeamAvatar name={s.managerName} imageUrl={s.photoUrl} className="h-10 w-10 shrink-0" />
                   <div className="min-w-0">
                     <Link
-                      href={`/managers/${s.managerId}`}
+                      href={managerPath(s.managerName)}
                       className="font-heading text-sm font-semibold hover:text-primary"
                     >
                       {s.managerName}

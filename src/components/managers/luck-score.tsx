@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { CLOSE_MARGIN, formatLuckWins, MIN_LUCK_GAMES } from "@/server/stats/luck-wins";
+import { CLOSE_MARGIN, formatLuckWins, luckRankText, MIN_LUCK_GAMES } from "@/server/stats/luck-wins";
 import type { RankedLuck } from "@/server/repositories/luck-repository";
 
 /**
@@ -26,7 +26,7 @@ export function LuckBadge({ luck, prefix }: { luck: RankedLuck; prefix?: string 
   return (
     <Badge
       className={`border ${tone(luck)}`}
-      title={`${luck.wins} wins vs ${luck.expected.toFixed(1)} expected from scoring, over ${luck.games} regular-season games. ${luck.rank === 1 ? "Luckiest" : `${luck.rank} of ${luck.of}`} in the league.`}
+      title={`${luck.wins} wins vs ${luck.expected.toFixed(1)} expected from scoring, over ${luck.games} regular-season games. ${luckRankText(luck).replace(/^./, (c) => c.toUpperCase())} in the league.`}
     >
       {prefix ? `${prefix} ` : ""}Luck {luckSummary(luck)}
     </Badge>
@@ -47,7 +47,7 @@ function Headline({ title, luck }: { title: string; luck: RankedLuck }) {
             </span>
           </p>
           <p className="text-xs text-muted-foreground">
-            {luck.label} · {luck.rank === 1 ? "luckiest" : luck.rank === luck.of ? "unluckiest" : `${luck.rank} of ${luck.of}`} ·{" "}
+            {luck.label} · {luckRankText(luck)} ·{" "}
             {luck.wins} W vs {luck.expected.toFixed(1)} expected · {luck.games} games
           </p>
         </>

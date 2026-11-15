@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { heatColor } from "@/lib/chart-theme";
 import type { PartnerCell } from "@/server/stats/trade-ledger";
 
@@ -45,7 +46,7 @@ export function TradePartnerGrid({
             {managers.map((row) => (
               <tr key={row.id}>
                 <th scope="row" className="sticky left-0 z-10 bg-card pr-2 text-left font-medium whitespace-nowrap">
-                  <Link href={`/managers/${row.id}`} className="hover:text-primary">
+                  <Link href={managerPath(row.name)} className="hover:text-primary">
                     {row.name}
                   </Link>
                 </th>

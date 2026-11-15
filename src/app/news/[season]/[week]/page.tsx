@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { managerPath } from "@/lib/slug";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { AiText } from "@/components/shared/ai-text";
 import Link from "next/link";
@@ -80,7 +81,7 @@ export default async function WeeklyRecapPage({
                     <Icon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
                     <div>
                       <p className="text-xs tracking-wide text-muted-foreground uppercase">{a.label}</p>
-                      <Link href={`/managers/${a.managerId}`} className="font-heading font-semibold hover:text-primary">
+                      <Link href={managerPath(a.managerName)} className="font-heading font-semibold hover:text-primary">
                         {a.managerName}
                       </Link>
                       <p className="text-xs text-muted-foreground">{a.description}</p>
@@ -108,7 +109,7 @@ export default async function WeeklyRecapPage({
                   {m.teams.map((t) => (
                     <div key={t.managerId} className="flex items-center justify-between text-sm">
                       <Link
-                        href={`/managers/${t.managerId}`}
+                        href={managerPath(t.managerName)}
                         className={t.isWinner ? "font-semibold hover:text-primary" : "text-muted-foreground hover:text-primary"}
                       >
                         {t.teamName}
