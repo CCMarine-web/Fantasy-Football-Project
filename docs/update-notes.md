@@ -96,3 +96,28 @@ Colour note: the spec's win/loss pair (#34C77B / #F0605D) fails a deuteranopia c
 Heights at 390px (before → after): History 9,400 → 4,667; Rivalries 9,000 → 5,422; Trade Tribunal 7,100 → 2,455; profile 7,100 → 3,985.
 
 Also fixed while checking: the Matchups hub listed the whole season's moves as "this week" for a week with none (Week 15 showed 148).
+
+## Phase 4: domain and search (done)
+
+- One site URL: `NEXT_PUBLIC_SITE_URL` (default `https://www.rattrapfantasy.com`, `src/lib/site-url.ts`) feeds `metadataBase`, canonicals, sitemap, Open Graph, JSON-LD and the pipeline's post-run check. The audit script's default URL now points at www.
+- Old alias `fantasy-football-project-jade.vercel.app/*` → 308 → `https://www.rattrapfantasy.com/*`, query kept (`next.config.ts`, host-matched).
+- Indexing allowlist (`src/lib/indexing.ts`): `/`, `/about`, `/standings`, `/power-rankings`, `/history`, `/records`, `/championship-belt` are indexable on www without a query string; everything else is `noindex, follow`; every other host is `noindex, nofollow`. The proxy sends `X-Robots-Tag` and a canonical `Link` header on every page; allowlisted pages also carry `index, follow` and `<link rel="canonical">` in HTML. The global `X-Robots-Tag` header and global noindex meta are gone.
+- `robots.txt`: allow all; disallow `/admin`, `/api/`, `/login`; sitemap line. `sitemap.xml`: the seven allowlisted www URLs, `lastModified` = last successful sync. Web manifest added.
+- Titles: home "The Rat Trap Fantasy Football League | Rat Trap Fantasy", template "%s | Rat Trap Fantasy Football", unique descriptions on indexable pages, `og:url`, `og:site_name`.
+- WebSite JSON-LD on the homepage (name, alternateName, url only).
+- `/about`: static ~150-word page, linked from the footer.
+- Optional `GOOGLE_SITE_VERIFICATION` env var renders the Search Console meta tag.
+
+**Auth audit (anonymous requests, checked locally against the production build)**
+
+| Route | Server-side guard | Anonymous result |
+|---|---|---|
+| `/admin`, `/admin/*` (12 pages) | proxy + `requireAdmin` in every page | 307 → `/login?callbackUrl=…` |
+| Admin server actions (10 files, 28 actions) | role check in every action | rejected |
+| `/chat-lore` | proxy; redirects into `/admin` | 307 → login |
+| `/championship-belt/edit` + its action | proxy + page check + action check | 307 → login |
+| `/predictions/submit`, predictions action | session required | sign-in prompt / rejected |
+| `/api/cron/[job]` | `Authorization: Bearer CRON_SECRET` | 401 (503 where the secret isn't configured) |
+| `/api/auth/*` | NextAuth | public by design |
+| `/api/health` | none | public; job names and text counts only |
+| `/login` | none | public, `noindex` |

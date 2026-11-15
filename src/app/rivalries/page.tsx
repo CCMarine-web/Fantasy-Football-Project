@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { managerPath } from "@/lib/slug";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { RivalryGrid } from "@/components/rivalries/rivalry-grid";
 import { rivalryPath } from "@/lib/rivalry-slug";
@@ -51,7 +52,7 @@ function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
 
   return (
     <Card className={r.isOfficial ? "border-primary/40" : undefined}>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           {r.isOfficial ? <Badge>Official rivalry</Badge> : null}
           {r.championshipMeetings > 0 ? (
@@ -79,17 +80,17 @@ function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
             <span className="font-semibold text-foreground">{r.seriesText}</span> · {r.gamesPlayed} {r.gamesPlayed === 1 ? "meeting" : "meetings"}
             {r.ties ? ` · ${r.ties} ${r.ties === 1 ? "tie" : "ties"}` : ""}
           </p>
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             {[
               { id: r.managerAId, name: r.managerAName, photo: r.managerAPhoto, wins: r.managerAWins, leads: aLeads },
               { id: r.managerBId, name: r.managerBName, photo: r.managerBPhoto, wins: r.managerBWins, leads: bLeads },
             ].map((side) => (
               <Link
                 key={side.id}
-                href={`/managers/${side.id}`}
+                href={managerPath(side.name)}
                 className={`flex items-center gap-3 hover:text-primary ${side.leads ? "text-primary" : ""}`}
               >
-                <TeamAvatar name={side.name} imageUrl={side.photo} className="h-9 w-9 shrink-0" />
+                <TeamAvatar name={side.name} imageUrl={side.photo} className="h-8 w-8 shrink-0" />
                 <span className="min-w-0 flex-1 font-heading text-base font-semibold break-words">
                   {side.name}
                 </span>
@@ -100,7 +101,7 @@ function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
         </div>
 
         <div className="hidden items-center justify-between gap-3 sm:flex">
-          <Link href={`/managers/${r.managerAId}`} className="flex min-w-0 items-center gap-2 hover:text-primary">
+          <Link href={managerPath(r.managerAName)} className="flex min-w-0 items-center gap-2 hover:text-primary">
             <TeamAvatar name={r.managerAName} imageUrl={r.managerAPhoto} className="h-10 w-10" />
             <span className={`truncate font-heading text-base font-semibold ${aLeads ? "text-primary" : ""}`}>
               {r.managerAName}
@@ -120,7 +121,7 @@ function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
           </div>
 
           <Link
-            href={`/managers/${r.managerBId}`}
+            href={managerPath(r.managerBName)}
             className="flex min-w-0 items-center justify-end gap-2 hover:text-primary"
           >
             <span className={`truncate text-right font-heading text-base font-semibold ${bLeads ? "text-primary" : ""}`}>
@@ -132,7 +133,11 @@ function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
 
         <AiText text={text} />
 
-        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <details className="group">
+          <summary className="flex min-h-11 cursor-pointer items-center text-sm font-medium text-muted-foreground hover:text-foreground">
+            Series numbers
+          </summary>
+        <dl className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Total points" value={`${r.managerAPoints.toFixed(1)} – ${r.managerBPoints.toFixed(1)}`} />
           <Stat
             label="Avg score"
@@ -160,6 +165,7 @@ function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
             value={r.lastMeetingSeason ? `${r.lastMeetingSeason} wk ${r.lastMeetingWeek}` : "—"}
           />
         </dl>
+        </details>
 
         <Link href={rivalryPath(r.managerAName, r.managerBName)} className="inline-block text-sm font-medium text-primary hover:underline">
           Season-by-season history →
@@ -218,7 +224,7 @@ export default async function RivalriesPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             Declared by the commissioner — the grudges the league recognises by name.
           </p>
-          <div className="mt-4 space-y-4">
+          <div className="mt-3 space-y-3">
             {official.map((r) => (
               <RivalryCard key={r.id} r={r} text={texts.get(r.id)} />
             ))}
@@ -235,7 +241,7 @@ export default async function RivalriesPage() {
       {others.length > 0 ? (
         <>
           {official.length > 0 ? (
-            <div className="relative mt-16 mb-10" aria-hidden>
+            <div className="relative mt-8 mb-5" aria-hidden>
               <div className="absolute inset-0 flex items-center">
                 <div className="h-px w-full bg-gradient-to-r from-transparent via-border to-transparent" />
               </div>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { canonicalUrl, pageMetadata } from "@/lib/indexing";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { RecordWatch } from "@/components/shared/record-watch";
 import { getRecordWatch } from "@/server/repositories/computed-records-repository";
@@ -40,6 +41,29 @@ import { getOffseasonData } from "@/server/repositories/offseason-repository";
  * (stamped "as of") are never more than one refresh behind.
  */
 export const revalidate = 600;
+
+export const metadata = pageMetadata("/", {
+  title: "The Rat Trap Fantasy Football League | Rat Trap Fantasy",
+  absoluteTitle: true,
+  description:
+    "The Rat Trap is a ten-team fantasy football league founded in 2017. Live standings, power rankings, playoff odds, records and every season of league history.",
+});
+
+/**
+ * WebSite structured data, homepage only. Nothing that isn't true: no
+ * SearchAction (there is no site search), no ratings, no Organization claims.
+ */
+function WebsiteJsonLd() {
+  const data = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "The Rat Trap Fantasy Football League",
+    alternateName: ["Rat Trap Fantasy", "Rat Trap Fantasy Football", "The Rat Trap"],
+    url: canonicalUrl("/"),
+  };
+  // JSON.stringify output contains no "<", so it is safe inside the script tag.
+  return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(data) }} />;
+}
 
 const TRANSACTION_LABEL: Record<string, string> = {
   WAIVER: "Waiver claim",
@@ -125,6 +149,7 @@ export default async function HomePage() {
 
   return (
     <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
+      <WebsiteJsonLd />
       {/* 1 — League title + current week + draft countdown */}
       {/* Phones: the hero art as a strip above the title (nothing until it exists). */}
       <BrandArt

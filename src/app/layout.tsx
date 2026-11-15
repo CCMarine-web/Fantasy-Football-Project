@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { siteUrl } from "@/lib/site-url";
 import { Geist, Geist_Mono, Oswald } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -25,15 +26,25 @@ const oswald = Oswald({
 });
 
 export const metadata: Metadata = {
+  // Every relative URL (canonical, og:url, og:image) resolves to the www site.
+  metadataBase: new URL(siteUrl()),
   title: {
-    default: BRAND.name,
-    template: `%s | ${BRAND.name}`,
+    default: "The Rat Trap Fantasy Football League | Rat Trap Fantasy",
+    template: "%s | Rat Trap Fantasy Football",
   },
   description: BRAND.description,
+  applicationName: "Rat Trap Fantasy Football",
+  openGraph: { siteName: "Rat Trap Fantasy Football", type: "website", locale: "en_US" },
   // Pages' opengraph-image cards, shown full width on X rather than as a thumbnail.
   twitter: { card: "summary_large_image" },
-  // Never indexed: real names next to roasts. See app/robots.ts.
-  robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
+  /*
+   * Default for every page: not indexed, links followed. Allowlisted pages
+   * (lib/indexing.ts) override this with index: true; the proxy sends the
+   * matching X-Robots-Tag header.
+   */
+  robots: { index: false, follow: true },
+  // Search Console ownership, if the HTML-tag method is used (value from env).
+  ...(process.env.GOOGLE_SITE_VERIFICATION ? { verification: { google: process.env.GOOGLE_SITE_VERIFICATION } } : {}),
 };
 
 export default function RootLayout({

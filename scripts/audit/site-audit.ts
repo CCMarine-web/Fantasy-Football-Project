@@ -274,7 +274,7 @@ async function main() {
   const base =
     baseIndex >= 0 && process.argv[baseIndex + 1]
       ? process.argv[baseIndex + 1].replace(/\/$/, "")
-      : "https://fantasy-football-project-jade.vercel.app";
+      : "https://www.rattrapfantasy.com";
 
   console.log(`=== site audit ===\nbase: ${base}\n`);
   const browser = await chromium.launch();

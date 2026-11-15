@@ -12,6 +12,18 @@ const nextConfig: NextConfig = {
    */
   async redirects() {
     return [
+      /*
+       * The old Vercel alias answers with the full site, so it competed with
+       * the real domain. 308 to www with the path; Next carries the query
+       * string across. (Bare domain -> www and http -> https are Vercel domain
+       * settings, not code.)
+       */
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "fantasy-football-project-jade.vercel.app" }],
+        destination: "https://www.rattrapfantasy.com/:path*",
+        permanent: true,
+      },
       { source: "/weekly", destination: "/matchups", permanent: true },
       { source: "/drafts", destination: "/draft-report-cards?tab=board", permanent: true },
     ];
@@ -38,8 +50,8 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy", value: "frame-ancestors 'none'" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // Out of search engines, including images and PDFs a meta tag can't cover.
-          { key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" },
+          // No global X-Robots-Tag any more: robots is per route, from the
+          // allowlist in lib/indexing.ts (sent by src/proxy.ts).
         ],
       },
     ];

@@ -59,6 +59,7 @@ export const primaryNav: NavItem[] = [
  */
 const footerExtras: NavLink[] = [
   { href: "/draft-report-cards", label: "Drafts & Report Cards" },
+  { href: "/about", label: "About the League" },
 ];
 
 /**

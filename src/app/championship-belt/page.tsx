@@ -1,4 +1,5 @@
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
+import { pageMetadata } from "@/lib/indexing";
 import Image from "next/image";
 import Link from "next/link";
 import { Crown, Trophy, Quote, Flame, Pencil } from "lucide-react";
@@ -21,7 +22,11 @@ import {
 import { LinealBeltSection } from "@/components/championship/lineal-belt-section";
 import { getLastSeasonNarrative } from "@/server/repositories/season-narrative-repository";
 
-export const metadata = { title: "Championship Belt" };
+export const metadata = pageMetadata("/championship-belt", {
+  title: "Championship Belt",
+  description:
+    "The Rat Trap Fantasy Football League's championship belt: who holds it, how it changed hands, and every reign since the league began.",
+});
 
 function recordLine(w: number, l: number, t: number): string {
   return `${w}-${l}${t ? `-${t}` : ""}`;

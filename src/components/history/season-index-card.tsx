@@ -59,7 +59,8 @@ export function SeasonIndexCardView({ season }: { season: SeasonIndexCard }) {
               Final results land when the title game does. Until then, nobody gets to call themselves anything.
             </p>
           ) : (
-            <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-border/60 pt-3">
+            // Phones: the champion line only; the rest is on the season page.
+            <dl className="mt-3 hidden grid-cols-2 gap-x-4 gap-y-2 border-t border-border/60 pt-3 sm:grid">
               <Line label="Runner-up" person={season.runnerUp} />
               <Line label="#1 seed" person={season.topSeed} />
               <Line label="Points leader" person={season.pointsLeader} />

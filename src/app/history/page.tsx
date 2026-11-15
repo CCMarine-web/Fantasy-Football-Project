@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { pageMetadata } from "@/lib/indexing";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -23,7 +24,11 @@ import { History as HistoryIcon, ScrollText } from "lucide-react";
  */
 export const revalidate = 3600;
 
-export const metadata = { title: "League History" };
+export const metadata = pageMetadata("/history", {
+  title: "League History",
+  description:
+    "Every season of the Rat Trap Fantasy Football League since 2017: champions, runners-up, top seeds, last places and the league's scoring trend.",
+});
 
 /**
  * Changes that moved the scoring line, each from the commissioner's own

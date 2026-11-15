@@ -1,4 +1,5 @@
 import { PowerGrid } from "@/components/power/power-grid";
+import { pageMetadata } from "@/lib/indexing";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { powerBlurbTexts } from "@/server/text/page-texts";
 import { PageHeader } from "@/components/shared/page-header";
@@ -14,7 +15,11 @@ import { getSeasonLuckWins } from "@/server/repositories/luck-repository";
 import { distributePercentages } from "@/lib/format";
 import { Info, TrendingUp } from "lucide-react";
 
-export const metadata = { title: "Power Rankings" };
+export const metadata = pageMetadata("/power-rankings", {
+  title: "Power Rankings",
+  description:
+    "Weekly power rankings for the Rat Trap fantasy football league, built from scoring, all-play record, form, consistency and lineup decisions — not wins.",
+});
 
 /**
  * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline

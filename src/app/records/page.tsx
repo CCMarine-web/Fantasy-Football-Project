@@ -1,4 +1,5 @@
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
+import { pageMetadata } from "@/lib/indexing";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { ChartFrame } from "@/components/charts/chart-frame";
@@ -18,7 +19,11 @@ import { Award } from "lucide-react";
  */
 export const revalidate = 3600;
 
-export const metadata = { title: "Records" };
+export const metadata = pageMetadata("/records", {
+  title: "Records",
+  description:
+    "The Rat Trap fantasy football record book: highest and lowest scores, biggest blowouts, closest games, streaks and career marks since 2017.",
+});
 
 export default async function RecordsPage() {
   // Pre-rendered when the build can reach the database; otherwise rendered per request.
