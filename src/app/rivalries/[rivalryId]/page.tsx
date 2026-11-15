@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { MultiLineChart, SimpleBars } from "@/components/charts/charts";
 import { teamColorMap } from "@/lib/chart-theme";
@@ -95,6 +96,8 @@ function Compare({
 }
 
 export default async function RivalryDetailPage({ params }: { params: Promise<{ rivalryId: string }> }) {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const { rivalryId } = await params;
   const r = await getRivalryDetail(rivalryId);
   if (!r) notFound();

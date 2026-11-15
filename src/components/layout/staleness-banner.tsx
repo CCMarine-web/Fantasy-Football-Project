@@ -1,5 +1,6 @@
 import { getDataFreshness } from "@/server/repositories/freshness-repository";
 import { readServerClock } from "@/server/clock";
+import { skipAtDatabaselessBuild } from "@/server/build-guard";
 
 /** In season, data older than this gets a site-wide banner. */
 export const STALE_AFTER_DAYS = 8;
@@ -12,6 +13,7 @@ export const STALE_AFTER_DAYS = 8;
  * shows.
  */
 export async function StalenessBanner() {
+  if (await skipAtDatabaselessBuild()) return null;
   const [f, now] = await Promise.all([getDataFreshness(), readServerClock()]);
   if (!f.lastSyncAt || f.seasonComplete || f.throughWeek == null) return null;
   const ageMs = now - Date.parse(f.lastSyncAt);

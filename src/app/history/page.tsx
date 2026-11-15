@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +30,8 @@ const SEASON_STATUS_LABEL: Record<string, string> = {
 
 
 export default async function HistoryPage() {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const [seasons, trend, narrative, articles] = await Promise.all([
     listSeasonsWithChampions(),
     getLeagueScoringTrend(),

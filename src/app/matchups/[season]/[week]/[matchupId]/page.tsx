@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { MatchupBreakdown, type BreakdownSide } from "@/components/matchups/matchup-breakdown";
 import { getWeekWindows } from "@/server/nfl-games";
 import { teamColorMap } from "@/lib/chart-theme";
@@ -159,6 +160,8 @@ export default async function MatchupDetailPage({
 }: {
   params: Promise<Params>;
 }) {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const { season, week, matchupId } = await params;
   const matchup = await loadMatchup(matchupId);
 

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { renderAtRequestIfNoDatabase, staticParamsOrEmpty } from "@/server/build-guard";
 import { DataFreshness } from "@/components/shared/data-freshness";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { MultiLineChart, SimpleBars } from "@/components/charts/charts";
@@ -34,7 +35,7 @@ export const revalidate = 3600;
 
 /** Rendered on first request, then served from the ISR cache until the pipeline revalidates it. */
 export async function generateStaticParams() {
-  return (await allManagerSlugs()).map((managerId) => ({ managerId }));
+  return staticParamsOrEmpty(async () => (await allManagerSlugs()).map((managerId) => ({ managerId })));
 }
 
 /**
@@ -91,6 +92,8 @@ export default async function ManagerProfilePage({
 }: {
   params: Promise<{ managerId: string }>;
 }) {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const { managerId: param } = await params;
   const resolved = await resolveManagerParam(param);
   if (!resolved) notFound();
@@ -163,7 +166,7 @@ export default async function ManagerProfilePage({
               // eslint-disable-next-line @next/next/no-img-element
               <img src={photo ?? undefined} alt={manager.displayName} className="h-24 w-24 shrink-0 rounded-xl border border-border/60 object-cover" />
             ) : (
-              <TeamAvatar name={manager.displayName} imageUrl={manager.avatarUrl} className="h-20 w-20 shrink-0" />
+              <TeamAvatar name={manager.displayName} imageUrl={manager.photoUrl ?? manager.avatarUrl} className="h-20 w-20 shrink-0" />
             )
           }
         />

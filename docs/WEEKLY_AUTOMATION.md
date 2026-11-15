@@ -1,129 +1,140 @@
-# Weekly automation
+# Automation: the data pipeline
 
-How the site keeps itself up to date once the season starts.
+How the site keeps itself current. Everything (numbers and AI text) is
+refreshed by one pipeline, `runPipeline()` in `src/server/pipeline/run.ts`:
 
-## The job
-
-One function, `runWeeklyRefresh()` in `src/server/jobs/weekly-refresh.ts`. Both
-entry points call it, so a scheduled run and a manual run cannot diverge:
-
-| Entry point | Path | Who |
-| --- | --- | --- |
-| Vercel Cron | `GET /api/cron/weekly` | scheduled |
-| Admin button | `/admin/refresh` | a signed-in admin |
-
-## Order of operations
-
-The order is fixed, and it is the point of the job.
-
-1. **SYNC** — pull platform data from Sleeper: matchups, scores, rosters,
-   player-level scoring, transactions, the draft, playoff results.
-2. **VERIFY** — reconcile what was just synced against Sleeper
-   (`src/server/verify/data-verification.ts`, the same check as
-   `npm run verify:data`): every team's W-L-T and points for/against, those
-   totals recomputed from the stored games, and every stored score of a final
-   week against Sleeper's matchups endpoint. A mismatch fails this step — the
-   run is logged PARTIAL with the disagreement in the audit row — but does not
-   stop the job.
-3. **RECALC** — recompute what is stored: weekly awards, and rivalry
-   statistics (`src/server/stats/rivalry-recompute.ts`). Standings, records,
-   Luck Scores and Power Rankings are derived on read from the synced scores
-   and are correct the moment the sync lands.
-4. **WRITE** — only now generate AI copy, so the writer is working from data
-   that has just been verified rather than whatever happened to be in the
-   database: weekly recaps and previews, and current-season Trade Tribunal
-   verdicts. Those verdicts are provisional — the valuation is re-scored every
-   week — and are rewritten only when the hindsight winner flips, then once
-   more after the championship makes them final.
-5. **PUBLISH** — invalidate the cached read paths (`src/server/cache.ts`) so the
-   next request serves the new numbers.
-
-Generating before syncing is the failure this ordering exists to prevent: a
-recap written from last week's scores is worse than no recap.
-
-## Schedule
-
-`vercel.json`:
-
-```json
-{ "path": "/api/cron/weekly", "schedule": "0 12 * * 2" }
+```
+sync -> compute -> generate-text -> revalidate
 ```
 
-Every **Tuesday at 12:00 UTC** — about 07:00 US Central. That is after Monday
-Night Football has finished and after Sleeper has settled the week's scoring.
-Running earlier risks recapping a week that is not final.
+The same code runs from Vercel Cron, the admin button (`/admin/refresh`) and
+the command line (`npm run pipeline`), so a manual run can't differ from a
+scheduled one.
 
-## Season awareness
+## Schedule (Vercel Cron, `vercel.json`)
 
-The job reads the season phase *after* the sync, so a draft that completed since
-the last run is noticed on this run rather than the next one.
+All times UTC. The league is in US Central (UTC-6 in winter, -5 in summer).
 
-| Phase | What runs |
-| --- | --- |
-| `PRESEASON` (no draft yet) | Sync only. Nothing roster-dependent: no awards, no previews, no recaps. The sync is how the draft gets noticed. |
-| `POST_DRAFT` (draft done, no week played) | Sync and cache refresh. Rosters exist, so the Power Rankings switch from Manager Baseline to Preseason on the next read. There is still nothing to recap. |
-| `IN_SEASON` | Everything. |
+| Job | Cron | When | What it does |
+|---|---|---|---|
+| `daily` | `0 10 * * *` | every day, ~4-5 AM Central | Sleeper sync (rosters, transactions, scores, state), projections for the coming week until kickoff, recompute, rewrite any text whose facts changed (a catch-up net, usually nothing), refresh caches |
+| `weekly` | `0 13 * * 2` | Tuesday, after MNF is final | The completed week: recaps, power-ranking blurbs, awards copy, the weekly news issue, rivalry write-ups for pairs that met, bios/scouting whose numbers moved, draft revisit, open trade verdicts, snapshots |
+| `thursday` | `0 13 * * 4` | Thursday, after Wednesday waivers | Stat-correction pass (last week's scores are fingerprinted before and after the sync; a change regenerates exactly the texts that depended on them) and previews for the upcoming week from the post-waiver projections |
 
-**After the draft**, run the job once by hand from `/admin/refresh` rather than
-waiting for Tuesday — that is the initial post-draft refresh, and it is what
-turns "Manager Baseline Rankings" into "Preseason Power Rankings".
+Each is `GET /api/cron/<job>` with `Authorization: Bearer <CRON_SECRET>`, which
+Vercel Cron sends automatically. A production build with no `CRON_SECRET`
+refuses (503) rather than running open.
 
-## Idempotence and resumability
+**Plan limits.** Three crons, each at most once a day, fits the Hobby plan as
+well as Pro. Each run is budgeted to finish inside the 300-second function
+limit: sync and compute take ~30-60 s; text generation runs until ~25 s before
+the limit and leaves anything unfinished for the next run (its templated
+fallback shows meanwhile, never stale prose). The first full generation (212
+texts) was done from the CLI, which has no time limit.
 
-Every step is safe to run twice and cheap to re-run when its work is already
-done. A run that fails partway is resumed by running it again.
+**Live scoring (not built).** A 15-minute cron during game windows needs Vercel
+Pro (Hobby crons run at most daily). The alternative is a GitHub Actions
+`schedule:` workflow calling `/api/cron/daily` with the secret. The game-flow
+chart on matchup pages is built from final player scores and the NFL schedule;
+true win probability would come from that live feed.
 
-- **Transactions** upsert on `(seasonId, sleeperTransactionId)`. There is no
-  path that creates a second row for the same Sleeper transaction.
-- **Matchups** are updated in place, keyed on Sleeper's matchup id, so a
-  matchup keeps its id — and its linked preview and recap — across syncs. Each
-  week is `SCHEDULED`, `IN_PROGRESS` or `FINAL` (see `src/lib/nfl-schedule.ts`:
-  Sleeper's `last_scored_leg`, or Tuesday 10:00 UTC after the week's Monday
-  game); only a `FINAL` week stores scores, so unplayed weeks never appear as
-  0-0 results. Weeks settled more than a week ago, and scheduled weeks more
-  than two weeks out, are not re-written. The human `verifiedScore` judgement —
-  the flag that excludes an abandoned team's zeros from the record books — is
-  preserved across syncs, so the cron cannot quietly re-admit scores an admin
-  excluded.
-- **Weekly awards** upsert on `(seasonId, week, type)`; a week with no final
-  scores has its awards cleared.
-- **AI previews and recaps** are skipped when one already exists for that
-  matchup, so no article is ever written twice.
-- **A step that throws** is recorded and the job continues. A Sleeper outage
-  should not stop the awards being recomputed from data already on disk. The
-  response reports exactly what ran, what was skipped and what failed.
+## Steps
 
-The cron endpoint returns **200** on a clean run and **207** on a partial one —
-never 500 for a partial, because a 500 makes Vercel retry the whole job when
-most of it succeeded.
+1. **sync**: `syncCurrentLeague()` (Sleeper), then projections for the
+   current week (team totals are rewritten until kickoff, then frozen), player
+   projections for any final week missing them, and reconciliation against
+   Sleeper (`verifySeasonData`). Thursday's run compares last week's scores
+   before and after.
+2. **compute**: weekly awards, rivalry statistics, the cross-page
+   head-to-head consistency check (fails the step if any pair disagrees), and
+   power-ranking snapshots (one row per team per week; weeks before snapshots
+   existed are backfilled by recomputing the model).
+3. **generate-text**: builds the catalog of every AI text that should exist
+   (`src/server/text/catalog.ts`), compares each one's facts hash with the
+   stored text, and writes only what changed. See "AI text" below.
+4. **revalidate**: drops every data-cache tag and revalidates every
+   pre-rendered page (`revalidatePath("/", "layout")`). From the CLI it calls
+   the live site's `/api/cron/revalidate` when `SITE_URL` and `CRON_SECRET` are
+   set; otherwise the hour-long ISR window picks the change up.
 
-## Environment variables
+Every step is idempotent. A `PipelineLock` lease (10 minutes) stops runs
+overlapping; a run that dies releases it when the lease expires. Each run writes
+a `PipelineRun` row: job, trigger, status, step reached, per-step results,
+counts and redacted errors.
 
-Set under Vercel → Settings → Environment Variables. No value is ever written to
-a response, an audit-log row, or an error message: every message passes through
-`safeError()`, which redacts known secrets and strips URL userinfo.
+## AI text (facts-first)
 
-| Variable | Required | Effect if missing |
-| --- | --- | --- |
-| `DATABASE_URL` | yes | Nothing works. |
-| `SLEEPER_LEAGUE_ID` | no | The sync step is **skipped**, not failed. |
-| `OPENAI_API_KEY` | no | The writing step is **skipped**. Placeholder copy is never saved, so pages keep their honest empty states. |
-| `CRON_SECRET` | yes | The endpoint requires `Authorization: Bearer <CRON_SECRET>`, which Vercel Cron sends automatically. It fails closed: in a production build (Vercel production or preview, or `next start`) a missing secret disables the endpoint with a 503 instead of opening it. Only `next dev` accepts an unauthenticated request — trigger it locally with `npm run cron:trigger`. |
+Every AI text is a `GeneratedText` row written from a `facts` object built by
+the same loaders that render the page. The model writes prose with `{{tokens}}`
+for key stats (filled from current facts when the page renders); a validator
+rejects any literal number, ordinal, W-L or counted number-word that isn't in
+the facts; two retries, then a templated fallback. A page shows the text only
+while its `inputHash` matches the facts it would build now; otherwise it shows
+the fallback, labelled "From the stats". The chip on AI text reads
+"AI-generated · as of Week n".
 
-## Audit trail
+| Text | Refreshed when |
+|---|---|
+| Matchup recaps | the week is final (Tuesday) or a stat correction changes the score |
+| Matchup previews | from Thursday 13:00 UTC; frozen at kickoff with the projections |
+| Power-ranking blurbs | the rankings move (Tuesday) |
+| Weekly awards copy, news issue | the week is final (Tuesday) |
+| Rivalry write-ups | the pair meets |
+| Manager bios, scouting reports | the manager's numbers move |
+| Draft revisit (Sleeper season in progress) | weekly |
+| Trade verdicts | while the valuation can still move |
+| Season retrospective | once, when the season completes |
 
-Each run writes one `DataSyncLog` row (`syncType = STATS_RECALC`) recording
-status, how many steps succeeded, who triggered it, and a redacted failure
-summary. `/admin/refresh` lists the last ten.
+## Monitoring
 
-## Content that is NOT on this schedule
+- `GET /api/health`: last successful sync, last run and last successful run,
+  whether a run holds the lock, season/phase/weeks from the league clock, and
+  `texts: { total, stale, fallback, byKind }`. 200 when healthy, 503 when data
+  is stale, any text is out of date, or the last run failed.
+- Site-wide banner "Data last updated {date}." when, during the season, the
+  last successful sync is more than 8 days old.
+- Optional failure alert: a Discord/Slack-compatible webhook POST on a failed
+  or partial run when `ALERT_WEBHOOK_URL` is set.
+- `npm run verify:data` (scores and records vs Sleeper, plus head-to-head
+  consistency) and `npm run verify:texts` (exit 1 if any text is out of date).
 
-These are deliberately manual, because they are expensive and rarely change:
+## Running it by hand
 
-| What | Script |
-| --- | --- |
-| Power-ranking, rivalry and trade blurbs | `scripts/ai/backfill-blurbs.ts` |
-| Season retrospectives | `scripts/ai/generate-season-articles.ts` |
-| Manager profiles | `scripts/ai/regenerate-manager-profiles.ts` |
-| Draft grades | `scripts/ai/regenerate-draft-grades.ts` |
-| Official rivalry pairings (the commissioner's workbook) | `scripts/import/import-rivalries.ts` — the statistics themselves are recomputed by the weekly refresh |
+```
+npm run pipeline                          # weekly rebuild, all steps
+npm run pipeline -- --job daily           # daily | weekly | thursday | manual
+npm run pipeline -- --week 9              # backfill / redo a specific week
+npm run pipeline -- --steps compute,generate-text
+npm run pipeline -- --force-text          # rewrite text even if facts are unchanged
+npm run pipeline -- --no-model            # templated text only, no AI calls
+npm run pipeline -- --steps sync --backfill-projections 100
+npm run cron:trigger -- --job daily       # hit a running local server like Vercel Cron does
+```
+
+**Backfilling a past week:** `npm run pipeline -- --job manual --week 7`
+recomputes awards, rewrites that week's power-ranking snapshot and regenerates
+any text whose facts changed. Matchup recaps and previews exist for every final
+week of the current season, so a corrected Week 7 score regenerates exactly the
+Week 7 texts that quote it.
+
+## Environment variables (Vercel → Settings → Environment Variables)
+
+Names only, never values.
+
+| Variable | Required | Notes |
+|---|---|---|
+| `DATABASE_URL` | yes | already set |
+| `DIRECT_URL` | for migrations | already set |
+| `AUTH_SECRET` | yes | already set |
+| `CRON_SECRET` | yes | already set (the existing cron has been succeeding) |
+| `SLEEPER_LEAGUE_ID` | yes | already set |
+| `OPENAI_API_KEY` | for AI text | already set; without it every text uses its templated fallback |
+| `ALERT_WEBHOOK_URL` | optional, new | Discord/Slack incoming webhook for failure alerts |
+| `SITE_URL` | optional, new | only for CLI runs that should clear the live site's caches |
+
+## Migrations
+
+Additive only (new tables): `PipelineRun`, `PipelineLock`,
+`PowerRankingSnapshot`, `GeneratedText`. Applied to production with
+`npx prisma migrate deploy` before the deploy that uses them. The Vercel build
+runs `prisma generate` only, not migrations.

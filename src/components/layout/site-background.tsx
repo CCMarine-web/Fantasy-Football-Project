@@ -28,7 +28,8 @@ import { usePathname } from "next/navigation";
  * competing with the content, and hides compression artefacts at low opacity.
  */
 
-const IMAGE_OPACITY = 0.3;
+// Toned down (Nov 2026): the photos sat behind tables and charts and cost contrast.
+const IMAGE_OPACITY = 0.16;
 
 interface BackgroundChoice {
   src: string;
@@ -116,7 +117,7 @@ export function SiteBackground() {
         with a gentle extra wash top and bottom so the sticky header and the
         footer still sit on near-solid colour without dimming the whole page.
       */}
-      <div className="bg-background/55 absolute inset-0" />
+      <div className="bg-background/70 absolute inset-0" />
       <div className="from-background absolute inset-x-0 top-0 h-32 bg-gradient-to-b to-transparent" />
       <div className="from-background absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t to-transparent" />
     </div>

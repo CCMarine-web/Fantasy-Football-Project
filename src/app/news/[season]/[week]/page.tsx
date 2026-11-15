@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { AiText } from "@/components/shared/ai-text";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -44,6 +45,8 @@ export default async function WeeklyRecapPage({
 }: {
   params: Promise<{ season: string; week: string }>;
 }) {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const { season, week } = await params;
   const data = await getWeeklyRecap(Number(season), Number(week));
   if (!data) notFound();

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { RivalryGrid } from "@/components/rivalries/rivalry-grid";
 import { AiText } from "@/components/shared/ai-text";
 import { rivalryTexts } from "@/server/text/page-texts";
@@ -167,6 +168,8 @@ function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
 }
 
 export default async function RivalriesPage() {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const all = await getComputedRivalries();
   const texts = await rivalryTexts(all);
   const official = all.filter((r) => r.isOfficial);

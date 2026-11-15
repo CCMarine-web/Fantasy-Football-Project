@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { notFound } from "next/navigation";
 import { ManagerLink } from "@/components/shared/manager-link";
 import Link from "next/link";
@@ -64,6 +65,8 @@ export default async function SeasonHistoryPage({
 }: {
   params: Promise<{ season: string }>;
 }) {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const { season: seasonParam } = await params;
   const year = Number(seasonParam);
   const [data, article, allTrades] = await Promise.all([

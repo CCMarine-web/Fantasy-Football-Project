@@ -57,7 +57,7 @@ async function loadHomepageData() {
       // anyone made, and the sidebar has no room to explain that.
       prisma.transaction.findMany({
         where: { seasonId: season.id, status: "COMPLETE" },
-        include: { assets: { include: { player: true, fantasyTeam: true } } },
+        include: { assets: { include: { player: true, fantasyTeam: { include: { manager: { select: { displayName: true } } } } } } },
         orderBy: { processedAt: "desc" },
         take: 5,
       }),

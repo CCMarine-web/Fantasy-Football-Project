@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
+import { RecordWatch } from "@/components/shared/record-watch";
+import { getRecordWatch } from "@/server/repositories/computed-records-repository";
+import { PlayoffRace } from "@/components/home/playoff-race";
 import {
   Trophy,
   Newspaper,
@@ -58,8 +62,11 @@ function transactionLabel(type: string, assets: { direction: string; player: unk
 }
 
 export default async function HomePage() {
-  const [data, seasonNarrative, champion, powerPreview, calendar] = await Promise.all([
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
+  const [data, recordWatch, seasonNarrative, champion, powerPreview, calendar] = await Promise.all([
     getHomepageData(),
+    getRecordWatch(),
     getLastSeasonNarrative(),
     getCurrentChampion(),
     // Same computation as /power-rankings, just truncated, so the preview can
@@ -236,6 +243,12 @@ export default async function HomePage() {
            * best space on the page to say nothing. A section with no content is
            * not shown at all.
            */}
+          {/* Active record chases, and the playoff race with odds. */}
+          {recordWatch && recordWatch.items.length > 0 ? (
+            <RecordWatch seasonYear={recordWatch.seasonYear} items={recordWatch.items} limit={4} />
+          ) : null}
+          {standings.some((r) => r.odds) ? <PlayoffRace rows={standings} /> : null}
+
           {latestArticle ? (
             <section>
               <div className="mb-3 flex items-center gap-2">
@@ -391,7 +404,10 @@ export default async function HomePage() {
                           {transactionLabel(tx.type, tx.assets)}
                         </Badge>
                         <span className="text-xs text-muted-foreground">
-                          {tx.assets.find((a) => a.fantasyTeam)?.fantasyTeam?.teamName}
+                          {(() => {
+                            const team = tx.assets.find((a) => a.fantasyTeam)?.fantasyTeam;
+                            return team ? `${team.manager?.displayName ?? ""} (${team.teamName})` : "";
+                          })()}
                           {tx.week != null ? ` · Week ${tx.week}` : ""}
                         </span>
                       </div>

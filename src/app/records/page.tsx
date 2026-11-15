@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { ManagerLink } from "@/components/shared/manager-link";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -61,6 +62,8 @@ async function withPreciseClosestGame(records: RecordEntry[]): Promise<RecordEnt
 }
 
 export default async function RecordsPage() {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const [rawRecords, watch] = await Promise.all([getComputedRecords(), getRecordWatch()]);
   const records = await withPreciseClosestGame(rawRecords);
 

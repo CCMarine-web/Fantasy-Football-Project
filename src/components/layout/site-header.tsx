@@ -78,7 +78,7 @@ function NavDropdown({
         {label}
         <ChevronDown className="h-3.5 w-3.5" />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start">
+      <DropdownMenuContent align="start" className="min-w-52 [&_[role=menuitem]]:whitespace-nowrap">
         {links.map((l) => (
           <DropdownMenuItem key={l.href} render={<Link href={l.href} />}>
             {l.label}

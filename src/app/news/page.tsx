@@ -1,10 +1,10 @@
 import Link from "next/link";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { listCurrentWeeklyIssues, listPublishedArticles } from "@/server/repositories/news-repository";
-import { MatchupsHubLink } from "@/components/shared/matchups-hub-link";
 import { Newspaper } from "lucide-react";
 import { BRAND } from "@/lib/branding";
 
@@ -27,6 +27,8 @@ const ARTICLE_LABEL: Record<string, string> = {
 };
 
 export default async function NewsPage() {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const [articles, issues] = await Promise.all([listPublishedArticles(), listCurrentWeeklyIssues()]);
 
   return (
@@ -36,7 +38,6 @@ export default async function NewsPage() {
         title="News Archive"
         description="The weekly league newspaper — recaps, power rankings, awards, and everything in between."
       />
-      <MatchupsHubLink what="news" />
       {issues.length > 0 ? (
         <section className="mt-8">
           <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">

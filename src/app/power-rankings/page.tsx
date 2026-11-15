@@ -1,4 +1,5 @@
 import { AiText } from "@/components/shared/ai-text";
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { powerBlurbTexts } from "@/server/text/page-texts";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -44,6 +45,8 @@ function Movement({ rank, previous }: { rank: number; previous: number | null })
 }
 
 export default async function PowerRankingsPage() {
+  // Pre-rendered when the build can reach the database; otherwise rendered per request.
+  await renderAtRequestIfNoDatabase();
   const data = await getPowerRankings();
 
   if (!data || data.rows.length === 0) {
