@@ -3,6 +3,7 @@ import { CalendarDays, Radio, Trophy, Swords } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { cn } from "@/lib/utils";
+import { formatAsOf } from "@/lib/format";
 import type { LeagueClock } from "@/server/league-clock";
 import type { MatchupCardData } from "@/types/view-models";
 
@@ -32,7 +33,8 @@ export interface HeroData {
 function GameRow({ game }: { game: MatchupCardData }) {
   const final = game.status === "FINAL";
   const [a, b] = game.teams;
-  const value = (t: typeof a) => (final ? t.score : t.projectedScore);
+  const live = game.status === "IN_PROGRESS" && game.liveAsOf != null;
+  const value = (t: typeof a) => (final ? t.score : live ? (t.liveScore ?? null) : t.projectedScore);
   const favored = !final && a.projectedScore != null && b.projectedScore != null
     ? a.projectedScore >= b.projectedScore ? 0 : 1
     : null;
@@ -146,6 +148,9 @@ export function HomeHero({ data }: { data: HeroData }) {
             {slate ? <Swords className="h-4 w-4 text-primary" aria-hidden /> : <Trophy className="h-4 w-4 text-primary" aria-hidden />}
             {slate ? `Week ${clock.focusWeek} ${live ? "— in progress" : "slate"}` : `Week ${clock.focusWeek} results`}
           </h2>
+          {live && games[0]?.liveAsOf ? (
+            <span className="text-xs text-muted-foreground">Live scores {formatAsOf(games[0].liveAsOf)}</span>
+          ) : null}
           <Link href={`/matchups?week=${clock.focusWeek}`} className="text-sm text-primary hover:underline">
             Every matchup →
           </Link>
@@ -158,11 +163,13 @@ export function HomeHero({ data }: { data: HeroData }) {
           </CardContent>
         </Card>
         <p className="mt-2 text-xs text-muted-foreground">
-          {slate
+          {slate && games.some((g) => g.liveAsOf)
+            ? "Live points from Sleeper, refreshed about every 10 minutes. Not final until the week ends."
+            : slate
             ? hasProjections
               ? "Projected points from Sleeper's projections, scored with this league's settings; the favourite is in bold."
               : live
-                ? "Live scores appear here once the week is final."
+                ? "Final scores appear here once the week ends."
                 : "Projections are published after Wednesday waivers."
             : "Final scores. “Upset” means the projected favourite lost."}
         </p>

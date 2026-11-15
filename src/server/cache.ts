@@ -30,6 +30,8 @@ export const CACHE_TAGS = {
   managers: "manager-data",
   /** Persisted AI copy: blurbs, articles, summaries. */
   content: "generated-content",
+  /** On EVERY cached loader: one tag that clears the whole site at once. */
+  site: "site-data",
 } as const;
 
 /**
@@ -60,7 +62,7 @@ export function cached<T>(
   options: { tags?: string[]; revalidate?: number } = {},
 ): () => Promise<T> {
   const wrapped = unstable_cache(loader, keyParts, {
-    tags: options.tags ?? [CACHE_TAGS.league],
+    tags: [...new Set([...(options.tags ?? [CACHE_TAGS.league]), CACHE_TAGS.site])],
     revalidate: options.revalidate ?? DEFAULT_TTL_SECONDS,
   });
 

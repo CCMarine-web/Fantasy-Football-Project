@@ -64,7 +64,7 @@ function Cell({
     cell.pickedBy ? `Picked by ${cell.pickedBy}` : null,
     ret
       ? ret.totalPoints != null
-        ? `${ret.totalPoints} pts in ${ret.gamesPlayed} game${ret.gamesPlayed === 1 ? "" : "s"} (${ret.pointsPerGame} per game) · ${signed(ret.valueDelta)} slots vs where he was taken`
+        ? `${ret.totalPoints} pts in ${ret.gamesPlayed} game${ret.gamesPlayed === 1 ? "" : "s"} (${ret.pointsPerGame} per game${ret.aboveReplacement != null ? `, ${signed(ret.aboveReplacement)} above replacement` : ""}) · ${signed(ret.valueDelta)} slots vs where he was taken`
         : `No points on record · ${signed(ret.valueDelta)} slots vs where he was taken`
       : null,
   ]
@@ -125,7 +125,7 @@ export function DraftBoard({
 }: {
   board: DraftBoardData;
   view: BoardView;
-  hindsight: { picks: Map<number, PickReturn>; throughWeek: number | null } | null;
+  hindsight: { picks: Map<number, PickReturn>; throughWeek: number | null; replacement?: string } | null;
   /** Why hindsight colouring is not offered for this season, when it is not. */
   hindsightNote: string | null;
 }) {
@@ -197,12 +197,18 @@ export function DraftBoard({
             <span>Steal</span>
           </div>
           <p>
-            Each pick is coloured by how its player&rsquo;s points per game{" "}
+            Each pick is coloured by how its player&rsquo;s points per game above replacement at his position{" "}
             {board.status === "IN_PROGRESS" && hindsight.throughWeek != null
               ? `so far (through Week ${hindsight.throughWeek}) `
               : ""}
             rank among everyone drafted, against the slot he was taken at — the same per-pick measure behind the
-            revisited grade. The number is slots gained or lost (+20 means he has produced like a pick taken twenty
+            revisited grade, and the Trade Tribunal&rsquo;s position adjustment, so a quarterback and a running back
+            are compared on what each gave over a waiver-wire starter.
+            {hindsight.replacement ? (
+              <span className="mt-1 block">
+                Replacement level, points per game: <span className="font-mono">{hindsight.replacement}</span>.
+              </span>
+            ) : null} The number is slots gained or lost (+20 means he has produced like a pick taken twenty
             spots earlier); the colour maxes out at ±{scale}.
             {board.status === "IN_PROGRESS" ? " Early-season numbers move a lot week to week." : ""}
           </p>

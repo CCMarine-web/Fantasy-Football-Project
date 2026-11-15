@@ -4,6 +4,7 @@ import { matchupTexts } from "@/server/text/page-texts";
 import type { RenderedText } from "@/server/text/read";
 import {
   chooseFeaturedMatchup,
+  enteringRecords,
   type FeaturedCandidate,
   type FeaturedFactor,
 } from "@/server/stats/featured-matchup";
@@ -12,6 +13,8 @@ import { seriesFromRows } from "./head-to-head-repository";
 import { describeSeries, type SeriesSummary } from "@/server/stats/head-to-head";
 import { getPowerRankings } from "./power-rankings-repository";
 import { getStandingsForSeason } from "./standings-repository";
+import { rankStandings } from "@/server/stats/standings";
+import type { Prisma } from "@/generated/prisma/client";
 
 /**
  * THE MATCHUP OF THE WEEK.
@@ -119,6 +122,7 @@ export async function getFeaturedMatchup(
   seasonId: string,
   seasonYear: number,
   week: number,
+  options: { selectionOnly?: boolean } = {},
 ): Promise<FeaturedMatchupView | null> {
   const matchups = await prisma.matchup.findMany({
     where: { seasonId, week },
@@ -235,6 +239,28 @@ export async function getFeaturedMatchup(
   const seriesOf = (aId: string | null, bId: string | null): SeriesSummary | null =>
     aId && bId ? seriesFromRows(verified, aId, bId) : null;
 
+  /*
+   * ── Selection inputs: only what was known BEFORE kickoff ─────────────────
+   * The Nov 2026 audit found "19.6 points between them on projections" for a
+   * game whose projections were 11.9 apart — 19.6 was the final margin — and
+   * "standings stakes" read from post-week standings. Every input below is
+   * the state entering the week: the frozen projections, records and
+   * standings from earlier weeks, last week's power-ranking snapshot, form
+   * and series before the week.
+   */
+  const preWeek = verified.filter((g) => g.year < seasonYear || (g.year === seasonYear && g.week < week));
+  const enteringRecord = enteringRecords(preWeek, seasonYear, week);
+  const enteringStanding = new Map(
+    rankStandings([...enteringRecord.entries()].map(([id, r]) => ({ id, name: id, ...r }))).map((x) => [x.team.id, x.rank] as const),
+  );
+  const snapshotRanks = await prisma.powerRankingSnapshot.findMany({
+    where: { seasonYear, week: week - 1 },
+    select: { fantasyTeamId: true, rank: true },
+  });
+  const enteringPowerRank = new Map(snapshotRanks.map((s) => [s.fantasyTeamId, s.rank] as const));
+  const preSeriesOf = (aId: string | null, bId: string | null): SeriesSummary | null =>
+    aId && bId ? seriesFromRows(preWeek, aId, bId) : null;
+
   const candidates: FeaturedCandidate[] = playable.map((m) => {
     const [a, b] = m.teams;
     const managerAId = a.fantasyTeam.manager?.id ?? null;
@@ -242,32 +268,27 @@ export async function getFeaturedMatchup(
     const rivalry =
       managerAId && managerBId ? rivalryOf.get(rivalryKey(managerAId, managerBId)) : undefined;
 
-    // The same series the card prints — one definition, one count.
-    const series = seriesOf(managerAId, managerBId);
-
-    /*
-     * Before kickoff the model weighs projections; afterwards it weighs the
-     * actual scores, so the same weighting picks the best game to RECAP. Only
-     * verified scores are used — a walkover is not a close game.
-     */
-    const bothFinal =
-      a.score != null && b.score != null && a.verifiedScore && b.verifiedScore;
+    // The series ENTERING the week (the card itself shows the current series).
+    const series = preSeriesOf(managerAId, managerBId);
+    const recA = enteringRecord.get(a.fantasyTeamId) ?? { wins: 0, losses: 0 };
+    const recB = enteringRecord.get(b.fantasyTeamId) ?? { wins: 0, losses: 0 };
 
     return {
       matchupId: m.id,
       bracket: m.bracketType,
       isPlayoff: m.isPlayoff,
-      projectedA: bothFinal ? a.score : a.projectedScore,
-      projectedB: bothFinal ? b.score : b.projectedScore,
-      powerRankA: powerRankOf.get(a.fantasyTeamId) ?? null,
-      powerRankB: powerRankOf.get(b.fantasyTeamId) ?? null,
-      teamsRanked: power?.rows.length ?? 0,
-      winsA: a.fantasyTeam.wins,
-      lossesA: a.fantasyTeam.losses,
-      winsB: b.fantasyTeam.wins,
-      lossesB: b.fantasyTeam.losses,
-      standingA: standingOf.get(a.fantasyTeamId) ?? null,
-      standingB: standingOf.get(b.fantasyTeamId) ?? null,
+      // Frozen pre-kickoff projections — never the final score.
+      projectedA: a.projectedScore,
+      projectedB: b.projectedScore,
+      powerRankA: enteringPowerRank.get(a.fantasyTeamId) ?? null,
+      powerRankB: enteringPowerRank.get(b.fantasyTeamId) ?? null,
+      teamsRanked: enteringPowerRank.size || (power?.rows.length ?? 0),
+      winsA: recA.wins,
+      lossesA: recA.losses,
+      winsB: recB.wins,
+      lossesB: recB.losses,
+      standingA: enteringStanding.get(a.fantasyTeamId) ?? null,
+      standingB: enteringStanding.get(b.fantasyTeamId) ?? null,
       playoffSpots,
       isOfficialRivalry: rivalry?.isOfficial ?? false,
       headToHeadGames: series?.games ?? 0,
@@ -278,8 +299,17 @@ export async function getFeaturedMatchup(
     };
   });
 
-  const choice = chooseFeaturedMatchup(candidates);
-  if (!choice) return null;
+  const computed = chooseFeaturedMatchup(candidates);
+  if (!computed) return null;
+  // A selection stored before kickoff wins; it is never recomputed afterwards.
+  const stored = await prisma.featuredSelection.findUnique({ where: { seasonYear_week: { seasonYear, week } } });
+  const choice =
+    stored && playable.some((m) => m.id === stored.matchupId)
+      ? { ...computed, matchupId: stored.matchupId, score: stored.score, factors: stored.factors as unknown as FeaturedFactor[] }
+      : computed;
+  if (options.selectionOnly) {
+    return { selection: { matchupId: choice.matchupId, score: choice.score, factors: choice.factors } } as unknown as FeaturedMatchupView;
+  }
 
   const chosen = playable.find((m) => m.id === choice.matchupId);
   if (!chosen) return null;
@@ -434,50 +464,94 @@ async function loadKeyPlayers(
     if (fantasyTeamIds.every((id) => (out.get(id)?.length ?? 0) > 0)) return out;
   }
 
-  // Pre-game (or no weekly scoring on record): rank the drafted squad by what
-  // those players actually produced last season.
-  const picks = await prisma.draftPick.findMany({
-    where: { fantasyTeamId: { in: fantasyTeamIds } },
-    select: {
-      fantasyTeamId: true,
-      playerId: true,
-      player: { select: { firstName: true, lastName: true, position: true } },
-    },
-  });
-  const playerIds = [...new Set(picks.map((p) => p.playerId).filter((id): id is string => !!id))];
+  /*
+   * Pre-game: rank each team's CURRENT roster — its latest stored roster up to
+   * this week — by this season's points per game once a player has 3+ games.
+   * (The Nov 2026 audit found cards built from the draft-day squad with last
+   * season's numbers: Mahomes listed under the team that drafted him, not the
+   * one that has started him since Week 2.) Players with fewer than three
+   * games this season fall back to last season's rate, labelled as such.
+   */
+  const latest = await Promise.all(
+    fantasyTeamIds.map((id) =>
+      prisma.roster.findFirst({
+        where: { fantasyTeamId: id, week: { lte: week } },
+        orderBy: { week: "desc" },
+        select: {
+          fantasyTeamId: true,
+          playerScores: { select: { playerId: true, player: { select: { firstName: true, lastName: true, position: true } } } },
+        },
+      }),
+    ),
+  );
+  const rostered = latest.flatMap((r) => (r ? r.playerScores.map((p) => ({ ...p, fantasyTeamId: r.fantasyTeamId })) : []));
+  const playerIds = [...new Set(rostered.map((p) => p.playerId))];
   if (playerIds.length === 0) return out;
 
-  const priorScores = await prisma.weeklyPlayerScore.groupBy({
-    by: ["playerId"],
-    where: {
-      playerId: { in: playerIds },
-      points: { not: null },
-      roster: { fantasyTeam: { season: { year: seasonYear - 1 } } },
-    },
-    _sum: { points: true },
-    _count: { _all: true },
-  });
-  const ppg = new Map(
-    priorScores
-      .filter((row) => row._count._all >= 3)
-      .map((row) => [row.playerId, (row._sum.points ?? 0) / row._count._all] as const),
-  );
+  const rate = async (year: number) => {
+    const rows = await prisma.weeklyPlayerScore.groupBy({
+      by: ["playerId"],
+      where: { playerId: { in: playerIds }, points: { not: null }, roster: { fantasyTeam: { season: { year } } } },
+      _sum: { points: true },
+      _count: { _all: true },
+    });
+    return new Map(
+      rows.filter((row) => row._count._all >= 3).map((row) => [row.playerId, (row._sum.points ?? 0) / row._count._all] as const),
+    );
+  };
+  const [current, prior] = await Promise.all([rate(seasonYear), rate(seasonYear - 1)]);
 
   for (const teamId of fantasyTeamIds) {
     if ((out.get(teamId)?.length ?? 0) > 0) continue;
-    const ranked = picks
-      .filter((p) => p.fantasyTeamId === teamId && p.playerId && ppg.has(p.playerId))
-      .map((p) => ({ pick: p, ppg: ppg.get(p.playerId as string) as number }))
-      .sort((x, y) => y.ppg - x.ppg)
-      .slice(0, 3);
+    const ranked = rostered
+      .filter((p) => p.fantasyTeamId === teamId)
+      .map((p) => {
+        const now = current.get(p.playerId);
+        const before = prior.get(p.playerId);
+        return now != null
+          ? { p, ppg: now, year: seasonYear }
+          : before != null
+            ? { p, ppg: before, year: seasonYear - 1 }
+            : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x != null)
+      // Current-season rates first; last season's only fill the gaps.
+      .sort((x, y) => y.year - x.year || y.ppg - x.ppg)
+      .slice(0, 3)
+      .sort((x, y) => y.ppg - x.ppg);
     out.set(
       teamId,
-      ranked.map(({ pick, ppg: rate }) => ({
-        name: `${pick.player?.firstName ?? ""} ${pick.player?.lastName ?? ""}`.trim(),
-        position: positionLabel(pick.player?.position),
-        detail: `${rate.toFixed(1)} pts/gm in ${seasonYear - 1}`,
+      ranked.map(({ p, ppg, year }) => ({
+        name: `${p.player.firstName} ${p.player.lastName}`.trim(),
+        position: positionLabel(p.player.position),
+        detail: year === seasonYear ? `${ppg.toFixed(1)} pts/gm this season` : `${ppg.toFixed(1)} pts/gm in ${year}`,
       })),
     );
   }
   return out;
+}
+
+/**
+ * Stores the Matchup of the Week for a week if none is stored yet. Called by
+ * the pipeline's compute step for the week about to be played (before
+ * kickoff) and to backfill past weeks; the inputs are pre-kickoff by
+ * construction, and an existing selection is never overwritten.
+ */
+export async function storeFeaturedSelection(seasonId: string, seasonYear: number, week: number): Promise<boolean> {
+  const existing = await prisma.featuredSelection.findUnique({ where: { seasonYear_week: { seasonYear, week } } });
+  if (existing) return false;
+  const result = (await getFeaturedMatchup(seasonId, seasonYear, week, { selectionOnly: true })) as unknown as {
+    selection?: { matchupId: string; score: number; factors: FeaturedFactor[] };
+  } | null;
+  if (!result?.selection) return false;
+  await prisma.featuredSelection.create({
+    data: {
+      seasonYear,
+      week,
+      matchupId: result.selection.matchupId,
+      score: result.selection.score,
+      factors: result.selection.factors as unknown as Prisma.InputJsonValue,
+    },
+  });
+  return true;
 }

@@ -4,11 +4,13 @@ import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { cn } from "@/lib/utils";
 import type { MatchupCardData, MatchupCardTeam } from "@/types/view-models";
+import { formatAsOf } from "@/lib/format";
 
 function TeamRow({ team, status }: { team: MatchupCardTeam; status: MatchupCardData["status"] }) {
   const showFinal = status === "FINAL";
-  const primaryValue = showFinal ? team.score : team.projectedScore;
-  const label = showFinal ? team.score?.toFixed(1) : team.projectedScore?.toFixed(1);
+  const live = status === "IN_PROGRESS" && team.liveScore != null;
+  const primaryValue = showFinal ? team.score : live ? team.liveScore : team.projectedScore;
+  const label = primaryValue?.toFixed(1);
 
   return (
     <div
@@ -55,12 +57,24 @@ export function MatchupCard({ data, className }: { data: MatchupCardData; classN
             Week {data.week}
             {data.roundName ? ` · ${data.roundName}` : ""}
           </span>
-          <Badge
-            variant={data.status === "FINAL" ? "secondary" : "outline"}
-            className="text-[12px] tracking-wide uppercase"
-          >
-            {data.status === "IN_PROGRESS" ? "Live" : data.status === "FINAL" ? "Final" : "Upcoming"}
-          </Badge>
+          {/* "Live" only with a live score and its time; otherwise "In progress". */}
+          <span className="flex items-center gap-2">
+            {data.status === "IN_PROGRESS" && data.liveAsOf ? (
+              <span className="text-[11px] text-muted-foreground">{formatAsOf(data.liveAsOf)}</span>
+            ) : null}
+            <Badge
+              variant={data.status === "FINAL" ? "secondary" : "outline"}
+              className="text-[12px] tracking-wide uppercase"
+            >
+              {data.status === "IN_PROGRESS"
+                ? data.liveAsOf
+                  ? "Live"
+                  : "In progress"
+                : data.status === "FINAL"
+                  ? "Final"
+                  : "Upcoming"}
+            </Badge>
+          </span>
         </div>
         <div className="flex flex-col divide-y divide-border/60">
           <TeamRow team={data.teams[0]} status={data.status} />

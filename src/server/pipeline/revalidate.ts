@@ -1,6 +1,9 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getEnv } from "@/lib/env";
 import { CACHE_TAGS } from "@/server/cache";
+import { prisma } from "@/lib/db";
+import { siteUrl } from "@/lib/site-url";
+import { checkSyncStamps } from "./sync-stamp-check";
 
 /**
  * Cache refresh after a pipeline run.
@@ -29,6 +32,41 @@ export function revalidateEverything(): string {
 /** True when this code is running inside a Next.js request/route context. */
 function inNextRuntime(): boolean {
   return Boolean(process.env.NEXT_RUNTIME) || process.env.__NEXT_PRIVATE_ORIGIN != null;
+}
+
+/**
+ * Revalidates, then checks that every data route reports the same sync time.
+ *
+ * When the site's URL and CRON_SECRET are known, the revalidation runs in its
+ * own request to the live site (GET /api/cron/revalidate), so it is committed
+ * before the check starts; a revalidation called inside the long-running cron
+ * request would only take effect when that request ends.
+ */
+export async function revalidateAndCheck(): Promise<{ ok: boolean; partial: boolean; detail: string }> {
+  const { SITE_URL, CRON_SECRET } = getEnv();
+  const base = SITE_URL || siteUrl();
+  let revalidated: { ok: boolean; detail: string } | null = null;
+  if (CRON_SECRET) {
+    try {
+      const res = await fetch(new URL("/api/cron/revalidate", base), {
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (res.ok) revalidated = { ok: true, detail: "Cleared the live site's caches." };
+    } catch {
+      // Fall back to the local path below.
+    }
+  }
+  if (!revalidated) revalidated = await revalidateFromAnywhere();
+  if (!revalidated.ok || !CRON_SECRET) return { ...revalidated, partial: false };
+
+  const sync = await prisma.dataSyncLog.findFirst({
+    where: { syncType: "FULL_LEAGUE", status: "SUCCESS", finishedAt: { not: null } },
+    orderBy: { finishedAt: "desc" },
+    select: { finishedAt: true },
+  });
+  const check = await checkSyncStamps({ base, expected: sync?.finishedAt?.toISOString() ?? null });
+  return { ok: true, partial: !check.ok, detail: `${revalidated.detail} ${check.detail}` };
 }
 
 export async function revalidateFromAnywhere(): Promise<{ ok: boolean; detail: string }> {

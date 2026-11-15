@@ -101,3 +101,20 @@ export function positionLabel(position: string | null | undefined): string {
   if (!position) return "Unknown";
   return POSITION_LABEL[position.toUpperCase()] ?? position;
 }
+
+/**
+ * A simulated probability, never overstated: "100%" only when mathematically
+ * clinched and "0%" only when eliminated; otherwise ">99%" / "<1%".
+ */
+export function formatOdds(pct: number, certainty: { clinched?: boolean; eliminated?: boolean } = {}): string {
+  if (certainty.clinched) return "100%";
+  if (certainty.eliminated) return "0%";
+  if (pct >= 99.5) return ">99%";
+  if (pct < 0.5) return pct > 0 ? "<1%" : "0%";
+  return `${pct.toFixed(0)}%`;
+}
+
+/** "as of 3:45 PM CT" — the time live scores were fetched. */
+export function formatAsOf(iso: string): string {
+  return `as of ${new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit" }).format(new Date(iso))} CT`;
+}

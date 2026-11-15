@@ -27,7 +27,7 @@ type Side = Matchup["teams"][number];
 
 const STATUS_LABEL: Record<Matchup["status"], string> = {
   FINAL: "Final",
-  IN_PROGRESS: "Live",
+  IN_PROGRESS: "In progress",
   SCHEDULED: "Preview",
 };
 

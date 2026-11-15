@@ -20,7 +20,8 @@ export async function DataFreshness({ className = "" }: { className?: string }) 
       }).format(new Date(f.lastSyncAt))
     : null;
   return (
-    <p className={`flex items-center gap-1.5 text-xs text-muted-foreground ${className}`}>
+    // data-synced-at: read by the pipeline's post-run check (every route must agree).
+    <p className={`flex items-center gap-1.5 text-xs text-muted-foreground ${className}`} data-synced-at={f.lastSyncAt ?? ""}>
       <RefreshCw className="h-3.5 w-3.5 shrink-0" aria-hidden />
       <span>
         {freshnessLabel(f)}

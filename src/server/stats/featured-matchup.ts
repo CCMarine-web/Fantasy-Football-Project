@@ -328,3 +328,42 @@ export function chooseFeaturedMatchup(candidates: FeaturedCandidate[]): Featured
     ranked: scored.map((s) => ({ matchupId: s.candidate.matchupId, score: s.score })),
   };
 }
+
+// ── Pre-kickoff inputs ─────────────────────────────────────────────────────
+
+export interface EnteringGameRow {
+  year: number;
+  week: number;
+  isPlayoff: boolean;
+  fantasyTeamId: string;
+  score: number;
+  opponentScore: number;
+}
+
+export interface EnteringRecord {
+  wins: number;
+  losses: number;
+  ties: number;
+  pointsFor: number;
+  pointsAgainst: number;
+}
+
+/**
+ * Each team's regular-season record ENTERING `week` — only games from earlier
+ * weeks count. The selection is made before kickoff, so the week's own result
+ * (and anything after it) must never reach it.
+ */
+export function enteringRecords(rows: EnteringGameRow[], seasonYear: number, week: number): Map<string, EnteringRecord> {
+  const out = new Map<string, EnteringRecord>();
+  for (const g of rows) {
+    if (g.year !== seasonYear || g.isPlayoff || g.week >= week) continue;
+    const r = out.get(g.fantasyTeamId) ?? { wins: 0, losses: 0, ties: 0, pointsFor: 0, pointsAgainst: 0 };
+    if (g.score > g.opponentScore) r.wins += 1;
+    else if (g.score < g.opponentScore) r.losses += 1;
+    else r.ties += 1;
+    r.pointsFor += g.score;
+    r.pointsAgainst += g.opponentScore;
+    out.set(g.fantasyTeamId, r);
+  }
+  return out;
+}

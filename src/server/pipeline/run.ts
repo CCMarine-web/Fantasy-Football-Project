@@ -9,9 +9,10 @@ import { recomputeRivalryStats } from "@/server/stats/rivalry-recompute";
 import { summarizeVerification, verifySeasonData } from "@/server/verify/data-verification";
 import { verifyHeadToHeadConsistency } from "@/server/verify/head-to-head-consistency";
 import { snapshotPowerRankings } from "./snapshots";
+import { storeFeaturedSelection } from "@/server/repositories/featured-matchup-repository";
 import { runTextGeneration } from "./generate";
 import { acquireLock, releaseLock, renewLock } from "./lock";
-import { revalidateFromAnywhere } from "./revalidate";
+import { revalidateAndCheck } from "./revalidate";
 import { sendAlert } from "./alert";
 import { safeError } from "./safe-error";
 
@@ -229,6 +230,11 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
           const pairs = await recomputeRivalryStats();
           const h2h = await verifyHeadToHeadConsistency();
           const snapshots = await snapshotPowerRankings(season.id, season.year, options.week);
+          // Matchup of the Week: chosen from pre-kickoff data, stored once per week.
+          let selections = 0;
+          const upTo = clock?.currentWeek ?? clock?.lastStoredWeek ?? 0;
+          for (let w = 1; w <= upTo; w += 1) if (await storeFeaturedSelection(season.id, season.year, w)) selections += 1;
+          counts.featuredSelectionsStored = selections;
           counts.awardRows = awards;
           counts.rivalryPairs = pairs;
           counts.h2hInconsistencies = h2h.problems.length;
@@ -268,8 +274,8 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       await record("revalidate");
       steps.push(
         await timed("revalidate", async () => {
-          const r = await revalidateFromAnywhere();
-          return { status: r.ok ? "SUCCESS" : "FAILED", detail: r.detail };
+          const r = await revalidateAndCheck();
+          return { status: r.ok ? (r.partial ? "PARTIAL" : "SUCCESS") : "FAILED", detail: r.detail };
         }),
       );
     }

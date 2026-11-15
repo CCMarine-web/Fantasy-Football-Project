@@ -3,6 +3,8 @@ import type { MatchupCardData, StandingsRow } from "@/types/view-models";
 import { getCurrentSeason } from "./season-repository";
 import { getSeasonPhase, type SeasonPhaseInfo } from "./season-phase";
 import { getLeagueClock, withClockStatus, type LeagueClock } from "@/server/league-clock";
+import { withLiveScores } from "@/server/live-scores";
+import { isBracketPending, lastRegularWeek, projectedSeeds, type ProjectedSeed } from "@/server/stats/playoff-week";
 import { getStandingsView, type StandingsOrdering } from "./standings-repository";
 import { getMatchupsForWeek } from "./matchup-repository";
 import { getTransactionsPage, type TransactionView } from "./transaction-repository";
@@ -77,6 +79,11 @@ export interface WeeklyHubData {
   sync: SyncState;
   /** The featured game for this week, chosen deterministically. */
   featured: FeaturedMatchupView | null;
+  /**
+   * Set for a playoff week whose bracket isn't set yet: no pairings and no
+   * featured game are shown, only the projected seeds.
+   */
+  bracketPending: { afterWeek: number; seeds: ProjectedSeed[] } | null;
   /** The week being shown; null before the season starts. */
   week: number | null;
   /** Every week with a scheduled matchup, ascending. */
@@ -210,10 +217,24 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
       ? requestedWeek
       : (clockWeek != null && availableWeeks.includes(clockWeek) ? clockWeek : (phase.currentWeek ?? availableWeeks[0] ?? null));
 
+  // Playoff weeks before the regular season is over hold placeholder pairings.
+  const firstOpenRegular = await prisma.matchup.findFirst({
+    where: { seasonId: season.id, isPlayoff: false, status: { not: "FINAL" } },
+    orderBy: { week: "asc" },
+    select: { week: true },
+  });
+  const pending =
+    week != null &&
+    isBracketPending({
+      week,
+      playoffStartWeek: season.playoffStartWeek,
+      lastFinalRegularWeek: firstOpenRegular ? firstOpenRegular.week - 1 : lastRegularWeek(season.playoffStartWeek),
+    });
+
   const [standingsView, matchups, awards, power, transactions, verifiedGames, articles, sync, featured] =
     await Promise.all([
       getStandingsView(season.id),
-      week != null ? getMatchupsForWeek(season.id, week, season.year) : Promise.resolve([]),
+      week != null && !pending ? getMatchupsForWeek(season.id, week, season.year) : Promise.resolve([]),
       week != null ? getWeeklyAwards(season.id, week) : Promise.resolve([]),
       getPowerRankingsPreview(5),
       getTransactionsPage({
@@ -234,7 +255,7 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
       }),
       loadSyncState(),
       // The featured game is only meaningful once a week has a schedule.
-      week != null
+      week != null && !pending
         ? getFeaturedMatchup(season.id, season.year, week)
         : Promise.resolve(null),
     ]);
@@ -336,10 +357,28 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     clock,
     sync,
     featured,
+    bracketPending: pending
+      ? {
+          afterWeek: lastRegularWeek(season.playoffStartWeek),
+          seeds: projectedSeeds(
+            standingsView.rows.map((r) => ({
+              rank: r.rank,
+              teamName: r.teamName,
+              managerName: r.managerName,
+              managerId: r.managerId,
+              wins: r.wins,
+              losses: r.losses,
+              ties: r.ties,
+              playoffPct: r.odds?.playoffPct ?? null,
+            })),
+            standingsView.playoffTeams,
+          ),
+        }
+      : null,
     week,
     availableWeeks,
     headline,
-    matchups: withClockStatus(matchups, clock),
+    matchups: await withLiveScores(withClockStatus(matchups, clock), clock),
     standings: standingsView.rows,
     standingsOrdering: standingsView.ordering,
     standingsOrderingLabel: standingsView.orderingLabel,

@@ -17,6 +17,12 @@
  *
  *     valueDelta = overallPickNumber - actualProductionRank
  *
+ * Production is POSITION-ADJUSTED when replacement levels are supplied: points
+ * per game above the replacement line at the player's position, the Trade
+ * Tribunal's measure (stats/position-value.ts). Raw points ranked a
+ * 20-point quarterback over a 19-point running back, so the Nov 2026 board
+ * called Bo Nix at pick 163 the biggest steal and Jahmyr Gibbs at pick 1 a bust.
+ *
  * Positive means the player outproduced their draft slot. This is deliberately
  * scale-free: it does not care how many points the league scores, only whether
  * a manager's selections beat the room's own consensus at the time.
@@ -81,6 +87,8 @@ export interface PickReturnInput {
   totalPoints: number | null;
   /** Weeks in which the player registered a score. */
   gamesPlayed: number;
+  /** QB/RB/WR/TE/K/DEF — needed for the position-adjusted ranking. */
+  position?: string | null;
 }
 
 export interface TeamReturnInput {
@@ -111,6 +119,8 @@ export interface TeamDraftReturn {
     round: number;
     pickNumber: number;
     pointsPerGame: number;
+    /** Points per game above replacement at the position (null without levels). */
+    aboveReplacement: number | null;
     valueDelta: number;
   }[];
   /** The picks that most underperformed, worst first. */
@@ -119,6 +129,7 @@ export interface TeamDraftReturn {
     round: number;
     pickNumber: number;
     pointsPerGame: number;
+    aboveReplacement: number | null;
     valueDelta: number;
     gamesPlayed: number;
   }[];
@@ -156,7 +167,12 @@ function round(n: number, places = 1): number {
 export function computeDraftReturns(
   teams: TeamReturnInput[],
   starterSlots = 9,
+  /** Replacement points per game by position; omit for raw per-game ranking. */
+  replacement?: Record<string, number>,
 ): DraftReturnsResult {
+  const adjusted = replacement != null && Object.keys(replacement).length > 0;
+  const above = (ppg: number, position: string | null | undefined) =>
+    adjusted ? ppg - (position ? (replacement[position] ?? 0) : 0) : ppg;
   const weights = (Object.keys(RETURN_WEIGHTS) as ReturnFactorKey[]).map((key) => ({
     key,
     label: RETURN_FACTOR_META[key].label,
@@ -185,8 +201,8 @@ export function computeDraftReturns(
     perGame.set(key, (pick.totalPoints as number) / pick.gamesPlayed);
   }
   const ranked = [...withProduction]
-    .map((p) => ({ pick: p, ppg: perGame.get(p.playerId ?? `${p.overallPickNumber}`) ?? 0 }))
-    .sort((a, b) => b.ppg - a.ppg);
+    .map((p) => ({ pick: p, value: above(perGame.get(p.playerId ?? `${p.overallPickNumber}`) ?? 0, p.position) }))
+    .sort((a, b) => b.value - a.value);
 
   const actualRank = new Map<string, number>();
   ranked.forEach((entry, index) => {
@@ -205,6 +221,7 @@ export function computeDraftReturns(
       return {
         pick,
         ppg,
+        value: perGame.has(key) ? above(ppg, pick.position) : null,
         rank,
         // A pick that never scored is treated as finishing behind the whole
         // class rather than being dropped, otherwise a bust would be invisible.
@@ -222,7 +239,7 @@ export function computeDraftReturns(
       valueVsSlot: mean(scored.map((s) => s.valueDelta)),
       earlyRoundReturn: early.length ? mean(early.map((s) => s.valueDelta)) : 0,
       hitRate: scored.length ? scored.filter((s) => s.starter).length / scored.length : 0,
-      topEnd: scored.length ? Math.max(...scored.map((s) => s.ppg)) : 0,
+      topEnd: scored.length ? Math.max(...scored.map((s) => s.value ?? (adjusted ? -Infinity : s.ppg))) : 0,
       best: byValue.slice(0, 3),
       worst: [...byValue].reverse().slice(0, 3),
     };
@@ -248,7 +265,9 @@ export function computeDraftReturns(
       valueVsSlot: `${d.valueVsSlot >= 0 ? "+" : ""}${round(d.valueVsSlot)} slots per pick`,
       earlyRoundReturn: `${d.earlyRoundReturn >= 0 ? "+" : ""}${round(d.earlyRoundReturn)} slots (R1-${EARLY_ROUNDS})`,
       hitRate: `${Math.round(d.hitRate * 100)}% at starter level`,
-      topEndOutcome: `${round(d.topEnd)} pts/gm best pick`,
+      topEndOutcome: adjusted
+        ? `${d.topEnd >= 0 ? "+" : ""}${round(Number.isFinite(d.topEnd) ? d.topEnd : 0)} pts/gm above replacement (best pick)`
+        : `${round(d.topEnd)} pts/gm best pick`,
     };
 
     const factors: ReturnFactor[] = (Object.keys(RETURN_WEIGHTS) as ReturnFactorKey[]).map(
@@ -277,6 +296,7 @@ export function computeDraftReturns(
         round: s.pick.round,
         pickNumber: s.pick.overallPickNumber,
         pointsPerGame: round(s.ppg),
+        aboveReplacement: adjusted && s.value != null ? round(s.value) : null,
         valueDelta: round(s.valueDelta, 0),
       })),
       worstPicks: d.worst.map((s) => ({
@@ -284,6 +304,7 @@ export function computeDraftReturns(
         round: s.pick.round,
         pickNumber: s.pick.overallPickNumber,
         pointsPerGame: round(s.ppg),
+        aboveReplacement: adjusted && s.value != null ? round(s.value) : null,
         valueDelta: round(s.valueDelta, 0),
         gamesPlayed: s.pick.gamesPlayed,
       })),

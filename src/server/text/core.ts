@@ -188,7 +188,10 @@ export function validateTemplate(
   scopes?: TextSpec["scopes"],
 ): ValidationResult {
   const problems: string[] = [];
-  if (scopes) problems.push(...scopeProblems(renderTemplate(template, tokens).text, scopes));
+  const rendered = renderTemplate(template, tokens).text;
+  if (scopes) problems.push(...scopeProblems(rendered, scopes));
+  // A missing value must never reach the page as a placeholder.
+  if (/—\s*(vs\.?|v\.|to|-|–)\s*—/i.test(rendered) || /\(\s*—\s*\)/.test(rendered)) problems.push("contains a missing-value placeholder (—)");
   for (const name of tokensIn(template)) if (!(name in tokens)) problems.push(`unknown token {{${name}}}`);
   const allowed = collectAllowed(facts, tokens);
 

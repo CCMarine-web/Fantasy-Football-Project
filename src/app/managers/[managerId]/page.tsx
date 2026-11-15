@@ -471,7 +471,8 @@ export default async function ManagerProfilePage({
           Weekly Finish Distribution
         </h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          How often this manager posted the Nth-best score in the league across every week played.
+          How often this manager posted the Nth-best score in the league across every week played. The 2017 season had
+          eight teams, so 9th and 10th were only possible from 2018 on.
         </p>
         <div className="flex items-end gap-1.5 sm:gap-2">
           {finishDistribution.map((f) => (

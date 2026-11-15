@@ -72,3 +72,11 @@ describe("season vs career scope", () => {
     expect(scopeProblems("This season he is 7-2 with +2.1 wins of luck. Over his career, +10.2 wins.", scopes)).toEqual([]);
   });
 });
+
+describe("missing values never reach the page", () => {
+  it("rejects '— vs —' and '(—)' placeholders", () => {
+    const r = validateTemplate("Projections don't pick a favorite (— vs —).", {}, {});
+    expect(r.problems).toContain("contains a missing-value placeholder (—)");
+    expect(validateTemplate("A tense one — and a long series.", {}, {}).ok).toBe(true);
+  });
+});

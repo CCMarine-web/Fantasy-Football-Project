@@ -13,6 +13,8 @@ export interface MatchupCardTeam {
   score?: number | null;
   projectedScore?: number | null;
   isWinner?: boolean | null;
+  /** In-progress points from Sleeper (display only, never stored). */
+  liveScore?: number | null;
 }
 
 export interface MatchupCardData {
@@ -23,6 +25,8 @@ export interface MatchupCardData {
   isPlayoff?: boolean;
   roundName?: string | null;
   teams: [MatchupCardTeam, MatchupCardTeam];
+  /** When live points were fetched (ISO); set only with live scores. */
+  liveAsOf?: string;
 }
 
 export interface StandingsRow {

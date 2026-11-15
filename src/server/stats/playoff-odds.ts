@@ -89,14 +89,44 @@ export function simulatePlayoffOdds(input: {
   const all = teams.flatMap((t) => t.scores);
   const leagueMean = all.length ? all.reduce((a, b) => a + b, 0) / all.length : 110;
   const leagueSd = all.length > 1 ? Math.sqrt(all.reduce((s, x) => s + (x - leagueMean) ** 2, 0) / all.length) : 20;
-  const dist = new Map(teams.map((t) => [t.id, recencyStats(t.scores, leagueMean, leagueSd)]));
+  /*
+   * Variance (Nov 2026 check): the first version treated each team's mean as
+   * known and used its raw 9-game spread, which made a 4-5 team 94% to make the
+   * playoffs. Two corrections, both standard:
+   *   - each team's weekly spread is shrunk toward the league's pooled
+   *     within-team spread (prior worth SD_PRIOR_GAMES games);
+   *   - its mean is regressed toward the league mean (MEAN_PRIOR_GAMES) and,
+   *     in every simulated season, redrawn from its standard error — a team's
+   *     true level is itself uncertain after a handful of games.
+   */
+  const SD_PRIOR_GAMES = 10;
+  const MEAN_PRIOR_GAMES = 4;
+  const withinVars = teams
+    .filter((t) => t.scores.length > 1)
+    .map((t) => {
+      const m = t.scores.reduce((a, b) => a + b, 0) / t.scores.length;
+      return t.scores.reduce((s, x) => s + (x - m) ** 2, 0) / t.scores.length;
+    });
+  const pooledSd = withinVars.length ? Math.sqrt(withinVars.reduce((a, b) => a + b, 0) / withinVars.length) : leagueSd;
+  const dist = new Map(
+    teams.map((t) => {
+      const raw = recencyStats(t.scores, leagueMean, pooledSd);
+      const n = t.scores.length;
+      const sd = Math.sqrt((n * raw.sd ** 2 + SD_PRIOR_GAMES * pooledSd ** 2) / (n + SD_PRIOR_GAMES));
+      const mean = (n * raw.mean + MEAN_PRIOR_GAMES * leagueMean) / (n + MEAN_PRIOR_GAMES);
+      const meanSe = sd / Math.sqrt(Math.max(1, n + MEAN_PRIOR_GAMES));
+      return [t.id, { mean, sd, meanSe }];
+    }),
+  );
+  const simMean = new Map<string, number>();
   const draw = (id: string) => {
     const d = dist.get(id)!;
-    return d.mean + d.sd * normal(rand);
+    return (simMean.get(id) ?? d.mean) + d.sd * normal(rand);
   };
 
   const tally = new Map(teams.map((t) => [t.id, { playoff: 0, bye: 0, title: 0, last: 0 }]));
   for (let s = 0; s < sims; s += 1) {
+    for (const [id, d] of dist) simMean.set(id, d.mean + d.meanSe * normal(rand));
     const state = new Map(teams.map((t) => [t.id, { ...t, scores: [] as number[] }]));
     for (const g of remaining) {
       const a = state.get(g.a);

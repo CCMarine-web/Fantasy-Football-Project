@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatOdds } from "@/lib/format";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { FormChips } from "@/components/shared/form-chips";
 import { cn } from "@/lib/utils";
@@ -36,7 +37,7 @@ export function StandingsTable({
 }) {
   const gamesPlayed = rows.some((r) => r.wins + r.losses + r.ties > 0);
   const hasOdds = rows.some((r) => r.odds);
-  const pct = (v: number) => (v >= 99.95 ? "100%" : v > 0 && v < 0.5 ? "<1%" : `${v.toFixed(0)}%`);
+  const pct = (v: number, c?: { clinched?: boolean; eliminated?: boolean }) => formatOdds(v, c);
   const showCut = gamesPlayed && playoffTeams != null && playoffTeams > 0 && playoffTeams < rows.length;
   const pinned = "sticky z-10 bg-card";
   const th = "px-3 py-2 text-xs font-medium tracking-wide text-muted-foreground uppercase whitespace-nowrap";
@@ -114,7 +115,7 @@ export function StandingsTable({
                         ) : row.odds?.eliminated ? (
                           <span className="rounded bg-destructive/20 px-1 text-destructive" title="Eliminated from playoff contention">e</span>
                         ) : null}{" "}
-                        {row.odds ? pct(row.odds.playoffPct) : "—"}
+                        {row.odds ? pct(row.odds.playoffPct, row.odds) : "—"}
                       </td>
                       <td className={cn(td, border, "text-right text-muted-foreground")}>{row.odds ? pct(row.odds.byePct) : "—"}</td>
                       <td className={cn(td, border, "text-right text-muted-foreground")}>{row.odds ? pct(row.odds.titlePct) : "—"}</td>
@@ -162,7 +163,7 @@ export function StandingsTable({
         )}
         <span className="sm:hidden">Swipe the table for more columns →</span>
         <span className="hidden sm:inline">
-          Order: win %, then points for. TB = placed by tiebreaker.{hasOdds ? " Odds: 10,000 simulated seasons; x = clinched, e = eliminated." : ""}
+          Order: win %, then points for. TB = placed by tiebreaker.{hasOdds ? ` Odds: 10,000 simulated seasons.${rows.some((r) => r.odds?.clinched || r.odds?.eliminated) ? " x = clinched, e = eliminated." : ""}` : ""}
         </span>
       </div>
     </div>

@@ -353,7 +353,7 @@ export default async function TransactionsPage({
           </div>
           <ActivityGrid activity={charts.activity} seasonYear={charts.seasonYear} />
           {charts.bestPickups.length > 0 ? (
-            <BestPickups pickups={charts.bestPickups} seasonYear={charts.seasonYear} colors={colors} />
+            <BestPickups pickups={charts.bestPickups} seasonYear={charts.seasonYear} colors={colors} replacement={charts.replacement} />
           ) : (
             <p className="text-sm text-muted-foreground">
               {charts.hasPlayerScores

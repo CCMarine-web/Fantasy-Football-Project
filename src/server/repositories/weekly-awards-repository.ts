@@ -86,7 +86,7 @@ export async function computeWeeklyAwards(seasonId: string, week: number): Promi
     if (!worstBench || left > worstBench.value) worstBench = { managerId: r.fantasyTeam.managerId, value: left };
   }
   if (worstBench && worstBench.value > 0.5) {
-    rows.push({ type: "BENCH_BLUNDER", managerId: worstBench.managerId, value: worstBench.value, description: `Left ${worstBench.value.toFixed(1)} points on the bench.` });
+    rows.push({ type: "BENCH_BLUNDER", managerId: worstBench.managerId, value: worstBench.value, description: `The best legal lineup would have scored ${worstBench.value.toFixed(1)} more.` });
   }
 
   // Award types this week no longer earns (no Bench Blunder without player data).

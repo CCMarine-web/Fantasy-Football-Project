@@ -6,7 +6,8 @@ import { teamColorMap } from "@/lib/chart-theme";
 import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { isBracketPending, lastRegularWeek } from "@/server/stats/playoff-week";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { DataFreshness } from "@/components/shared/data-freshness";
@@ -169,6 +170,19 @@ export default async function MatchupDetailPage({
     notFound();
   }
   if (matchup.teams.length < 2) notFound();
+  // A playoff pairing before the bracket is set is a placeholder: send the
+  // reader to the week's page, which shows the projected seeds instead.
+  if (matchup.week >= matchup.season.playoffStartWeek) {
+    const firstOpen = await prisma.matchup.findFirst({
+      where: { seasonId: matchup.seasonId, isPlayoff: false, status: { not: "FINAL" } },
+      orderBy: { week: "asc" },
+      select: { week: true },
+    });
+    const lastFinal = firstOpen ? firstOpen.week - 1 : lastRegularWeek(matchup.season.playoffStartWeek);
+    if (isBracketPending({ week: matchup.week, playoffStartWeek: matchup.season.playoffStartWeek, lastFinalRegularWeek: lastFinal })) {
+      redirect(`/matchups?week=${matchup.week}`);
+    }
+  }
 
   const [teamA, teamB] = matchup.teams;
   const [rosterA, rosterB] = await Promise.all([
@@ -205,7 +219,7 @@ export default async function MatchupDetailPage({
       projected: p.projectedPoints,
     })),
   });
-  const statusLabel = isFinal ? "Final" : matchup.status === "IN_PROGRESS" ? "Live" : "Upcoming";
+  const statusLabel = isFinal ? "Final" : matchup.status === "IN_PROGRESS" ? "In progress" : "Upcoming";
   // Facts-first text (server/text): shown only while written from these facts.
   const texts = await matchupTexts(matchup.id);
   // Placeholder copy is never shown as if it were real writing.

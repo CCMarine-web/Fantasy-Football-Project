@@ -70,3 +70,18 @@ describe("computeRecordWatch", () => {
     expect(watch.find((w) => w.kind === "HIGH_GAME")?.detail).toMatch(/^2nd-highest score in league history/);
   });
 });
+
+describe("season pace (Nov 2026 audit)", () => {
+  it("shows only paces that would break the record, highest pace first", () => {
+    const team = (managerId: string, pointsFor: number) => ({ managerId, managerName: managerId, wins: 5, losses: 4, ties: 0, pointsFor });
+    const watch = computeRecordWatch({
+      seasonYear: 2026,
+      regularSeasonWeeks: 14,
+      games: [],
+      completedSeasons: [{ managerName: "Old", year: 2023, wins: 9, losses: 5, ties: 0, pointsFor: 1971 }],
+      // paces over 14 games: Jones 1943 (below the record), Barkemeyer 2043, McManus 2233
+      currentTeams: [team("Jones", (1943 * 9) / 14), team("Barkemeyer", (2043 * 9) / 14), team("McManus", (2233 * 9) / 14)],
+    });
+    expect(watch.filter((w) => w.kind === "POINTS_PACE").map((w) => w.managerId)).toEqual(["McManus", "Barkemeyer"]);
+  });
+});

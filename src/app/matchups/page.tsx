@@ -16,6 +16,9 @@ import type { TransactionView } from "@/server/repositories/transaction-reposito
 import { AlertTriangle, Armchair, CalendarDays, CloudLightning, Clover, Flame, Newspaper, Swords, ThumbsDown } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { BrandArt } from "@/components/shared/brand-art";
+import { TeamAvatar } from "@/components/shared/team-avatar";
+import { formatOdds } from "@/lib/format";
+import { managerPath } from "@/lib/slug";
 
 /** Each weekly award's badge slot and the icon shown until the art exists. */
 const AWARD_ART: Record<string, { slot: string; icon: LucideIcon }> = {
@@ -289,7 +292,40 @@ export default async function MatchupsPage({
             ? `${hub.featured ? "The Rest of " : ""}Week ${hub.week}`
             : "Matchups"}
         </SectionHeading>
-        {otherMatchups.length === 0 ? (
+        {hub.bracketPending ? (
+          <Card>
+            <CardContent className="space-y-3">
+              <p className="font-heading text-lg font-semibold">Bracket set after Week {hub.bracketPending.afterWeek}</p>
+              <p className="text-sm text-muted-foreground">
+                The top {hub.bracketPending.seeds.length} make the playoffs. Until the regular season ends, these are the
+                projected seeds from the current standings — not the pairings.
+              </p>
+              <ol className="divide-y divide-border/50">
+                {hub.bracketPending.seeds.map((s) => (
+                  <li key={s.teamName} className="flex min-h-11 items-center gap-3 py-2">
+                    <span className="w-6 text-right font-mono text-sm text-muted-foreground">{s.seed}</span>
+                    <TeamAvatar name={s.managerName} className="h-7 w-7 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      <Link href={managerPath(s.managerName)} className="block truncate text-sm font-semibold hover:underline">
+                        {s.teamName}
+                      </Link>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {s.managerName} · {s.wins}-{s.losses}
+                        {s.ties ? `-${s.ties}` : ""}
+                        {s.bye ? " · first-round bye" : ""}
+                      </span>
+                    </span>
+                    {s.playoffPct != null ? (
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground" title="Playoff odds">
+                        {formatOdds(s.playoffPct)} playoffs
+                      </span>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            </CardContent>
+          </Card>
+        ) : otherMatchups.length === 0 ? (
           <EmptyState
             icon={Swords}
             title={

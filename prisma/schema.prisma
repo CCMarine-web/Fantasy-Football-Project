@@ -1587,3 +1587,20 @@ model GeneratedText {
   @@unique([kind, subjectKey])
   @@index([kind])
 }
+
+/// The Matchup of the Week, chosen ONCE from data available before kickoff
+/// (frozen projections, entering-week records, standings and ranks) and never
+/// recomputed after the week — so "Why this game" can't quote a final margin
+/// as a projection. Written by the pipeline; pages read it.
+model FeaturedSelection {
+  id         String   @id @default(cuid())
+  seasonYear Int
+  week       Int
+  matchupId  String
+  score      Float
+  /// The factor breakdown shown under "Why this game".
+  factors    Json
+  chosenAt   DateTime @default(now())
+
+  @@unique([seasonYear, week])
+}

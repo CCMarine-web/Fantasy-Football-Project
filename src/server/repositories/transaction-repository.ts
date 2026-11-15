@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import type { Prisma, TransactionStatus, TransactionType } from "@/generated/prisma/client";
 import { collapseChurn, describeChurn, type ChurnSummary } from "@/server/stats/transaction-churn";
 import { activityGrid, pickupStint, type ActivityCell, type StintRow } from "@/server/stats/transaction-activity";
+import { getReplacementLevels } from "@/server/repositories/replacement-repository";
+import { replacementSummary } from "@/server/stats/position-value";
 
 /**
  * The transaction wire.
@@ -430,13 +432,22 @@ export interface PickupView {
   startedWeeks: number;
   /** Points scored for the acquiring team, as a starter, during the stint. */
   starterPoints: number;
+  /**
+   * Starter points above what a replacement-level player at his position would
+   * have scored in those starts — the Trade Tribunal's measure. The ranking.
+   */
+  aboveReplacement: number;
+  /** Replacement points per game at his position, that season. */
+  replacementPpg: number | null;
 }
 
 export interface TransactionSeasonCharts {
   seasonYear: number;
   activity: ActivityGridView;
-  /** Top ten waiver and free-agent adds by starter points for the acquiring team. */
+  /** Top ten waiver and free-agent adds by starter points ABOVE REPLACEMENT. */
   bestPickups: PickupView[];
+  /** "QB 17.3 · RB 9.1 …" — the replacement line per position, points per game. */
+  replacement: string;
   /** False when the season has no per-week player scores, so pickups cannot be scored. */
   hasPlayerScores: boolean;
 }
@@ -546,6 +557,7 @@ export async function getTransactionSeasonCharts(seasonYear: number): Promise<Tr
   const hasPlayerScores = scoreRows.some((s) => s.points != null);
 
   const nameByManager = new Map(managers.map((m) => [m.id, m.name]));
+  const levels = await getReplacementLevels(season.id);
   const seen = new Set<string>();
   const pickups: PickupView[] = [];
   for (const a of adds) {
@@ -569,17 +581,23 @@ export async function getTransactionSeasonCharts(seasonYear: number): Promise<Tr
       weeksOnRoster: stint.weeksOnRoster,
       startedWeeks: stint.startedWeeks,
       starterPoints: stint.starterPoints,
+      aboveReplacement:
+        Math.round((stint.starterPoints - (levels[a.player.position]?.replacementPpg ?? 0) * stint.startedWeeks) * 10) / 10,
+      replacementPpg: levels[a.player.position] ? Math.round(levels[a.player.position].replacementPpg * 10) / 10 : null,
     });
   }
+  // Ranked by points above replacement, not raw points: seven of the old top
+  // eight were quarterbacks or kickers, whose points are cheap on the wire.
   const bestPickups = pickups
-    .filter((p) => p.starterPoints > 0)
-    .sort((x, y) => y.starterPoints - x.starterPoints || x.addedWeek - y.addedWeek)
+    .filter((p) => p.starterPoints > 0 && p.aboveReplacement > 0)
+    .sort((x, y) => y.aboveReplacement - x.aboveReplacement || x.addedWeek - y.addedWeek)
     .slice(0, 10);
 
   return {
     seasonYear,
     activity: { weeks: Array.from({ length: lastWeek }, (_, i) => i + 1), managers, cells, max },
     bestPickups,
+    replacement: replacementSummary(levels),
     hasPlayerScores,
   };
 }

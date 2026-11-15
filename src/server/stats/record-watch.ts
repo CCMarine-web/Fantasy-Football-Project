@@ -199,7 +199,7 @@ export function computeRecordWatch(input: {
       if (played < 3 || played >= regularSeasonWeeks) continue;
       const left = regularSeasonWeeks - played;
       const ptsPace = (t.pointsFor / played) * regularSeasonWeeks;
-      if (ptsPace >= mostPts.pointsFor * 0.98) {
+      if (ptsPace > mostPts.pointsFor) { // only paces that would BREAK the record
         items.push({
           key: `pts-pace-${t.managerId}`,
           kind: "POINTS_PACE",
@@ -207,12 +207,12 @@ export function computeRecordWatch(input: {
           managerName: t.managerName,
           headline: `${t.managerName} is on pace for ${ptsPace.toFixed(0)} points`,
           detail: `The single-season record is ${mostPts.pointsFor.toFixed(1)} (${mostPts.managerName}, ${mostPts.year}).`,
-          urgency: 40,
+          urgency: 40 + ptsPace / 10_000, // sorted by pace
         });
       }
       // Best case and worst case with the games left, against the record marks.
       const fmt = (w: number, l: number) => `${w}-${l}`;
-      if (pct(t) >= pct(bestRec)) {
+      if (pct(t) > pct(bestRec)) {
         items.push({
           key: `best-pace-${t.managerId}`,
           kind: "BEST_RECORD_PACE",
@@ -223,7 +223,7 @@ export function computeRecordWatch(input: {
           urgency: 45,
         });
       }
-      if (pct(t) <= pct(worstRec)) {
+      if (pct(t) < pct(worstRec)) {
         items.push({
           key: `worst-pace-${t.managerId}`,
           kind: "WORST_RECORD_PACE",

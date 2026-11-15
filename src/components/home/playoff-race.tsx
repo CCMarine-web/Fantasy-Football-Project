@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { formatOdds } from "@/lib/format";
 import { Trophy } from "lucide-react";
 import { managerPath } from "@/lib/slug";
 import type { StandingsRow } from "@/types/view-models";
@@ -19,7 +20,7 @@ export function PlayoffRace({ rows }: { rows: StandingsRow[] }) {
     { key: "bubble", label: "On the bubble", tone: "border-primary/40 bg-primary/5" },
     { key: "out", label: "Out", tone: "border-destructive/40 bg-destructive/5" },
   ] as const;
-  const pct = (v: number) => (v >= 99.95 ? "100%" : v > 0 && v < 0.5 ? "<1%" : `${v.toFixed(0)}%`);
+  const pct = (v: number, c?: { clinched?: boolean; eliminated?: boolean }) => formatOdds(v, c);
   return (
     <section aria-labelledby="playoff-race">
       <div className="mb-3 flex items-baseline justify-between gap-2">
@@ -47,7 +48,7 @@ export function PlayoffRace({ rows }: { rows: StandingsRow[] }) {
                       {r.odds!.clinched ? <span className="ml-1 text-xs text-field">x</span> : r.odds!.eliminated ? <span className="ml-1 text-xs text-destructive">e</span> : null}
                     </Link>
                     <span className="shrink-0 font-mono text-xs tabular-nums">
-                      {r.wins}-{r.losses} · {pct(r.odds!.playoffPct)}
+                      {r.wins}-{r.losses} · {pct(r.odds!.playoffPct, r.odds!)}
                     </span>
                   </li>
                 ))}
@@ -56,7 +57,10 @@ export function PlayoffRace({ rows }: { rows: StandingsRow[] }) {
           );
         })}
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">Playoff odds from 10,000 simulations of the remaining schedule; x = clinched, e = eliminated.</p>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Playoff odds from 10,000 simulations of the remaining schedule.
+        {withOdds.some((r) => r.odds!.clinched || r.odds!.eliminated) ? " x = clinched, e = eliminated." : ""}
+      </p>
     </section>
   );
 }

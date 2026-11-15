@@ -1,19 +1,17 @@
-import { AiText } from "@/components/shared/ai-text";
+import { PowerGrid } from "@/components/power/power-grid";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { powerBlurbTexts } from "@/server/text/page-texts";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
-import { TeamAvatar } from "@/components/shared/team-avatar";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { LabeledScatter, MultiLineChart } from "@/components/charts/charts";
 import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
 import { getRankingHistory } from "@/server/pipeline/snapshots";
 import { getSeasonLuckWins } from "@/server/repositories/luck-repository";
-import { formatLuckWins } from "@/server/stats/luck-wins";
-import { distributePercentages, ordinal } from "@/lib/format";
-import { heatColor, teamColorMap } from "@/lib/chart-theme";
-import { ArrowDown, ArrowUp, Info, Minus, TrendingUp } from "lucide-react";
+import { distributePercentages } from "@/lib/format";
+import { teamColorMap } from "@/lib/chart-theme";
+import { Info, TrendingUp } from "lucide-react";
 
 export const metadata = { title: "Power Rankings" };
 
@@ -22,29 +20,6 @@ export const metadata = { title: "Power Rankings" };
  * revalidates every page when it does; the hour is only a safety net.
  */
 export const revalidate = 3600;
-
-function Movement({ rank, previous }: { rank: number; previous: number | null }) {
-  if (previous == null) return <span className="w-8 text-xs text-muted-foreground">—</span>;
-  const diff = previous - rank;
-  if (diff === 0)
-    return (
-      <span className="flex w-8 items-center text-xs text-muted-foreground" title="No change from last week">
-        <Minus className="h-3 w-3" aria-hidden />
-        <span className="sr-only">no change</span>
-      </span>
-    );
-  const up = diff > 0;
-  return (
-    <span
-      className={`flex w-8 items-center text-xs font-semibold ${up ? "text-field" : "text-destructive"}`}
-      title={`${up ? "Up" : "Down"} ${Math.abs(diff)} from ${ordinal(previous)} last week`}
-    >
-      {up ? <ArrowUp className="h-3 w-3" aria-hidden /> : <ArrowDown className="h-3 w-3" aria-hidden />}
-      {Math.abs(diff)}
-      <span className="sr-only">{up ? " up" : " down"}</span>
-    </span>
-  );
-}
 
 export default async function PowerRankingsPage() {
   // Pre-rendered when the build can reach the database; otherwise rendered per request.
@@ -149,76 +124,13 @@ export default async function PowerRankingsPage() {
         <p className="mb-3 text-xs text-muted-foreground">
           Cells are each factor&rsquo;s 0-100 score against the rest of the league (blue = strong, orange = weak); hover a cell for the raw stat. Tap a team for its write-up.
         </p>
-        <div className="relative overflow-x-auto rounded-lg border border-border/60 bg-card" role="region" aria-label="Power rankings by factor, scrolls sideways" tabIndex={0}>
-          <div className="min-w-[860px]">
-            <div
-              className="grid items-center gap-px border-b border-border/60 px-2 py-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
-              style={{ gridTemplateColumns: `2rem 2rem minmax(10rem, 1.6fr) 4rem repeat(${data.weights.length}, minmax(4.25rem, 1fr))` }}
-            >
-              <span>#</span>
-              <span className="sr-only">Move</span>
-              <span>Team</span>
-              <span className="text-right">Score</span>
-              {data.weights.map((w, i) => (
-                <span key={w.key} className="px-1 text-center leading-tight" title={`${w.label} — ${w.description} Weight ${methodologyPercents[i]}%.`}>
-                  {w.label}
-                  <span className="block font-normal normal-case">{methodologyPercents[i]}%</span>
-                </span>
-              ))}
-            </div>
-            {data.rows.map((row) => (
-              <details key={row.fantasyTeamId} className="group border-b border-border/40 last:border-b-0">
-                <summary
-                  className="grid cursor-pointer list-none items-center gap-px px-2 py-2 hover:bg-accent/30 [&::-webkit-details-marker]:hidden"
-                  style={{ gridTemplateColumns: `2rem 2rem minmax(10rem, 1.6fr) 4rem repeat(${data.weights.length}, minmax(4.25rem, 1fr))` }}
-                >
-                  <span className="font-mono text-sm text-muted-foreground">{row.rank}</span>
-                  <Movement rank={row.rank} previous={row.previousRank} />
-                  <span className="flex min-w-0 items-center gap-2">
-                    <TeamAvatar name={row.managerName} imageUrl={row.avatarUrl} className="h-7 w-7 shrink-0" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold">{row.teamName}</span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {row.managerName} · {row.record}
-                        {(() => {
-                          const l = row.managerId ? seasonLuck.get(row.managerId) : undefined;
-                          return l && l.tone !== "insufficient" ? (
-                            <span title={`Luck: ${l.label} — ${l.wins} wins vs ${l.expected.toFixed(1)} expected`}> · luck {formatLuckWins(l.luckWins).replace(" wins", "")}</span>
-                          ) : null;
-                        })()}
-                      </span>
-                    </span>
-                  </span>
-                  <span className="text-right font-heading text-lg font-semibold tabular-nums text-primary">{row.score.toFixed(1)}</span>
-                  {data.weights.map((w) => {
-                    const f = row.factors.find((x) => x.key === w.key);
-                    return (
-                      <span
-                        key={w.key}
-                        className="mx-0.5 rounded py-1.5 text-center font-mono text-xs tabular-nums text-foreground"
-                        style={{ background: heatColor(f?.value) }}
-                        title={f ? `${w.label}: ${f.raw} · factor score ${Math.round(f.value)}/100` : `${w.label}: not measured`}
-                      >
-                        {f ? Math.round(f.value) : "—"}
-                      </span>
-                    );
-                  })}
-                </summary>
-                <div className="space-y-2 bg-muted/10 px-4 py-3">
-                  {isInSeason ? <AiText text={blurbs.get(row.fantasyTeamId)} /> : null}
-                  <ul className="grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
-                    {row.factors.map((f) => (
-                      <li key={f.key}>
-                        <span className="font-medium text-foreground">{f.label}:</span> {f.raw}{" "}
-                        <span className="text-muted-foreground/80">(factor score {Math.round(f.value)}/100)</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </details>
-            ))}
-          </div>
-        </div>
+        <PowerGrid
+          rows={data.rows}
+          weights={data.weights}
+          percents={methodologyPercents}
+          luck={Object.fromEntries([...seasonLuck].map(([k, v]) => [k, v]))}
+          blurbs={Object.fromEntries(isInSeason ? [...blurbs] : [])}
+        />
       </section>
 
       {isInSeason ? (
@@ -253,6 +165,15 @@ export default async function PowerRankingsPage() {
             </div>
           ))}
         </dl>
+        {isInSeason ? (
+          <p className="mt-3 rounded-md border border-border/60 bg-muted/20 px-3 py-2 text-[13px] text-muted-foreground">
+            <strong className="text-foreground">Overlap, stated plainly.</strong> Two pairs of factors measure the same thing.
+            All-play win% and Expected wins are the same statistic (expected wins is all-play rate × weeks played), so every team
+            scores identically on both and together they carry 32% of the score. Starter strength is the average of the points
+            scored by the starting lineup — the team&rsquo;s weekly score — so it duplicates Scoring (which is the same average,
+            weighted toward recent weeks); together 29%. The formula is unchanged for now; a merged weighting has been proposed.
+          </p>
+        ) : null}
         {data.notes.map((note) => (
           <p key={note} className="mt-3 flex items-start gap-2 text-[13px] text-muted-foreground">
             <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />

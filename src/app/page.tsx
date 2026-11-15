@@ -36,9 +36,10 @@ import { getOffseasonData } from "@/server/repositories/offseason-repository";
 
 /**
  * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
- * revalidates every page when it does; the hour is only a safety net.
+ * revalidates every page when it does. Ten minutes so the hero's live scores
+ * (stamped "as of") are never more than one refresh behind.
  */
-export const revalidate = 3600;
+export const revalidate = 600;
 
 const TRANSACTION_LABEL: Record<string, string> = {
   WAIVER: "Waiver claim",

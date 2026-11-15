@@ -6,6 +6,7 @@ import { getLeagueClock, withClockStatus } from "@/server/league-clock";
 import { draftDateFor } from "@/lib/draft-date";
 import type { HeroData } from "@/components/home/home-hero";
 import type { MatchupCardData } from "@/types/view-models";
+import { withLiveScores } from "@/server/live-scores";
 
 /**
  * Returns homepage data, or `null` when there's nothing to show yet — either
@@ -103,7 +104,7 @@ async function loadHomepageData() {
     const bracketWeeks = await Promise.all(bracketRows.map((r) => getMatchupsForWeek(season.id, r.week, season.year)));
     hero = {
       clock,
-      games: withClockStatus(focusGames, clock),
+      games: await withLiveScores(withClockStatus(focusGames, clock), clock),
       bracket: bracketWeeks.flat().filter((g) => g.isPlayoff),
       draft: {
         iso: draftDateFor(season.year),

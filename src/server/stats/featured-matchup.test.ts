@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   chooseFeaturedMatchup,
+  enteringRecords,
+  type EnteringGameRow,
   FEATURED_WEIGHTS,
   type FeaturedCandidate,
 } from "./featured-matchup";
@@ -239,5 +241,44 @@ describe("chooseFeaturedMatchup", () => {
     expect(closeness?.reason).toBe("2.8 points between them on projections");
     const rivalry = choice.factors.find((f) => f.key === "officialRivalry");
     expect(rivalry?.reason).toBe("an official league rivalry");
+  });
+});
+
+describe("pre-kickoff inputs (Nov 2026 audit: Week 9 quoted the final margin)", () => {
+  it("projected closeness reads the frozen projections, not the final score", () => {
+    // Week 9: projections 154.19 vs 142.18 (gap 12.0); the final was 151.8-132.2 (19.6).
+    const choice = chooseFeaturedMatchup([candidate({ matchupId: "w9", projectedA: 154.19, projectedB: 142.18 })]);
+    const closeness = choice?.factors.find((f) => f.key === "projectedCloseness");
+    expect(closeness?.reason).toContain("12.0 points between them on projections");
+    expect(closeness?.reason).not.toContain("19.6");
+  });
+
+  it("missing projections drop the factor instead of printing a placeholder", () => {
+    const choice = chooseFeaturedMatchup([candidate({ matchupId: "w10", projectedA: null, projectedB: null })]);
+    const closeness = choice?.factors.find((f) => f.key === "projectedCloseness");
+    expect(closeness).toBeUndefined();
+  });
+
+  it("entering records count only earlier weeks of the same season", () => {
+    const g = (week: number, team: string, score: number, opp: number, extra: Partial<EnteringGameRow> = {}): EnteringGameRow => ({
+      year: 2026,
+      week,
+      isPlayoff: false,
+      fantasyTeamId: team,
+      score,
+      opponentScore: opp,
+      ...extra,
+    });
+    const rows = [
+      g(8, "a", 120, 100),
+      g(8, "b", 90, 110),
+      g(9, "a", 151.8, 132.2), // the week being chosen: must not count
+      g(10, "b", 140, 100), // later: must not count
+      g(14, "a", 100, 90, { year: 2025 }), // last season: must not count
+      g(15, "a", 100, 90, { isPlayoff: true }),
+    ];
+    const rec = enteringRecords(rows, 2026, 9);
+    expect(rec.get("a")).toMatchObject({ wins: 1, losses: 0 });
+    expect(rec.get("b")).toMatchObject({ wins: 0, losses: 1 });
   });
 });

@@ -178,11 +178,13 @@ export async function previewSpec(info: MatchupInfo): Promise<TextSpec> {
       series: seriesText,
       recordA: sa.record,
       recordB: sb.record,
-      projA: sa.projectedPoints?.toFixed(1) ?? "—",
-      projB: sb.projectedPoints?.toFixed(1) ?? "—",
+      // Only when both projections exist — a missing one rendered "— vs —".
+      ...(sa.projectedPoints != null && sb.projectedPoints != null
+        ? { projA: sa.projectedPoints.toFixed(1), projB: sb.projectedPoints.toFixed(1) }
+        : {}),
     },
     contentType: "matchup-preview",
-    task: `Preview Week ${info.week} of ${info.year}: ${a.managerName} (${a.teamName}) vs ${b.managerName} (${b.teamName}). Lead with the stakes and who the projections favour (if anyone), mention the head-to-head series, and end with a line of trash talk. Roast the play, not the person.`,
+    task: `Preview Week ${info.week} of ${info.year}: ${a.managerName} (${a.teamName}) vs ${b.managerName} (${b.teamName}). Lead with the stakes and who the projections favour (if anyone; if FACTS has no projections, don't mention projections or a favourite at all), mention the head-to-head series, and end with a line of trash talk. Roast the play, not the person.`,
     fallback: favourite
       ? `${favourite} is the projected favourite (${a.managerName} {{projA}}, ${b.managerName} {{projB}}). ${a.managerName} comes in at {{recordA}}, ${b.managerName} at {{recordB}}. Series: {{series}}.`
       : `${a.managerName} ({{recordA}}) meets ${b.managerName} ({{recordB}}). Series: {{series}}.`,

@@ -56,3 +56,22 @@ Confirmed from the code:
 - Text validator: a sentence about "this season" that quotes a career-only figure is rejected.
 - Scouting reports use the profile's career record (the old one excluded the season in progress).
 - `npm run verify:data` checks Σ luck = 0 and Σ expected = games for every season and career (all pass).
+
+## Phase 2: data correctness (done)
+
+| # | Item | Status | What changed |
+|---|------|--------|--------------|
+| 1 | PR heatmap headers shifted | Real, fixed | `components/power/power-grid.tsx`: header and rows share one column list; the movement header is a real grid cell (the old `sr-only` cell was absolutely positioned and left the grid). Test: header count = row cell count. |
+| 2 | Duplicate factors | Real (all-play = expected wins; starter strength = unweighted PPG) | Formula unchanged. Overlap stated under "How the score is built". Proposed merged weights in the final report. |
+| 3 | Projected closeness used the final score | Real, fixed | Selection uses only pre-kickoff inputs (frozen projections, entering records/standings, last week's PR snapshot, series before the week), is stored in `featured_selections` once per week by the pipeline, and is never recomputed. Week 9 now reads "12.0 points between them on projections" (was 19.6). |
+| 4 | "— vs —" in copy | Real, fixed | Projection tokens only exist when both projections do; the validator rejects "— vs —" and "(—)". |
+| 5 | "Live" isn't live | Real, fixed (live option) | `server/live-scores.ts`: Sleeper matchups, cached 10 min, stamped "as of h:mm CT", never stored. Without a live score the badge says "In progress". Home ISR is 10 min. |
+| 6 | Playoff weeks show placeholder pairings | Real (weeks 15–17 hold Sleeper placeholders) | Until every regular-season week is final, a playoff week shows "Bracket set after Week 14" and projected seeds; placeholder matchup pages redirect to the week. Uses Sleeper's `playoff_week_start` (Season.playoffStartWeek). Note: the live sync never sets `bracketType`, so "regular season final" is the signal. |
+| 7 | Players to watch | Real, fixed | Latest stored roster up to the week (not the draft-day squad) and this season's PPG once 3+ games; last season's rate only fills gaps and is labelled. |
+| 8 | Sync stamp differs by page | Real, fixed | Every cached loader also carries one shared `site-data` tag. The revalidate step clears caches in its own request, then visits every stamped route and checks `data-synced-at` agrees (up to 3 passes), reporting PARTIAL with the routes that disagree. |
+| 9 | Scouting record | Real, fixed in Phase 1 | Scouting facts use the profile's career row. |
+| 10 | Raw points across positions | Real, fixed | `stats/position-value.ts` reuses the Tribunal's `buildPositionContext`. Draft steal/bust, the revisited grade's ranking and best pickups now use points above replacement; replacement levels are printed under each. |
+| 11 | Bench Blunder | Not real | It was already optimal − actual; the wording now says so. |
+| 12 | Playoff odds | Real, fixed | Per-team sd shrunk toward the pooled sd (10-game prior), mean regressed (4-game prior) and redrawn per simulated season; ">99%"/"<1%" unless clinched/eliminated. |
+| 13 | Record Watch | Real, fixed | Only paces that would break the record, sorted by pace. |
+| 14 | Finish distribution | Real, fixed | Footnote: 2017 had 8 teams. |

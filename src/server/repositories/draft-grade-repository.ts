@@ -26,6 +26,8 @@ import {
   type TeamReturnInput,
 } from "@/server/stats/draft-returns";
 import { getContentSafeguards } from "@/server/repositories/ai-config-repository";
+import { getReplacementLevels } from "@/server/repositories/replacement-repository";
+import { replacementPpgs, replacementSummary } from "@/server/stats/position-value";
 import {
   generateDraftRationale,
   generateDraftRevisitRationale,
@@ -351,7 +353,7 @@ export async function revisitDraftGradesForSeason(
  * the provisional in-season revisit uses.
  */
 export async function loadDraftReturns(seasonId: string) {
-  const [picks, playerTotals] = await Promise.all([
+  const [picks, playerTotals, levels] = await Promise.all([
     prisma.draftPick.findMany({
       where: { draft: { seasonId } },
       select: {
@@ -372,6 +374,7 @@ export async function loadDraftReturns(seasonId: string) {
       _sum: { points: true },
       _count: { _all: true },
     }),
+    getReplacementLevels(seasonId),
   ]);
 
   const production = new Map(playerTotals.map((row) => [row.playerId, { total: row._sum.points ?? 0, games: row._count._all }]));
@@ -396,11 +399,13 @@ export async function loadDraftReturns(seasonId: string) {
       playerName: pick.player ? `${pick.player.firstName} ${pick.player.lastName}` : "(no player on record)",
       totalPoints: stats?.total ?? null,
       gamesPlayed: stats?.games ?? 0,
+      position: pick.player?.position ?? null,
     });
     byManager.set(pick.managerId, entry);
   }
 
-  return computeDraftReturns([...byManager.values()]);
+  // Position-adjusted: the Trade Tribunal's replacement line.
+  return computeDraftReturns([...byManager.values()], 9, replacementPpgs(levels));
 }
 
 /**
@@ -836,6 +841,8 @@ export interface PickReturn {
    * Positive: outproduced the slot (a steal). Negative: fell short (a bust).
    */
   valueDelta: number;
+  /** Points per game above replacement at his position. */
+  aboveReplacement: number | null;
 }
 
 /**
@@ -851,7 +858,7 @@ export interface PickReturn {
  */
 export async function loadPickReturns(
   seasonId: string,
-): Promise<{ picks: Map<number, PickReturn>; throughWeek: number | null } | null> {
+): Promise<{ picks: Map<number, PickReturn>; throughWeek: number | null; replacement: string } | null> {
   const season = await prisma.season.findUnique({
     where: { id: seasonId },
     select: { status: true, dataSource: true },
@@ -859,14 +866,14 @@ export async function loadPickReturns(
   if (!season || season.dataSource !== "SLEEPER") return null;
 
   // The same two inputs loadDraftReturns reads.
-  const [picks, playerTotals, lastWeek] = await Promise.all([
+  const [picks, playerTotals, lastWeek, levels] = await Promise.all([
     prisma.draftPick.findMany({
       where: { draft: { seasonId } },
       select: {
         round: true,
         pickNumber: true,
         isKeeper: true,
-        player: { select: { id: true, firstName: true, lastName: true } },
+        player: { select: { id: true, firstName: true, lastName: true, position: true } },
       },
       orderBy: { pickNumber: "asc" },
     }),
@@ -883,6 +890,7 @@ export async function loadPickReturns(
           select: { week: true },
         })
       : Promise.resolve(null),
+    getReplacementLevels(seasonId),
   ]);
 
   const production = new Map(
@@ -904,12 +912,13 @@ export async function loadPickReturns(
           playerName: pick.player ? `${pick.player.firstName} ${pick.player.lastName}` : "(no player on record)",
           totalPoints: stats?.total ?? null,
           gamesPlayed: stats?.games ?? 0,
+          position: pick.player?.position ?? null,
         },
       ],
     };
   });
 
-  const returns = computeDraftReturns(singletons);
+  const returns = computeDraftReturns(singletons, 9, replacementPpgs(levels));
   if (!returns.available) return null;
 
   const playerByPick = new Map(picks.map((p) => [p.pickNumber, p.player?.id ?? null]));
@@ -925,7 +934,8 @@ export async function loadPickReturns(
       gamesPlayed: stats?.games ?? 0,
       pointsPerGame: only.pointsPerGame,
       valueDelta: only.valueDelta,
+      aboveReplacement: only.aboveReplacement,
     });
   }
-  return { picks: result, throughWeek: lastWeek?.week ?? null };
+  return { picks: result, throughWeek: lastWeek?.week ?? null, replacement: replacementSummary(levels) };
 }
