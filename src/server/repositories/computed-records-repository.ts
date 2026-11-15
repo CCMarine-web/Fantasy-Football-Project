@@ -13,6 +13,85 @@ export interface RecordEntry {
   holderName: string;
   holderManagerId: string | null;
   detail: string;
+  /**
+   * The all-time top 10 for this record, #1 first (the headline is top[0], so
+   * the two can never disagree). Ties share a rank ("T-3") and everyone tied
+   * at 10th is listed, so a list can run past ten. Absent for records with no
+   * ranking (streaks, titles).
+   */
+  top?: RankedRow[];
+  /** Further entries tied at the last listed rank but cut for length. */
+  topMoreTied?: number;
+}
+
+export interface RankedRow {
+  /** Competition rank: two tied for 2nd are both 2, the next is 4. */
+  rank: number;
+  tied: boolean;
+  value: string;
+  holderName: string;
+  holderManagerId: string | null;
+  detail: string;
+}
+
+const TOP_N = 10;
+/** Hard cap so a pile of identical values can't turn a top 10 into a top 40. */
+const TOP_CAP = 20;
+
+/**
+ * Sorts (stably, so equal values keep row order) and ranks to the top 10,
+ * comparing values at the precision they are shown (`scale`) so a float wobble
+ * is never a different rank.
+ */
+export function rankTop<T>(
+  items: T[],
+  valueOf: (t: T) => number,
+  direction: "desc" | "asc",
+  toRow: (t: T) => Omit<RankedRow, "rank" | "tied">,
+  scale = 100,
+): { rows: RankedRow[]; moreTied: number } {
+  const keyOf = (t: T) => Math.round(valueOf(t) * scale);
+  const sorted = [...items].sort((a, b) =>
+    direction === "desc" ? valueOf(b) - valueOf(a) : valueOf(a) - valueOf(b),
+  );
+  const counts = new Map<number, number>();
+  for (const t of sorted) counts.set(keyOf(t), (counts.get(keyOf(t)) ?? 0) + 1);
+  const rows: RankedRow[] = [];
+  let moreTied = 0;
+  let rank = 0;
+  let prevKey: number | null = null;
+  for (let i = 0; i < sorted.length; i++) {
+    const k = keyOf(sorted[i]);
+    if (k !== prevKey) rank = i + 1;
+    prevKey = k;
+    if (rank > TOP_N) break;
+    if (rows.length >= TOP_CAP) {
+      moreTied += 1;
+      continue;
+    }
+    rows.push({ rank, tied: (counts.get(k) ?? 0) > 1, ...toRow(sorted[i]) });
+  }
+  return { rows, moreTied };
+}
+
+/** A record entry whose headline is #1 of its own ranked list. */
+function rankedEntry(
+  key: string,
+  label: string,
+  ranked: { rows: RankedRow[]; moreTied: number },
+): RecordEntry | null {
+  const first = ranked.rows[0];
+  if (!first) return null;
+  return {
+    key,
+    label,
+    value: first.value,
+    holderName: first.holderName,
+    holderManagerId: first.holderManagerId,
+    detail: first.detail,
+    top: ranked.rows,
+    topMoreTied: ranked.moreTied,
+  };
 }
 
 interface Mt {
@@ -68,32 +147,52 @@ async function buildComputedRecords(): Promise<RecordEntry[]> {
   const where = (g: Mt) => `Week ${g.week}, ${g.year}${g.isPlayoff ? " (postseason)" : ""}`;
   const vs = (g: Mt) => `vs ${g.opponentName} · ${where(g)}`;
 
+  // Each headline is #1 of its own top-10 list. Ties are ranked together,
+  // never broken by row order.
+  const push = (e: RecordEntry | null) => {
+    if (e) entries.push(e);
+  };
+  const gameRow = (g: Mt, value: string, detail: string) => ({
+    value,
+    holderName: g.managerName,
+    holderManagerId: g.managerId,
+    detail,
+  });
+
   // Highest / lowest single-game score.
-  const highest = games.reduce((a, b) => (b.score > a.score ? b : a));
-  const lowest = games.reduce((a, b) => (b.score < a.score ? b : a));
-  entries.push({ key: "high-game", label: "Highest Single-Game Score", value: highest.score.toFixed(1), holderName: highest.managerName, holderManagerId: highest.managerId, detail: vs(highest) });
-  entries.push({ key: "low-game", label: "Lowest Single-Game Score", value: lowest.score.toFixed(1), holderName: lowest.managerName, holderManagerId: lowest.managerId, detail: vs(lowest) });
+  push(rankedEntry("high-game", "Highest Single-Game Score", rankTop(games, (g) => g.score, "desc", (g) => gameRow(g, g.score.toFixed(1), vs(g)))));
+  push(rankedEntry("low-game", "Lowest Single-Game Score", rankTop(games, (g) => g.score, "asc", (g) => gameRow(g, g.score.toFixed(1), vs(g)))));
 
   // Highest scoring loss / lowest scoring win.
   const losses = games.filter((g) => g.isWinner === false);
   const wins = games.filter((g) => g.isWinner === true);
-  if (losses.length) {
-    const hl = losses.reduce((a, b) => (b.score > a.score ? b : a));
-    entries.push({ key: "high-loss", label: "Highest Score in a Loss", value: hl.score.toFixed(1), holderName: hl.managerName, holderManagerId: hl.managerId, detail: `lost ${hl.score.toFixed(1)}–${hl.opponentScore.toFixed(1)} to ${hl.opponentName} · ${where(hl)}` });
-  }
-  if (wins.length) {
-    const lw = wins.reduce((a, b) => (b.score < a.score ? b : a));
-    entries.push({ key: "low-win", label: "Lowest Score in a Win", value: lw.score.toFixed(1), holderName: lw.managerName, holderManagerId: lw.managerId, detail: `won ${lw.score.toFixed(1)}–${lw.opponentScore.toFixed(1)} over ${lw.opponentName} · ${where(lw)}` });
-  }
+  push(
+    rankedEntry("high-loss", "Highest Score in a Loss", rankTop(losses, (g) => g.score, "desc", (g) =>
+      gameRow(g, g.score.toFixed(1), `lost ${g.score.toFixed(1)}–${g.opponentScore.toFixed(1)} to ${g.opponentName} · ${where(g)}`),
+    )),
+  );
+  push(
+    rankedEntry("low-win", "Lowest Score in a Win", rankTop(wins, (g) => g.score, "asc", (g) =>
+      gameRow(g, g.score.toFixed(1), `won ${g.score.toFixed(1)}–${g.opponentScore.toFixed(1)} over ${g.opponentName} · ${where(g)}`),
+    )),
+  );
 
   // Biggest blowout / closest game (from the winner's perspective, decided games).
   const decidedWins = wins.filter((g) => g.score !== g.opponentScore);
-  if (decidedWins.length) {
-    const blow = decidedWins.reduce((a, b) => (b.score - b.opponentScore > a.score - a.opponentScore ? b : a));
-    const close = decidedWins.reduce((a, b) => (b.score - b.opponentScore < a.score - a.opponentScore ? b : a));
-    entries.push({ key: "blowout", label: "Biggest Blowout", value: `${(blow.score - blow.opponentScore).toFixed(1)} pts`, holderName: blow.managerName, holderManagerId: blow.managerId, detail: `${blow.score.toFixed(1)}–${blow.opponentScore.toFixed(1)} over ${blow.opponentName} · ${where(blow)}` });
-    entries.push({ key: "closest", label: "Closest Game", value: `${(close.score - close.opponentScore).toFixed(2)} pts`, holderName: close.managerName, holderManagerId: close.managerId, detail: `${close.score.toFixed(1)}–${close.opponentScore.toFixed(1)} over ${close.opponentName} · ${where(close)}` });
-  }
+  const margin = (g: Mt) => g.score - g.opponentScore;
+  push(
+    rankedEntry("blowout", "Biggest Blowout", rankTop(decidedWins, margin, "desc", (g) =>
+      gameRow(g, `${margin(g).toFixed(1)} pts`, `${g.score.toFixed(1)}–${g.opponentScore.toFixed(1)} over ${g.opponentName} · ${where(g)}`),
+    )),
+  );
+  // Under a point, both scores to two decimals: a 0.08 win must not read
+  // "122.9–122.8", which is a 0.1 margin.
+  push(
+    rankedEntry("closest", "Closest Game", rankTop(decidedWins, margin, "asc", (g) => {
+      const d = margin(g) < 1 ? 2 : 1;
+      return gameRow(g, `${margin(g).toFixed(2)} pts`, `${g.score.toFixed(d)}–${g.opponentScore.toFixed(d)} over ${g.opponentName} · ${where(g)}`);
+    })),
+  );
 
   // Single-week league-wide scoring record (most total points in one week).
   const weekTotals = new Map<string, { year: number; week: number; total: number }>();
@@ -114,16 +213,24 @@ async function buildComputedRecords(): Promise<RecordEntry[]> {
     include: { manager: { select: { id: true, displayName: true } }, season: { select: { year: true } } },
   });
   if (teams.length) {
-    const mostPts = teams.reduce((a, b) => (b.pointsFor > a.pointsFor ? b : a));
-    entries.push({ key: "season-points", label: "Most Points in a Season", value: mostPts.pointsFor.toFixed(1), holderName: mostPts.manager.displayName, holderManagerId: mostPts.manager.id, detail: `${mostPts.season.year} season` });
-    const pct = (t: (typeof teams)[number]) => {
+    type Team = (typeof teams)[number];
+    const pct = (t: Team) => {
       const g = t.wins + t.losses + t.ties;
       return g ? (t.wins + 0.5 * t.ties) / g : 0;
     };
-    const best = teams.reduce((a, b) => (pct(b) > pct(a) ? b : a));
-    const worst = teams.reduce((a, b) => (pct(b) < pct(a) ? b : a));
-    entries.push({ key: "best-record", label: "Best Season Record", value: `${best.wins}-${best.losses}${best.ties ? `-${best.ties}` : ""}`, holderName: best.manager.displayName, holderManagerId: best.manager.id, detail: `${best.season.year} · ${best.pointsFor.toFixed(0)} PF` });
-    entries.push({ key: "worst-record", label: "Worst Season Record", value: `${worst.wins}-${worst.losses}${worst.ties ? `-${worst.ties}` : ""}`, holderName: worst.manager.displayName, holderManagerId: worst.manager.id, detail: `${worst.season.year} · ${worst.pointsFor.toFixed(0)} PF` });
+    const rec = (t: Team) => `${t.wins}-${t.losses}${t.ties ? `-${t.ties}` : ""}`;
+    const teamRow = (t: Team, value: string, detail: string) => ({
+      value,
+      holderName: t.manager.displayName,
+      holderManagerId: t.manager.id,
+      detail,
+    });
+    // Equal records share a rank. Within a tie, more points (best) or fewer
+    // (worst) is listed first — the order only, never the rank.
+    const byPf = [...teams].sort((a, b) => b.pointsFor - a.pointsFor);
+    push(rankedEntry("season-points", "Most Points in a Season", rankTop(teams, (t) => t.pointsFor, "desc", (t) => teamRow(t, t.pointsFor.toFixed(1), `${t.season.year} season`))));
+    push(rankedEntry("best-record", "Best Season Record", rankTop(byPf, pct, "desc", (t) => teamRow(t, rec(t), `${t.season.year} · ${t.pointsFor.toFixed(0)} PF`), 1e6)));
+    push(rankedEntry("worst-record", "Worst Season Record", rankTop([...byPf].reverse(), pct, "asc", (t) => teamRow(t, rec(t), `${t.season.year} · ${t.pointsFor.toFixed(0)} PF`), 1e6)));
   }
 
   // Longest win / loss streaks all-time (per manager, across career).
@@ -235,5 +342,50 @@ export const getRecordWatch = cached(
     return { seasonYear: season.year, items };
   },
   ["record-watch"],
+  { tags: [CACHE_TAGS.league] },
+);
+
+export interface ScoreDistribution {
+  /** 10-point bins, lowest first; `from` is inclusive, `to` exclusive. */
+  bins: { from: number; to: number; count: number }[];
+  total: number;
+  mean: number;
+  median: number;
+  high: { score: number; managerName: string; year: number; week: number };
+  low: { score: number; managerName: string; year: number; week: number };
+}
+
+/**
+ * Every verified weekly score ever, in 10-point bins — the same rows the
+ * single-game records are read from, so the record high and low sit at the
+ * ends of this histogram by construction. Null with no games.
+ */
+export const getScoreDistribution = cached(
+  async (): Promise<ScoreDistribution | null> => {
+    const rows = await loadVerifiedGames();
+    if (rows.length === 0) return null;
+    const scores = rows.map((r) => r.score).sort((a, b) => a - b);
+    const hi = rows.reduce((a, b) => (b.score > a.score ? b : a));
+    const lo = rows.reduce((a, b) => (b.score < a.score ? b : a));
+    const first = Math.floor(scores[0] / 10) * 10;
+    const last = Math.floor(scores[scores.length - 1] / 10) * 10;
+    const counts = new Map<number, number>();
+    for (const s of scores) {
+      const b = Math.floor(s / 10) * 10;
+      counts.set(b, (counts.get(b) ?? 0) + 1);
+    }
+    const bins: ScoreDistribution["bins"] = [];
+    for (let from = first; from <= last; from += 10) bins.push({ from, to: from + 10, count: counts.get(from) ?? 0 });
+    const mid = Math.floor(scores.length / 2);
+    return {
+      bins,
+      total: scores.length,
+      mean: scores.reduce((a, b) => a + b, 0) / scores.length,
+      median: scores.length % 2 ? scores[mid] : (scores[mid - 1] + scores[mid]) / 2,
+      high: { score: hi.score, managerName: hi.managerName, year: hi.year, week: hi.week },
+      low: { score: lo.score, managerName: lo.managerName, year: lo.year, week: lo.week },
+    };
+  },
+  ["score-distribution"],
   { tags: [CACHE_TAGS.league] },
 );

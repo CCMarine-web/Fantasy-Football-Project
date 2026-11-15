@@ -88,7 +88,7 @@ export async function StandingsPageView({ season }: { season: Season | null }) {
       </div>
 
       {played ? (
-        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2 [&>*]:min-w-0">
           <ChartFrame
             title="Points for vs. points against"
             caption="Per game. Dashed lines are the league averages."

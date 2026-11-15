@@ -257,7 +257,7 @@ export default async function SeasonHistoryPage({
                       </span>
                     </div>
                   ))}
-                <Link href="/drafts" className="mt-2 inline-block text-primary hover:underline">
+                <Link href={`/draft-report-cards?tab=board&season=${seasonParam}`} className="mt-2 inline-block text-primary hover:underline">
                   View full draft board →
                 </Link>
               </div>

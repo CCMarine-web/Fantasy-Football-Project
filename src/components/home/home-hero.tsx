@@ -86,7 +86,7 @@ export function HomeHero({ data }: { data: HeroData }) {
               Open the live draft board →
             </a>
           ) : (
-            <Link href="/drafts" className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
+            <Link href="/draft-report-cards?tab=board" className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">
               Draft board →
             </Link>
           )}

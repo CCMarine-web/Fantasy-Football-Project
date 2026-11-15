@@ -3,16 +3,18 @@ import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { TeamAvatar } from "@/components/shared/team-avatar";
-import { LeagueScoringTrendChart } from "@/components/charts/league-scoring-trend-chart";
+import { LeagueScoringTrendChart, type ScoringAnnotation } from "@/components/charts/league-scoring-trend-chart";
+import { ChartFrame } from "@/components/charts/chart-frame";
+import { SeasonIndexCardView } from "@/components/history/season-index-card";
 import {
   getLeagueScoringTrend,
+  listSeasonIndex,
   listSeasonsWithChampions,
   listApprovedHistorySections,
   listSeasonPreviews,
 } from "@/server/repositories/history-repository";
-import { History as HistoryIcon, ScrollText, Trophy } from "lucide-react";
+import { History as HistoryIcon, ScrollText } from "lucide-react";
 
 /**
  * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
@@ -22,22 +24,56 @@ export const revalidate = 3600;
 
 export const metadata = { title: "League History" };
 
-const SEASON_STATUS_LABEL: Record<string, string> = {
-  UPCOMING: "Upcoming",
-  IN_PROGRESS: "In progress",
-  COMPLETE: "Complete",
-};
+/**
+ * Changes that moved the scoring line, each from the commissioner's own
+ * season recaps (2018: "transition to a decimal point scoring system";
+ * 2019: "the league transitioned to a PPR format"; 2023: "transitioned to a
+ * new platform, Sleeper"). The 2017 season had 8 teams; every season since
+ * has had 10. The numbers in the 2019 note are read off the data at render.
+ */
+function scoringAnnotations(trend: { season: number; averageScore: number }[]): ScoringAnnotation[] {
+  const avg = (y: number) => trend.find((t) => t.season === y)?.averageScore;
+  const pre = avg(2018);
+  const ppr = avg(2019);
+  const out: ScoringAnnotation[] = [
+    {
+      season: 2018,
+      label: "Decimals",
+      side: "left",
+      detail: "2018: decimal scoring arrives (goodbye, ties) and the league grows from 8 teams to 10.",
+    },
+    {
+      season: 2019,
+      label: "PPR",
+      side: "right",
+      detail:
+        pre != null && ppr != null
+          ? `2019: the league goes PPR. The average score jumps ${(ppr - pre).toFixed(1)} points a team (${pre.toFixed(1)} → ${ppr.toFixed(1)}).`
+          : "2019: the league goes PPR.",
+    },
+    {
+      season: 2023,
+      label: "Sleeper",
+      side: "right",
+      detail: "2023: the league moves from ESPN to Sleeper. A platform change, not a scoring one.",
+    },
+  ];
+  return out.filter((a) => trend.some((t) => t.season === a.season));
+}
 
 
 export default async function HistoryPage() {
   // Pre-rendered when the build can reach the database; otherwise rendered per request.
   await renderAtRequestIfNoDatabase();
-  const [seasons, trend, narrative, articles] = await Promise.all([
+  const [seasons, index, trend, narrative, articles] = await Promise.all([
     listSeasonsWithChampions(),
+    listSeasonIndex(),
     getLeagueScoringTrend(),
     listApprovedHistorySections(),
     listSeasonPreviews(),
   ]);
+  const annotations = scoringAnnotations(trend);
+  const current = trend.find((t) => t.inProgress);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
@@ -129,36 +165,12 @@ export default async function HistoryPage() {
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Season Index</h2>
-          {seasons.length === 0 ? (
+          {index.length === 0 ? (
             <EmptyState icon={HistoryIcon} title="No seasons recorded yet" />
           ) : (
             <div className="space-y-3">
-              {seasons.map((season) => (
-                <Link key={season.id} href={`/history/${season.year}`} className="block">
-                  <Card className="transition-colors hover:border-primary/60">
-                    <CardContent className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="font-heading text-xl font-semibold">{season.year}</p>
-                        <Badge variant="outline" className="mt-1 text-[12px] uppercase">
-                          {SEASON_STATUS_LABEL[season.status] ?? season.status}
-                        </Badge>
-                      </div>
-                      {season.championship ? (
-                        <div className="flex items-center gap-2 text-right">
-                          <div>
-                            <p className="text-xs tracking-wide text-muted-foreground uppercase">
-                              Champion
-                            </p>
-                            <p className="font-medium">{season.championship.championManager.displayName}</p>
-                          </div>
-                          <Trophy className="h-5 w-5 text-gold" />
-                        </div>
-                      ) : (
-                        <span className="text-sm text-muted-foreground">In progress</span>
-                      )}
-                    </CardContent>
-                  </Card>
-                </Link>
+              {index.map((season) => (
+                <SeasonIndexCardView key={season.id} season={season} />
               ))}
             </div>
           )}
@@ -168,15 +180,30 @@ export default async function HistoryPage() {
           <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
             League Scoring Trend
           </h2>
-          <Card>
-            <CardContent>
-              {trend.length === 0 ? (
-                <EmptyState title="No scoring data yet" />
-              ) : (
-                <LeagueScoringTrendChart data={trend} />
-              )}
-            </CardContent>
-          </Card>
+          {trend.length === 0 ? (
+            <EmptyState title="No scoring data yet" />
+          ) : (
+            <ChartFrame
+              title="Average weekly score by season"
+              caption={
+                <>
+                  Verified scores only. Dashed lines mark rule and platform changes: {annotations.map((a) => a.detail).join(" ")}
+                  {current ? ` The hollow ${current.season} point is a season in progress.` : ""}
+                </>
+              }
+              summary={`League-average weekly score per team from ${trend[0].season} to ${trend[trend.length - 1].season}. ${annotations.map((a) => a.detail).join(" ")}`}
+              table={{
+                headers: ["Season", "Avg. weekly score", "Note"],
+                rows: trend.map((t) => [
+                  `${t.season}${t.inProgress ? " (in progress)" : ""}`,
+                  t.averageScore.toFixed(1),
+                  annotations.find((a) => a.season === t.season)?.detail ?? "",
+                ]),
+              }}
+            >
+              <LeagueScoringTrendChart data={trend} annotations={annotations} />
+            </ChartFrame>
+          )}
 
           <Card>
             <CardHeader>

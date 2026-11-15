@@ -111,7 +111,7 @@ export function MultiLineChart({
           formatter={(v, name) => [tooltipFormat && typeof v === "number" ? fmtWith(tooltipFormat, String)(v) : String(v ?? "—"), String(name)]}
           itemSorter={(item) => (reversedY ? Number(item.value) : -Number(item.value))}
         />
-        {legend ? <Legend wrapperStyle={{ fontSize: 11 }} /> : null}
+        {legend ? <Legend wrapperStyle={{ fontSize: 11, paddingTop: 22 }} /> : null}
         {series.map((s) => (
           <Line
             key={s.key}

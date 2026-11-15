@@ -5,11 +5,15 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
+  getTransactionSeasonCharts,
   getTransactionsPage,
   TRANSACTIONS_PAGE_SIZE,
   type TransactionView,
 } from "@/server/repositories/transaction-repository";
-import { MatchupsHubLink } from "@/components/shared/matchups-hub-link";
+import { prisma } from "@/lib/db";
+import { teamColorMap } from "@/lib/chart-theme";
+import { ActivityGrid } from "@/components/transactions/activity-grid";
+import { BestPickups } from "@/components/transactions/best-pickups";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { positionLabel } from "@/lib/format";
@@ -95,6 +99,13 @@ export default async function TransactionsPage({
     limit: Number.isFinite(requestedShown) ? requestedShown : TRANSACTIONS_PAGE_SIZE,
   });
 
+  // Whole-season charts for the chosen year; the week/type/manager filters are for the wire only.
+  const [charts, managerIds] = await Promise.all([
+    page.seasonYear ? getTransactionSeasonCharts(page.seasonYear) : Promise.resolve(null),
+    prisma.manager.findMany({ select: { id: true } }),
+  ]);
+  const colors = Object.fromEntries(teamColorMap(managerIds.map((m) => m.id)));
+
   const currentPeriod = page.periods.find((p) => p.year === page.seasonYear);
   const activeManager = page.managerOptions.find((m) => m.id === page.managerId);
 
@@ -133,8 +144,6 @@ export default async function TransactionsPage({
         title="Transactions"
         description="Every add, drop, claim and trade on record. A waiver claim that lost is shown as a claim that lost, not as an acquisition."
       />
-
-      <MatchupsHubLink what="transaction" />
 
       {/*
        * The filters are built from the periods that actually contain data, so
@@ -331,7 +340,31 @@ export default async function TransactionsPage({
         </p>
       ) : null}
 
-      <p className="mt-4 text-sm text-muted-foreground">
+      {charts && charts.activity.weeks.length > 0 ? (
+        <section className="mt-8 space-y-4" aria-labelledby="wire-season-heading">
+          <div>
+            <h2 id="wire-season-heading" className="font-heading text-lg font-semibold tracking-wide uppercase">
+              The {charts.seasonYear} season on the wire
+            </h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              The whole season, whatever the week, type or manager filters above say. Waivers here run on
+              rolling priority, not FAAB: nobody has spent a dollar of budget, so there is no bidding war to chart.
+            </p>
+          </div>
+          <ActivityGrid activity={charts.activity} seasonYear={charts.seasonYear} />
+          {charts.bestPickups.length > 0 ? (
+            <BestPickups pickups={charts.bestPickups} seasonYear={charts.seasonYear} colors={colors} />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {charts.hasPlayerScores
+                ? `No ${charts.seasonYear} waiver or free-agent add has started a game for his new team yet.`
+                : `No per-week player scores are on record for ${charts.seasonYear}, so pickups cannot be scored.`}
+            </p>
+          )}
+        </section>
+      ) : null}
+
+      <p className="mt-8 text-sm text-muted-foreground">
         {page.totalMatching} transaction{page.totalMatching === 1 ? "" : "s"} in{" "}
         {page.seasonYear ?? "this period"}
         {page.week != null ? `, week ${page.week}` : ""}

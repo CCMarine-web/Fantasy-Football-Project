@@ -15,6 +15,12 @@ import {
 import { LOPSIDEDNESS_LABEL, type Lopsidedness } from "@/server/stats/trade-value";
 import { ordinal, positionLabel } from "@/lib/format";
 import { Gavel, ArrowRight, Info } from "lucide-react";
+import { prisma } from "@/lib/db";
+import { teamColorMap } from "@/lib/chart-theme";
+import { tradeLedger, tradePartnerGrid } from "@/server/stats/trade-ledger";
+import { TradeValueChart } from "@/components/trades/trade-value-chart";
+import { TradeLedgerChart } from "@/components/trades/trade-ledger-chart";
+import { TradePartnerGrid } from "@/components/trades/trade-partner-grid";
 
 export const metadata = { title: "Trade Tribunal" };
 
@@ -47,6 +53,20 @@ export default async function TradeTribunalPage({
   const headline = all.filter(isHeadlineTrade);
   const quiet = all.filter((t) => !isHeadlineTrade(t));
   const trades = showAll ? all : headline;
+
+  // One colour per manager, the same on every chart on the site.
+  const colorMap = teamColorMap((await prisma.manager.findMany({ select: { id: true } })).map((m) => m.id));
+  const colors = Object.fromEntries(colorMap);
+
+  // The ledger and partner grid are over EVERY trade, not just the headline ones.
+  const ledgerInput = all.map((t) => ({ sides: t.sides.map((s) => ({ managerId: s.managerId, value: s.value })) }));
+  const ledger = tradeLedger(ledgerInput);
+  const partnerCells = Object.fromEntries(tradePartnerGrid(ledgerInput));
+  const names: Record<string, string> = {};
+  for (const t of all) for (const s of t.sides) names[s.managerId] = s.managerName;
+  const traders = Object.entries(names)
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -123,6 +143,19 @@ export default async function TradeTribunalPage({
         </CardContent>
       </Card>
 
+      {/* League-wide: who profits from trading, and who keeps dialing whom. */}
+      {ledger.length > 0 ? (
+        <section className="mt-8 space-y-4" aria-labelledby="ledger-heading">
+          <h2 id="ledger-heading" className="font-heading text-lg font-semibold tracking-wide uppercase">
+            The books
+          </h2>
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+            <TradeLedgerChart ledger={ledger} names={names} />
+            <TradePartnerGrid managers={traders} cells={partnerCells} />
+          </div>
+        </section>
+      ) : null}
+
       {/* Default view hides the deals nobody won. */}
       {quiet.length > 0 ? (
         <div className="mt-6 flex flex-wrap items-center gap-3 text-sm">
@@ -152,14 +185,26 @@ export default async function TradeTribunalPage({
             }
           />
         ) : (
-          trades.map((t) => <TradeCard key={t.transactionId} t={t} verdict={verdicts.get(t.transactionId)} />)
+          trades.map((t) => (
+            <TradeCard key={t.transactionId} t={t} verdict={verdicts.get(t.transactionId)} colors={colors} />
+          ))
         )}
       </div>
     </div>
   );
 }
 
-function TradeCard({ t, verdict }: { t: TradeTribunalView; verdict?: RenderedText }) {
+function TradeCard({
+  t,
+  verdict,
+  colors,
+}: {
+  t: TradeTribunalView;
+  verdict?: RenderedText;
+  colors: Record<string, string>;
+}) {
+  // A cached view from before the timeline existed has none; treat it as empty.
+  const timeline = t.timeline ?? [];
   const decisive =
     t.lopsidedness === "HIGHWAY_ROBBERY" ||
     t.lopsidedness === "FLEECED" ||
@@ -322,6 +367,20 @@ function TradeCard({ t, verdict }: { t: TradeTribunalView; verdict?: RenderedTex
           bar was 6 points a game or 16. Per position, and for THIS season's
           window — replacement level is not a constant across years.
         */}
+        {/* Collapsed: fourteen cards each carrying a chart is a long scroll on a phone. */}
+        {timeline.length > 0 ? (
+          <details className="rounded-md border border-border/60 bg-muted/20 px-3 py-2">
+            <summary className="cursor-pointer text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+              Value over time (weeks {timeline[0].week}–{timeline.at(-1)?.week})
+            </summary>
+            <TradeValueChart timeline={timeline} sides={t.sides} colors={colors} />
+          </details>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No weeks scored since the deal yet, so there is no value-over-time line to draw.
+          </p>
+        )}
+
         {t.benchmarks.length > 0 ? (
           <details className="rounded-md border border-border/60 bg-muted/20 px-3 py-2">
             <summary className="cursor-pointer text-[11px] font-medium tracking-wide text-muted-foreground uppercase">

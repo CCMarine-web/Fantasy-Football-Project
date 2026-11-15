@@ -6,9 +6,15 @@ const nextConfig: NextConfig = {
    * links — bookmarks, anything shared into the group chat over the last year —
    * still work. 308 rather than 307 because the move is permanent and the query
    * string (`?week=4`) is carried across automatically.
+   *
+   * /drafts (the board) merged into /draft-report-cards as its Board tab; a
+   * `?season=2024` on the old link is carried across the same way.
    */
   async redirects() {
-    return [{ source: "/weekly", destination: "/matchups", permanent: true }];
+    return [
+      { source: "/weekly", destination: "/matchups", permanent: true },
+      { source: "/drafts", destination: "/draft-report-cards?tab=board", permanent: true },
+    ];
   },
   /**
    * The link-preview cards (opengraph-image routes) read their fonts, the rat

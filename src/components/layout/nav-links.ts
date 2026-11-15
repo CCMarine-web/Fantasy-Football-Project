@@ -27,11 +27,12 @@ export function isNavGroup(item: NavItem): item is NavGroup {
  * arriving at a fantasy football site is looking for "Weekly", and the featured
  * Matchup of the Week is now the first thing on it. /weekly redirects here.
  *
- * Draft Cards and Trade Tribunal are top-level rather than buried in History —
+ * Drafts and Trade Tribunal are top-level rather than buried in History —
  * they are recurring features people come back for, not archive material.
- * "Draft Cards" is the nav label for the Draft Report Cards page: the full name
- * measured 148px against a header column with only ~60px to spare, so the short
- * form is what makes the item fit inline at all. The page keeps its full title.
+ * "Drafts" is the one entry for the merged draft page (/draft-report-cards,
+ * with Board | Grades | Revisited tabs); the old History > Drafts board is
+ * now its Board tab and /drafts redirects there. The label is shorter than the
+ * "Draft Cards" it replaced, so the measurements below still hold.
  *
  * Ordering matters: the last items are the ones that fold into "More" on a
  * narrower desktop (see site-header.tsx).
@@ -41,7 +42,7 @@ export const primaryNav: NavItem[] = [
   { href: "/power-rankings", label: "Power Rankings" },
   { href: "/managers", label: "Managers" },
   { href: "/rivalries", label: "Rivalries" },
-  { href: "/draft-report-cards", label: "Draft Cards" },
+  { href: "/draft-report-cards", label: "Drafts" },
   { href: "/trade-tribunal", label: "Trade Tribunal" },
   {
     label: "This Week",
@@ -58,7 +59,6 @@ export const primaryNav: NavItem[] = [
       { href: "/records", label: "Records" },
       { href: "/hall-of-shame", label: "Hall of Shame" },
       { href: "/championship-belt", label: "Championship Belt" },
-      { href: "/drafts", label: "Drafts" },
     ],
   },
 ];
@@ -70,7 +70,7 @@ export const primaryNav: NavItem[] = [
  *
  * These are measured, not guessed. The row now measures:
  *   Matchups 82 · Power Rankings 127 · Managers 78 · Rivalries 67 ·
- *   Draft Cards 91 · Trade Tribunal 110, then the two dropdowns
+ *   Draft Cards 91 (now "Drafts", narrower) · Trade Tribunal 110, then the two dropdowns
  *   This Week 85 · History 74, with a 16px gap.
  *
  * The masthead takes 280px and the container 64px of padding, so:
@@ -99,7 +99,7 @@ export const INLINE_NAV_XL = 6;
  * people who cannot take part.
  */
 const footerExtras: NavLink[] = [
-  { href: "/draft-report-cards", label: "Draft Report Cards" },
+  { href: "/draft-report-cards", label: "Drafts & Report Cards" },
 ];
 
 /**

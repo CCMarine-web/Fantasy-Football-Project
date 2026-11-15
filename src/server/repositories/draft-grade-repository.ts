@@ -819,3 +819,113 @@ export async function listGradedSeasons(): Promise<{ year: number }[]> {
     select: { year: true },
   });
 }
+
+// ---------------------------------------------------------------------------
+// Per-pick hindsight (the board's steal/bust view)
+// ---------------------------------------------------------------------------
+
+export interface PickReturn {
+  pickNumber: number;
+  /** Total points so far, or null when the player never registered a score. */
+  totalPoints: number | null;
+  gamesPlayed: number;
+  pointsPerGame: number;
+  /**
+   * Overall pick number minus the player's per-game production rank among
+   * everyone drafted — the same `valueDelta` the revisited grade is built on.
+   * Positive: outproduced the slot (a steal). Negative: fell short (a bust).
+   */
+  valueDelta: number;
+}
+
+/**
+ * Every pick's hindsight value for one Sleeper season, so far.
+ *
+ * Uses `computeDraftReturns` itself rather than a second copy of the math:
+ * each pick is passed in as a one-pick "team", so the class-wide production
+ * ranking is exactly the one the revisited grade uses, and each one-pick
+ * team's `bestPicks[0]` is that pick's own `valueDelta` and points per game.
+ *
+ * Null for ESPN seasons (no per-player weekly scoring) and for any season with
+ * no player scoring on record yet.
+ */
+export async function loadPickReturns(
+  seasonId: string,
+): Promise<{ picks: Map<number, PickReturn>; throughWeek: number | null } | null> {
+  const season = await prisma.season.findUnique({
+    where: { id: seasonId },
+    select: { status: true, dataSource: true },
+  });
+  if (!season || season.dataSource !== "SLEEPER") return null;
+
+  // The same two inputs loadDraftReturns reads.
+  const [picks, playerTotals, lastWeek] = await Promise.all([
+    prisma.draftPick.findMany({
+      where: { draft: { seasonId } },
+      select: {
+        round: true,
+        pickNumber: true,
+        isKeeper: true,
+        player: { select: { id: true, firstName: true, lastName: true } },
+      },
+      orderBy: { pickNumber: "asc" },
+    }),
+    prisma.weeklyPlayerScore.groupBy({
+      by: ["playerId"],
+      where: { roster: { fantasyTeam: { seasonId } }, points: { not: null } },
+      _sum: { points: true },
+      _count: { _all: true },
+    }),
+    season.status === "IN_PROGRESS"
+      ? prisma.matchup.findFirst({
+          where: { seasonId, status: "FINAL", teams: { some: { score: { not: null } } } },
+          orderBy: { week: "desc" },
+          select: { week: true },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  const production = new Map(
+    playerTotals.map((row) => [row.playerId, { total: row._sum.points ?? 0, games: row._count._all }]),
+  );
+
+  const singletons: TeamReturnInput[] = picks.map((pick) => {
+    const stats = pick.player ? production.get(pick.player.id) : undefined;
+    return {
+      fantasyTeamId: `pick:${pick.pickNumber}`,
+      managerId: `pick:${pick.pickNumber}`,
+      managerName: `Pick ${pick.pickNumber}`,
+      picks: [
+        {
+          overallPickNumber: pick.pickNumber,
+          round: pick.round,
+          isKeeper: pick.isKeeper,
+          playerId: pick.player?.id ?? null,
+          playerName: pick.player ? `${pick.player.firstName} ${pick.player.lastName}` : "(no player on record)",
+          totalPoints: stats?.total ?? null,
+          gamesPlayed: stats?.games ?? 0,
+        },
+      ],
+    };
+  });
+
+  const returns = computeDraftReturns(singletons);
+  if (!returns.available) return null;
+
+  const playerByPick = new Map(picks.map((p) => [p.pickNumber, p.player?.id ?? null]));
+  const result = new Map<number, PickReturn>();
+  for (const team of returns.teams) {
+    const only = team.bestPicks[0];
+    if (!only) continue;
+    const playerId = playerByPick.get(only.pickNumber);
+    const stats = playerId ? production.get(playerId) : undefined;
+    result.set(only.pickNumber, {
+      pickNumber: only.pickNumber,
+      totalPoints: stats ? Math.round(stats.total * 10) / 10 : null,
+      gamesPlayed: stats?.games ?? 0,
+      pointsPerGame: only.pointsPerGame,
+      valueDelta: only.valueDelta,
+    });
+  }
+  return { picks: result, throughWeek: lastWeek?.week ?? null };
+}

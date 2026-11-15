@@ -14,6 +14,7 @@ import {
   type ValuedPlayer,
   type ValuedSide,
 } from "@/server/stats/trade-value";
+import { buildValueTimeline, type TimelinePoint } from "@/server/stats/trade-ledger";
 
 /**
  * The Trade Tribunal: what each trade was actually worth, and how one-sided it
@@ -85,6 +86,13 @@ export interface TradeTribunalView {
    * Only positions involved in this trade appear.
    */
   benchmarks: PositionBenchmark[];
+  /**
+   * Each side's running value after every week from the trade to the last
+   * scored week, re-valued on the same window and replacement lines as the
+   * card, so the last point equals each side's `value`. Empty when nothing
+   * was scored. Values are keyed by manager id.
+   */
+  timeline: TimelinePoint[];
 }
 
 export interface PositionBenchmark {
@@ -369,6 +377,36 @@ async function buildTradeTribunal(options: { tradeWeekRule?: "owner" | "all" } =
       confidentPlayers,
     });
 
+    // ── Value over time: the same valuation, cut off at each week ─────────
+    const acquiredIds = new Set(valuedSides.flatMap((s) => s.players.map((p) => p.playerId)));
+    const weeklyByPlayer = new Map<string, { week: number; points: number }[]>();
+    for (const row of windowRows) {
+      if (!acquiredIds.has(row.playerId)) continue;
+      const list = weeklyByPlayer.get(row.playerId) ?? [];
+      list.push({ week: row.week, points: row.points });
+      weeklyByPlayer.set(row.playerId, list);
+    }
+    const firstWeek = Math.max(1, fromWeek, windowRows.length > 0 ? Math.min(...windowRows.map((r) => r.week)) : 1);
+    const timeline =
+      seasonRows.length > 0 && valuedSides.length > 0 && lastWeek >= firstWeek
+        ? buildValueTimeline({
+            sides: valuedSides.map((s) => ({
+              managerId: s.managerId,
+              consolidationCredit: s.consolidationCredit,
+              players: s.players.map((p) => ({
+                playerId: p.playerId,
+                name: p.name,
+                position: p.position,
+                weekly: weeklyByPlayer.get(p.playerId) ?? [],
+              })),
+            })),
+            weeks: Array.from({ length: lastWeek - firstWeek + 1 }, (_, i) => firstWeek + i),
+            contexts,
+            playoffStart,
+            weeksRemaining,
+          })
+        : [];
+
     const nameById = new Map(valuedSides.map((s) => [s.managerId, s.managerName]));
     const winnerName = valuation.winnerManagerId
       ? (nameById.get(valuation.winnerManagerId) ?? null)
@@ -461,6 +499,7 @@ async function buildTradeTribunal(options: { tradeWeekRule?: "owner" | "all" } =
         })
         .filter((b): b is PositionBenchmark => b != null)
         .sort((a, b) => a.position.localeCompare(b.position)),
+      timeline,
     };
   });
 

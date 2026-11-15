@@ -47,9 +47,10 @@ export function DaysSinceCounter({
       <span className="font-heading text-lg font-semibold tracking-wide uppercase">
         {state.days === 1 ? "day" : "days"} {label}
       </span>
-      <span className="ml-1 font-mono text-xs tabular-nums text-muted-foreground">
-        {String(state.hours).padStart(2, "0")}:{String(state.minutes).padStart(2, "0")}:
-        {String(state.seconds).padStart(2, "0")}
+      {/* Labelled part-day, not a bare "23:06:27". */}
+      <span className="font-mono text-xs tabular-nums text-muted-foreground" title="Hours, minutes and seconds on top of the day count">
+        +{String(state.hours).padStart(2, "0")}h {String(state.minutes).padStart(2, "0")}m{" "}
+        {String(state.seconds).padStart(2, "0")}s
       </span>
     </div>
   );

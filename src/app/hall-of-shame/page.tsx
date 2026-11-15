@@ -15,6 +15,10 @@ import { ordinal } from "@/lib/format";
 import { Camera, Skull } from "lucide-react";
 import { BrandArt, hasBrandArt } from "@/components/shared/brand-art";
 import { managerSlotKey } from "@/lib/brand-assets";
+import { ChartFrame } from "@/components/charts/chart-frame";
+import { SimpleBars } from "@/components/charts/charts";
+import { teamColorMap } from "@/lib/chart-theme";
+import { BenchLeaderboard } from "@/components/shame/bench-leaderboard";
 
 export const metadata = { title: "Hall of Shame" };
 
@@ -45,6 +49,22 @@ export default async function HallOfShamePage() {
     : new Set<string>();
   const benchCovered = shame.benchYearsCovered;
   const benchGap = shame.allYears.filter((y) => !benchCovered.includes(y));
+
+  // Last-place finishes per manager: completed seasons only, the same rows as
+  // the table. Colours by manager id across the whole league, as every chart.
+  const palette = teamColorMap((await prisma.manager.findMany({ select: { id: true } })).map((m) => m.id));
+  const lastPlaceTally = [
+    ...shame.lastPlace
+      .reduce((acc, l) => {
+        const e = acc.get(l.managerId) ?? { managerId: l.managerId, name: l.managerName, years: [] as number[] };
+        e.years.push(l.year);
+        return acc.set(l.managerId, e);
+      }, new Map<string, { managerId: string; name: string; years: number[] }>())
+      .values(),
+  ].sort((a, b) => b.years.length - a.years.length || a.name.localeCompare(b.name));
+  const lastPlaceLine = lastPlaceTally
+    .map((t) => `${t.name} ${t.years.length} (${[...t.years].sort((a, b) => a - b).join(", ")})`)
+    .join("; ");
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -214,6 +234,31 @@ export default async function HallOfShamePage() {
         )}
       </section>
 
+      {lastPlaceTally.length > 0 ? (
+        <ChartFrame
+          className="mt-6"
+          title="Last-place finishes by manager"
+          caption={`Completed seasons only, regular-season standings. ${lastPlaceLine}.`}
+          summary={`Regular-season last-place finishes per manager across ${shame.lastPlace.length} completed seasons: ${lastPlaceLine}.`}
+          table={{
+            headers: ["Manager", "Last-place finishes", "Seasons"],
+            rows: lastPlaceTally.map((t) => [t.name, t.years.length, [...t.years].sort((a, b) => a - b).join(", ")]),
+          }}
+          height={lastPlaceTally.length > 5 ? "h-72" : "h-52"}
+        >
+          <SimpleBars
+            horizontal
+            valueLabel="Last-place finishes"
+            valueFormat="fixed0"
+            data={lastPlaceTally.map((t) => ({
+              label: t.name,
+              value: t.years.length,
+              color: palette.get(t.managerId),
+            }))}
+          />
+        </ChartFrame>
+      ) : null}
+
       {/* ── 4. The record lows ───────────────────────────────────────────── */}
       <section className="mt-12">
         <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
@@ -258,6 +303,25 @@ export default async function HallOfShamePage() {
           </div>
         )}
       </section>
+
+      {/* ── 5. Points left on the bench ─────────────────────────────────── */}
+      {shame.benchWorstWeeks.length > 0 ? (
+        <section className="mt-12">
+          <h2 className="mb-2 font-heading text-lg font-semibold tracking-wide uppercase">
+            Bench Points Leaderboard
+          </h2>
+          <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
+            Points a manager could have started and didn&apos;t: the best legal lineup from that week&apos;s
+            roster (FLEX takes RB, WR or TE; nobody plays out of position) minus what the started lineup
+            scored. Only weeks with a real, verified head-to-head game count, so an eliminated team&apos;s
+            empty postseason week isn&apos;t held against anyone. Player-level scores exist for{" "}
+            {benchCovered.join(", ")}
+            {benchGap.length > 0 ? `; earlier seasons (${benchGap.join(", ")}) have no player scores to check` : ""}. Ties share a
+            rank.
+          </p>
+          <BenchLeaderboard weeks={shame.benchWorstWeeks} career={shame.benchCareer} />
+        </section>
+      ) : null}
     </div>
   );
 }

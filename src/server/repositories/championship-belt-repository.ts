@@ -1,5 +1,8 @@
 import { prisma } from "@/lib/db";
 import { nflSeasonStartDate, weekEndMs } from "@/lib/nfl-schedule";
+import { cached, CACHE_TAGS } from "@/server/cache";
+import { computeLinealBelt, type LinealBelt } from "@/server/stats/lineal-belt";
+import { loadVerifiedGames } from "./verified-games";
 
 export interface PlayoffGameResult {
   week: number;
@@ -193,3 +196,66 @@ export async function updateVictorySpeech(seasonId: string, text: string): Promi
     data: { victorySpeech: text.trim() || null },
   });
 }
+
+/**
+ * The lineal belt (server/stats/lineal-belt.ts), from the verified game log.
+ *
+ * It starts with the first recorded champion at their title game: the
+ * championship-bracket game that season between the champion and the
+ * runner-up, or — if that pairing is not on record — the champion's last
+ * championship-bracket game that season. Null when no title game exists yet.
+ */
+export const getLinealBelt = cached(
+  async (): Promise<LinealBelt | null> => {
+    const [first, rows] = await Promise.all([
+      prisma.championship.findFirst({
+        where: { season: { status: "COMPLETE" } },
+        orderBy: { season: { year: "asc" } },
+        select: {
+          seasonId: true,
+          championFantasyTeamId: true,
+          runnerUpFantasyTeamId: true,
+          championManager: { select: { id: true, displayName: true } },
+          season: { select: { year: true } },
+        },
+      }),
+      loadVerifiedGames(),
+    ]);
+    if (!first) return null;
+    const titleGames = rows
+      .filter(
+        (g) =>
+          g.seasonId === first.seasonId &&
+          g.fantasyTeamId === first.championFantasyTeamId &&
+          g.isPlayoff &&
+          g.bracket === "WINNERS",
+      )
+      .sort((a, b) => b.week - a.week);
+    const titleGame =
+      titleGames.find((g) => g.opponentTeamId === first.runnerUpFantasyTeamId) ?? titleGames[0];
+    if (!titleGame) return null;
+    return computeLinealBelt(
+      rows.map((g) => ({
+        year: g.year,
+        week: g.week,
+        isPlayoff: g.isPlayoff,
+        bracket: g.bracket,
+        managerId: g.managerId,
+        managerName: g.managerName,
+        opponentManagerId: g.opponentManagerId,
+        opponentManagerName: g.opponentManagerName,
+        score: g.score,
+        opponentScore: g.opponentScore,
+        isWinner: g.isWinner,
+      })),
+      {
+        managerId: first.championManager.id,
+        managerName: first.championManager.displayName,
+        year: first.season.year,
+        week: titleGame.week,
+      },
+    );
+  },
+  ["lineal-belt"],
+  { tags: [CACHE_TAGS.league] },
+);

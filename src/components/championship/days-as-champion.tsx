@@ -43,7 +43,7 @@ export function DaysAsChampion({
   if (Number.isNaN(startMs) || !elapsed) return null;
 
   return (
-    <div className="inline-flex items-baseline gap-2" suppressHydrationWarning>
+    <div className="inline-flex flex-wrap items-baseline gap-x-2 gap-y-1" suppressHydrationWarning>
       <Crown className="h-6 w-6 shrink-0 translate-y-1 text-primary" aria-hidden />
       <span className="font-heading text-4xl font-semibold tabular-nums text-primary sm:text-5xl">
         {elapsed.days.toLocaleString()}
@@ -51,9 +51,14 @@ export function DaysAsChampion({
       <span className="font-heading text-lg font-semibold tracking-wide uppercase">
         {elapsed.days === 1 ? "day" : "days"} as champion
       </span>
-      <span className="ml-1 font-mono text-xs tabular-nums text-muted-foreground">
-        {String(elapsed.hours).padStart(2, "0")}:{String(elapsed.minutes).padStart(2, "0")}:
-        {String(elapsed.seconds).padStart(2, "0")}
+      {/* The part-day on top of the day count, labelled: a bare "23:06:27"
+          read like a clock or a countdown to something. */}
+      <span className="text-xs text-muted-foreground">
+        <span className="font-mono tabular-nums">
+          +{String(elapsed.hours).padStart(2, "0")}h {String(elapsed.minutes).padStart(2, "0")}m{" "}
+          {String(elapsed.seconds).padStart(2, "0")}s
+        </span>{" "}
+        since the title game ended
       </span>
     </div>
   );

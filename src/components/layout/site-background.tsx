@@ -59,7 +59,6 @@ const PHOTOS = {
  */
 const ROUTE_BACKGROUNDS: [string, BackgroundChoice][] = [
   ["/draft-report-cards", PHOTOS.draftRoom],
-  ["/drafts", PHOTOS.draftRoom],
   ["/championship-belt", PHOTOS.trophy],
   ["/hall-of-shame", PHOTOS.bar],
   ["/trade-tribunal", PHOTOS.table],

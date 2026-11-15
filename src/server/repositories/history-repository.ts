@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { excerpt, paragraphsOf, wordCount } from "@/lib/excerpt";
 import { cached, CACHE_TAGS } from "@/server/cache";
+import { getLastPlaceBySeason } from "./hall-of-shame-repository";
 
 /**
  * League-average score per season.
@@ -12,7 +13,7 @@ import { cached, CACHE_TAGS } from "@/server/cache";
  * Seasons with no verified score at all are omitted rather than plotted at zero.
  */
 export const getLeagueScoringTrend = cached(
-  async (): Promise<{ season: number; averageScore: number }[]> => {
+  async (): Promise<{ season: number; averageScore: number; inProgress: boolean }[]> => {
     const seasons = await prisma.season.findMany({ orderBy: { year: "asc" } });
     const results = await Promise.all(
       seasons.map(async (season) => {
@@ -25,14 +26,15 @@ export const getLeagueScoringTrend = cached(
           season: season.year,
           averageScore: agg._avg.score ?? 0,
           scores: agg._count._all,
+          inProgress: season.status !== "COMPLETE",
         };
       }),
     );
     return results
       .filter((r) => r.scores > 0)
-      .map(({ season, averageScore }) => ({ season, averageScore }));
+      .map(({ season, averageScore, inProgress }) => ({ season, averageScore, inProgress }));
   },
-  ["league-scoring-trend"],
+  ["league-scoring-trend-v2"],
   { tags: [CACHE_TAGS.league] },
 );
 
@@ -243,3 +245,103 @@ export async function listSeasonArticles(): Promise<SeasonArticleView[]> {
       .filter(Boolean),
   }));
 }
+
+export interface SeasonIndexPerson {
+  /** Null when several managers share the line (names joined with " & "). */
+  managerId: string | null;
+  name: string;
+  /** e.g. "11-3" or "1,712.4 PF". */
+  note: string | null;
+}
+
+export interface SeasonIndexCard {
+  id: string;
+  year: number;
+  status: string;
+  /** True for any season that is not COMPLETE: nothing below is final. */
+  inProgress: boolean;
+  champion: SeasonIndexPerson | null;
+  runnerUp: SeasonIndexPerson | null;
+  /** Regular-season #1 by the platform's own standings order. */
+  topSeed: SeasonIndexPerson | null;
+  /** Most regular-season points; a tie names everyone in it. */
+  pointsLeader: SeasonIndexPerson | null;
+  /** Regular-season last place, the same finish the Hall of Shame lists. */
+  lastPlace: SeasonIndexPerson | null;
+}
+
+const rec = (t: { wins: number; losses: number; ties: number }) => `${t.wins}-${t.losses}${t.ties ? `-${t.ties}` : ""}`;
+
+/**
+ * One row per season for the /history index: champion, runner-up, #1 seed,
+ * points leader and last place. A season still being played carries none of
+ * them — a team leading in week 9 has not "finished first" — so the index
+ * says "In progress" instead of claiming a final result.
+ */
+export const listSeasonIndex = cached(
+  async (): Promise<SeasonIndexCard[]> => {
+    const [seasons, lastPlace] = await Promise.all([
+      prisma.season.findMany({
+        orderBy: { year: "desc" },
+        select: {
+          id: true,
+          year: true,
+          status: true,
+          championship: {
+            select: {
+              championManager: { select: { id: true, displayName: true } },
+              championFantasyTeam: { select: { wins: true, losses: true, ties: true } },
+              runnerUpFantasyTeam: { select: { manager: { select: { id: true, displayName: true } } } },
+            },
+          },
+          fantasyTeams: {
+            select: {
+              wins: true,
+              losses: true,
+              ties: true,
+              pointsFor: true,
+              regularSeasonRank: true,
+              manager: { select: { id: true, displayName: true } },
+            },
+          },
+        },
+      }),
+      getLastPlaceBySeason(),
+    ]);
+    const lastByYear = new Map(lastPlace.map((l) => [l.year, l]));
+
+    return seasons.map((s) => {
+      const base = { id: s.id, year: s.year, status: s.status };
+      if (s.status !== "COMPLETE") {
+        return { ...base, inProgress: true, champion: null, runnerUp: null, topSeed: null, pointsLeader: null, lastPlace: null };
+      }
+      const played = s.fantasyTeams.filter((t) => t.wins + t.losses + t.ties > 0);
+      const seed = played.find((t) => t.regularSeasonRank === 1);
+      const topPf = Math.max(...played.map((t) => t.pointsFor));
+      const leaders = played
+        .filter((t) => Math.abs(t.pointsFor - topPf) < 0.005)
+        .sort((a, b) => a.manager.displayName.localeCompare(b.manager.displayName));
+      const last = lastByYear.get(s.year);
+      const c = s.championship;
+      return {
+        ...base,
+        inProgress: false,
+        champion: c ? { managerId: c.championManager.id, name: c.championManager.displayName, note: rec(c.championFantasyTeam) } : null,
+        runnerUp: c?.runnerUpFantasyTeam
+          ? { managerId: c.runnerUpFantasyTeam.manager.id, name: c.runnerUpFantasyTeam.manager.displayName, note: null }
+          : null,
+        topSeed: seed ? { managerId: seed.manager.id, name: seed.manager.displayName, note: rec(seed) } : null,
+        pointsLeader: leaders.length
+          ? {
+              managerId: leaders.length === 1 ? leaders[0].manager.id : null,
+              name: leaders.map((t) => t.manager.displayName).join(" & "),
+              note: `${topPf.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 })} PF`,
+            }
+          : null,
+        lastPlace: last ? { managerId: last.managerId, name: last.managerName, note: last.record } : null,
+      };
+    });
+  },
+  ["season-index"],
+  { tags: [CACHE_TAGS.league] },
+);

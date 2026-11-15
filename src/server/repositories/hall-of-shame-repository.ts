@@ -45,8 +45,40 @@ export interface GalleryPhoto {
   height: number;
 }
 
+/** One week's lineup against the best legal one (server/stats/optimal-lineup.ts). */
+export interface BenchWeek {
+  /** Competition rank among all game weeks: ties share it. */
+  rank: number;
+  tied: boolean;
+  managerId: string;
+  managerName: string;
+  year: number;
+  week: number;
+  /** Points the started lineup scored. */
+  started: number;
+  /** Best legal lineup from the same roster. */
+  optimal: number;
+  left: number;
+}
+
+/** A manager's career bench damage across the seasons with player data. */
+export interface BenchCareer {
+  managerId: string;
+  managerName: string;
+  total: number;
+  weeks: number;
+  perWeek: number;
+}
+
 export interface HallOfShame {
   entries: ShameEntry[];
+  /**
+   * The ten worst single weeks for points left on the bench (ties at 10th all
+   * listed), counting only weeks the team played a verified head-to-head game.
+   */
+  benchWorstWeeks: BenchWeek[];
+  /** Career points left on the bench, most first, over the same weeks. */
+  benchCareer: BenchCareer[];
   /** Season-by-season regular-season last place, newest first. */
   lastPlace: LastPlaceFinish[];
   /** Bottom of the season in progress, labelled "Current"; never counted. */
@@ -86,7 +118,7 @@ export interface HallOfShame {
  * exists for seasons synced after that feature landed — those seasons are
  * flagged in `benchYearsCovered`, and the entry notes the coverage.
  */
-export const getHallOfShame = cached(buildHallOfShame, ["hall-of-shame"], {
+export const getHallOfShame = cached(buildHallOfShame, ["hall-of-shame-v2"], {
   tags: [CACHE_TAGS.league, CACHE_TAGS.managers],
 });
 
@@ -207,13 +239,11 @@ async function buildHallOfShame(): Promise<HallOfShame> {
     },
   });
   const benchYears = new Set<number>();
-  let worstBench: {
-    value: number;
-    managerId: string;
-    managerName: string;
-    year: number;
-    week: number;
-  } | null = null;
+  // The leaderboards count only weeks with a verified game: an eliminated
+  // team's unplayed postseason roster, or an abandoned team's, is not a
+  // lineup decision anyone made.
+  const playedWeeks = new Set(games.map((g) => `${g.fantasyTeamId}:${g.year}:${g.week}`));
+  const benchRows: Omit<BenchWeek, "rank" | "tied">[] = [];
   for (const roster of rosters) {
     if (roster.playerScores.length === 0) continue;
     // ESPN-era rosters record who was on the team but no trustworthy per-week
@@ -228,24 +258,33 @@ async function buildHallOfShame(): Promise<HallOfShame> {
     // Against the best LEGAL lineup (server/stats/optimal-lineup.ts).
     const outcome = lineupOutcome(scored.map((p) => ({ isStarter: p.isStarter, points: p.points, lineupSlot: p.lineupSlot, position: p.player.position })));
     const left = outcome.optimalPoints - outcome.starterPoints;
-    if (!worstBench || left > worstBench.value) {
-      worstBench = {
-        value: left,
+    if (playedWeeks.has(`${roster.fantasyTeamId}:${roster.fantasyTeam.season.year}:${roster.week}`)) {
+      benchRows.push({
         managerId: roster.fantasyTeam.manager.id,
         managerName: roster.fantasyTeam.manager.displayName,
         year: roster.fantasyTeam.season.year,
         week: roster.week,
-      };
+        started: outcome.starterPoints,
+        optimal: outcome.optimalPoints,
+        left,
+      });
     }
   }
-  if (worstBench && worstBench.value > 0) {
+
+  // The record is #1 of the leaderboard, so the two always agree. It used to
+  // count every roster, which crowned a week-17 roster of a team already out
+  // of the playoffs, scoring alone with no opponent and nothing at stake.
+  const { benchWorstWeeks, benchCareer } = rankBench(benchRows);
+  const worstBench = benchWorstWeeks[0];
+  if (worstBench) {
+    const sharedWith = benchWorstWeeks.filter((w) => w.rank === 1);
     entries.push({
       key: "bench",
       label: "Most Points Left on the Bench",
-      value: `${worstBench.value.toFixed(1)} pts`,
-      holderName: worstBench.managerName,
-      holderManagerId: worstBench.managerId,
-      detail: `Week ${worstBench.week}, ${worstBench.year}`,
+      value: `${worstBench.left.toFixed(1)} pts`,
+      holderName: sharedWith.map((w) => w.managerName).join(" & "),
+      holderManagerId: sharedWith.length === 1 ? worstBench.managerId : null,
+      detail: `started ${worstBench.started.toFixed(1)} of a possible ${worstBench.optimal.toFixed(1)} · Week ${worstBench.week}, ${worstBench.year}${sharedWith.length > 1 ? " · shared" : ""}`,
     });
   }
 
@@ -258,6 +297,8 @@ async function buildHallOfShame(): Promise<HallOfShame> {
 
   return {
     entries,
+    benchWorstWeeks,
+    benchCareer,
     lastPlace,
     currentLastPlace,
     gallery,
@@ -268,6 +309,36 @@ async function buildHallOfShame(): Promise<HallOfShame> {
     excludedScores,
     usesFallbackTiebreak: lastPlace.some((l) => l.basis === "POINTS_FALLBACK"),
   };
+}
+
+/** Worst single weeks (top 10, ties at the cut all kept) and career totals. */
+export function rankBench(rows: Omit<BenchWeek, "rank" | "tied">[]): {
+  benchWorstWeeks: BenchWeek[];
+  benchCareer: BenchCareer[];
+} {
+  const key = (r: { left: number }) => Math.round(r.left * 100);
+  const sorted = [...rows].filter((r) => r.left > 0).sort((a, b) => b.left - a.left || a.year - b.year || a.week - b.week);
+  const counts = new Map<number, number>();
+  for (const r of sorted) counts.set(key(r), (counts.get(key(r)) ?? 0) + 1);
+  const benchWorstWeeks: BenchWeek[] = [];
+  let rank = 0;
+  for (let i = 0; i < sorted.length && benchWorstWeeks.length < 20; i++) {
+    if (i === 0 || key(sorted[i]) !== key(sorted[i - 1])) rank = i + 1;
+    if (rank > 10) break;
+    benchWorstWeeks.push({ ...sorted[i], rank, tied: (counts.get(key(sorted[i])) ?? 0) > 1 });
+  }
+
+  const career = new Map<string, BenchCareer>();
+  for (const r of rows) {
+    const c = career.get(r.managerId) ?? { managerId: r.managerId, managerName: r.managerName, total: 0, weeks: 0, perWeek: 0 };
+    c.total += r.left;
+    c.weeks += 1;
+    career.set(r.managerId, c);
+  }
+  const benchCareer = [...career.values()]
+    .map((c) => ({ ...c, perWeek: c.weeks ? c.total / c.weeks : 0 }))
+    .sort((a, b) => b.total - a.total);
+  return { benchWorstWeeks, benchCareer };
 }
 
 /**

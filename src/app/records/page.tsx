@@ -1,13 +1,13 @@
-import { prisma } from "@/lib/db";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
-import { ManagerLink } from "@/components/shared/manager-link";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Card, CardContent } from "@/components/ui/card";
+import { ChartFrame } from "@/components/charts/chart-frame";
+import { RecordCard } from "@/components/records/record-card";
+import { ScoreHistogramChart, type HistogramBin } from "@/components/records/score-histogram-chart";
 import {
   getComputedRecords,
   getRecordWatch,
-  type RecordEntry,
+  getScoreDistribution,
 } from "@/server/repositories/computed-records-repository";
 import { RecordWatch } from "@/components/shared/record-watch";
 import { Award } from "lucide-react";
@@ -20,52 +20,29 @@ export const revalidate = 3600;
 
 export const metadata = { title: "Records" };
 
-/**
- * The Closest Game margin is printed to two decimals but its detail line to
- * one, so a 0.08-point win read "122.9–122.8" — a 0.1 margin. Under a point,
- * the game is looked up and both scores are shown to two decimals as well.
- *
- * The record carries only display strings, so the game is found by its holder
- * and the "Week N, YYYY" in the detail, and is accepted only if its margin is
- * the one in the headline. Anything that does not match keeps the stored line.
- */
-async function withPreciseClosestGame(records: RecordEntry[]): Promise<RecordEntry[]> {
-  const closest = records.find((r) => r.key === "closest");
-  if (!closest?.holderManagerId) return records;
-  const margin = Number.parseFloat(closest.value);
-  const when = /Week (\d+), (\d{4})/.exec(closest.detail);
-  if (!Number.isFinite(margin) || margin >= 1 || !when) return records;
-
-  const game = await prisma.matchup.findFirst({
-    where: {
-      week: Number(when[1]),
-      season: { year: Number(when[2]) },
-      teams: { some: { isWinner: true, fantasyTeam: { managerId: closest.holderManagerId } } },
-    },
-    select: {
-      teams: { select: { score: true, isWinner: true, fantasyTeam: { select: { managerId: true } } } },
-    },
-  });
-  const winner = game?.teams.find(
-    (t) => t.isWinner === true && t.fantasyTeam.managerId === closest.holderManagerId,
-  );
-  const loser = game?.teams.find((t) => t !== winner);
-  if (winner?.score == null || loser?.score == null) return records;
-  // The headline margin is rounded to 0.01, so the real one is within half of that.
-  if (Math.abs(winner.score - loser.score - margin) > 0.006) return records;
-
-  const detail = closest.detail.replace(
-    /^[\d.]+–[\d.]+/,
-    `${winner.score.toFixed(2)}–${loser.score.toFixed(2)}`,
-  );
-  return records.map((r) => (r === closest ? { ...r, detail } : r));
-}
-
 export default async function RecordsPage() {
   // Pre-rendered when the build can reach the database; otherwise rendered per request.
   await renderAtRequestIfNoDatabase();
-  const [rawRecords, watch] = await Promise.all([getComputedRecords(), getRecordWatch()]);
-  const records = await withPreciseClosestGame(rawRecords);
+  // The Closest Game detail is already printed to two decimals under a point
+  // (computed-records-repository), so no second lookup is needed here.
+  const [records, watch, dist] = await Promise.all([getComputedRecords(), getRecordWatch(), getScoreDistribution()]);
+  const binOf = (score: number) => Math.floor(score / 10) * 10;
+  const bins: HistogramBin[] = !dist ? [] : dist.bins.map((b) => {
+    const isHigh = binOf(dist.high.score) === b.from;
+    const isLow = binOf(dist.low.score) === b.from;
+    return {
+      label: String(b.from),
+      from: b.from,
+      to: b.to,
+      count: b.count,
+      mark: isHigh ? "high" : isLow ? "low" : null,
+      markLabel: isHigh
+        ? `Record high: ${dist.high.score.toFixed(1)}, ${dist.high.managerName}, Wk ${dist.high.week} ${dist.high.year}`
+        : isLow
+          ? `Record low: ${dist.low.score.toFixed(1)}, ${dist.low.managerName}, Wk ${dist.low.week} ${dist.low.year}`
+          : null,
+    };
+  });
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -99,26 +76,40 @@ export default async function RecordsPage() {
         {records.length === 0 ? (
           <EmptyState icon={Award} title="No records yet" description="Records populate once games have been played and synced." />
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {records.map((r) => (
-              <Card key={r.key}>
-                <CardContent>
-                  <p className="text-xs tracking-wide text-muted-foreground uppercase">{r.label}</p>
-                  <p className="mt-1 font-heading text-3xl font-semibold tabular-nums">{r.value}</p>
-                  <p className="mt-1 text-sm font-medium">
-                    {r.holderManagerId ? (
-                      <ManagerLink managerId={r.holderManagerId} name={r.holderName}>{r.holderName}</ManagerLink>
-                    ) : (
-                      r.holderName
-                    )}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{r.detail}</p>
-                </CardContent>
-              </Card>
+              <RecordCard key={r.key} record={r} />
             ))}
           </div>
         )}
       </div>
+
+      {dist ? (
+        <section className="mt-12">
+          <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
+            Every Score Ever
+          </h2>
+          <ChartFrame
+            title="Weekly scores, all-time"
+            caption={
+              <>
+                All {dist.total.toLocaleString()} verified scores from head-to-head games, in 10-point bins. Median{" "}
+                {dist.median.toFixed(1)}, mean {dist.mean.toFixed(1)}. The red bin holds the record low (
+                {dist.low.score.toFixed(1)}, {dist.low.managerName}), the green one the record high (
+                {dist.high.score.toFixed(1)}, {dist.high.managerName}). The league wasn&apos;t PPR until 2019, and
+                the two seasons before it averaged under 100 a week, so they fatten the left side.
+              </>
+            }
+            summary={`Histogram of ${dist.total} weekly scores from ${dist.bins[0]?.from} to ${dist.bins[dist.bins.length - 1]?.to} points. Median ${dist.median.toFixed(1)}. Record low ${dist.low.score.toFixed(1)} by ${dist.low.managerName} in week ${dist.low.week} of ${dist.low.year}; record high ${dist.high.score.toFixed(1)} by ${dist.high.managerName} in week ${dist.high.week} of ${dist.high.year}.`}
+            table={{
+              headers: ["Points", "Scores", "Note"],
+              rows: bins.map((b) => [`${b.from}–${(b.to - 0.01).toFixed(2)}`, b.count, b.markLabel ?? ""]),
+            }}
+          >
+            <ScoreHistogramChart bins={bins} median={dist.median} />
+          </ChartFrame>
+        </section>
+      ) : null}
     </div>
   );
 }

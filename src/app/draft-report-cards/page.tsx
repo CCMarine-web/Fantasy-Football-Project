@@ -1,478 +1,171 @@
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
-import Link from "next/link";
-import { AiText } from "@/components/shared/ai-text";
-import { draftRevisitTexts } from "@/server/text/page-texts";
+import { prisma } from "@/lib/db";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
-import { TeamAvatar } from "@/components/shared/team-avatar";
-import { GradeLetter } from "@/generated/prisma/client";
+import { draftRevisitTexts } from "@/server/text/page-texts";
+import type { RenderedText } from "@/server/text/read";
 import {
   getDraftReportCards,
   listGradedSeasons,
+  loadDraftReturns,
+  loadPickReturns,
   gradeLetterToDisplay,
 } from "@/server/repositories/draft-grade-repository";
-import { strongestFactor, type DraftFactor } from "@/server/stats/draft-quality";
-import { distributePercentages } from "@/lib/format";
-import { ChevronDown, GraduationCap, Info } from "lucide-react";
+import { getDraftBoard, listDraftSeasons } from "@/server/repositories/draft-repository";
+import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
+import { teamColorMap } from "@/lib/chart-theme";
+import { DraftSeasonPicker, DraftTabs, parseDraftTab } from "@/components/drafts/draft-tabs";
+import { DraftBoard, type BoardView } from "@/components/drafts/draft-board";
+import { GradesTab } from "@/components/drafts/grades-tab";
+import { RevisitedTab, type GradeVsRealityChart } from "@/components/drafts/revisited-tab";
+import { LAST_ESPN_SEASON } from "@/components/drafts/grade-ui";
+import { ClipboardList } from "lucide-react";
 
-export const metadata = { title: "Draft Report Cards" };
+export const metadata = { title: "Drafts & Report Cards" };
 
 /**
- * Whole-number percentages for a set of weights, guaranteed to total 100.
+ * One page for everything about the draft — /drafts redirects here.
  *
- * The weights themselves already sum to 1.0000 — they are rescaled in
- * draft-quality.ts when a factor is dropped. What did not add up was the
- * DISPLAY: rounding 0.2985, 0.2388, 0.1791, 0.1493 and 0.1194 one at a time
- * gives 30/24/18/15/12, and every graded season on this page published a
- * methodology panel totalling ninety-nine percent. See distributePercentages.
+ *   ?tab=board      the board itself, team columns x rounds, optionally
+ *                   coloured by hindsight (Sleeper seasons)
+ *   ?tab=grades     the draft-day report cards (the default: this is the
+ *                   Draft Report Cards page every existing link points at)
+ *   ?tab=revisited  the hindsight grade and its commentary
+ *
+ * `season` picks the year; `view=hindsight` switches the board colouring.
  */
-function weightPercents(weights: { weight: number }[]): number[] {
-  return distributePercentages(weights.map((w) => w.weight));
-}
-
-/** How well the recorded data supports a grade. */
-const CONFIDENCE_LABEL = {
-  HIGH: "High data confidence",
-  MEDIUM: "Medium data confidence",
-  LOW: "Low data confidence",
-} as const;
-
-/** The last season imported from ESPN; Sleeper seasons start the year after. */
-const LAST_ESPN_SEASON = 2022;
-
-/**
- * Color family for a grade: A field green, B primary blue, C neutral, D a red
- * tint, F solid red. Theme tokens only — the C band was a leftover amber, and
- * the scale has no gold in it. Every chip clears 4.5:1.
- */
-function gradeColorClasses(grade: GradeLetter | null): string {
-  if (!grade) return "bg-muted text-muted-foreground";
-  if (grade.startsWith("A")) return "bg-field/15 text-field";
-  if (grade.startsWith("B")) return "bg-primary/15 text-primary";
-  if (grade.startsWith("C")) return "bg-muted text-muted-foreground";
-  if (grade === "D") return "bg-destructive/10 text-destructive";
-  return "bg-destructive text-background"; // F
-}
-
-/**
- * Joins confidence reasons into one sentence. The reasons are clauses written
- * to follow a semicolon, so the first needs its capital and the end a stop.
- */
-function asSentence(reasons: string[]): string {
-  const text = reasons.join("; ").replace(/\.$/, "");
-  return `${text.charAt(0).toUpperCase()}${text.slice(1)}.`;
-}
-
-/** The season-wide ADP caveat, which the methodology panel already states. */
-const ADP_REASON = /average draft position/i;
-
-function FactorBar({ factor, percent }: { factor: DraftFactor; percent: number }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="w-32 shrink-0 text-[13px] text-muted-foreground">
-        {factor.label} <span className="text-muted-foreground/60">{percent}%</span>
-      </span>
-      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, factor.value)}%` }} />
-      </div>
-      <span className="w-32 shrink-0 text-right font-mono text-[13px] tabular-nums text-muted-foreground">
-        {factor.raw}
-      </span>
-    </div>
-  );
-}
-
-export default async function DraftReportCardsPage({
+export default async function DraftsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ season?: string }>;
+  searchParams: Promise<{ season?: string; tab?: string; view?: string }>;
 }) {
   await renderAtRequestIfNoDatabase();
-  const { season: seasonParam } = await searchParams;
-  const seasons = await listGradedSeasons();
-  const requestedYear = seasonParam ? Number(seasonParam) : undefined;
-  const view = await getDraftReportCards(
-    requestedYear && Number.isFinite(requestedYear) ? requestedYear : undefined,
-  );
+  const params = await searchParams;
+  const tab = parseDraftTab(params.tab);
+  const boardView: BoardView = params.view === "hindsight" ? "hindsight" : "position";
 
-  const isComplete = view.status === "COMPLETE";
-  const revisitTexts = view.provisionalRevisit ? await draftRevisitTexts() : new Map();
-  const isEspnEra = view.seasonYear != null && view.seasonYear <= LAST_ESPN_SEASON;
-  const originalPercents = weightPercents(view.weights);
-  const revisitPercents = weightPercents(view.revisitWeights);
-  // When ADP is missing it already has its own line above the confidence note,
-  // so the note leaves it out rather than saying it twice.
-  const seasonReasons = view.adpAvailable
-    ? view.confidenceReasons
-    : view.confidenceReasons.filter((r) => !ADP_REASON.test(r));
+  const [graded, drafted] = await Promise.all([listGradedSeasons(), listDraftSeasons()]);
+  const years = [...new Set([...graded.map((s) => s.year), ...drafted.map((s) => s.year)])].sort((a, b) => b - a);
+  const requested = params.season ? Number(params.season) : NaN;
+  // Default: the latest season with grades, as the report cards always did.
+  const year = Number.isFinite(requested) ? requested : (graded[0]?.year ?? drafted[0]?.year ?? null);
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      <PageHeader art="header-draft-report-cards" freshness
+    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+      <PageHeader
+        art="header-draft-report-cards"
+        freshness
         eyebrow="On the Clock"
-        title="Draft Report Cards"
-        description="A grade for every draft, judged on the decisions made in the room — not on how the season happened to end."
+        title="Drafts"
+        description="Every board, pick by pick; a grade for every draft, judged on the decisions made in the room; and the hindsight verdict on what those picks actually produced."
       />
 
-      <div className="mt-6 flex flex-wrap gap-2">
-        {seasons.map((s) => (
-          <Link key={s.year} href={`/draft-report-cards?season=${s.year}`}>
-            <Badge variant={s.year === view.seasonYear ? "default" : "outline"}>{s.year}</Badge>
-          </Link>
-        ))}
-      </div>
+      <DraftTabs active={tab} season={year} />
+      <DraftSeasonPicker years={years} active={year} tab={tab} view={tab === "board" ? boardView : undefined} />
 
-      {/* Methodology, stated up front. */}
-      {view.weights.length > 0 ? (
-        <Card className="mt-6 border-border/60 bg-card/40">
-          <CardContent>
-            <h2 className="font-heading text-base font-semibold">How the draft-day grade is built</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Each factor is scored 0-100 against the other drafts in the same room, then blended with
-              the weights below and graded on a curve. Season results, championships, waiver pickups
-              and trades are deliberately <strong className="text-foreground">not</strong> inputs — a
-              good draft wrecked by injuries was still a good draft, and a poor one rescued on waivers
-              was still a poor one.
-            </p>
-            <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-              {view.weights.map((w, i) => (
-                <div key={w.key} className="flex gap-2">
-                  <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
-                    {originalPercents[i]}%
-                  </dt>
-                  <dd className="text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">{w.label}</span> — {w.description}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {!view.adpAvailable ? (
-              <p className="mt-3 flex items-start gap-2 text-[13px] text-muted-foreground">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                Average draft position is not on record for this season, so the value-vs-ADP factor is
-                excluded and its weight is spread across the others. Everything shown is measured from
-                the draft board itself.
-              </p>
-            ) : null}
-
-            {/*
-             * What the recorded data does and does not support. A letter grade
-             * carries the same authority however thin the evidence behind it,
-             * so the evidence is stated next to it.
-             */}
-            {view.confidenceReasons.length > 0 ? (
-              <div className="mt-3 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-[13px] text-muted-foreground">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                <span>
-                  <strong className="text-foreground">
-                    {CONFIDENCE_LABEL[view.confidence]} for {view.seasonYear}.
-                  </strong>{" "}
-                  {seasonReasons.length > 0
-                    ? asSentence(seasonReasons)
-                    : "The missing average draft position, noted above, is the only gap."}{" "}
-                  Every team&rsquo;s own confidence is shown on its card.
-                </span>
-              </div>
-            ) : null}
-
-            {/* The second, separate grade. */}
-            <div className="mt-5 border-t border-border/40 pt-4">
-              <h3 className="font-heading text-base font-semibold">The revisited grade (hindsight)</h3>
-              {view.revisitAvailable ? (
-                <>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    A separate, clearly-labelled hindsight grade measuring only what the drafted
-                    players went on to produce — per game, against the slot each was taken at. It
-                    never replaces the grade above.{" "}
-                    {view.provisionalRevisit ? (
-                      <strong className="text-foreground">
-                        {view.seasonYear} is still being played: the revisited column is provisional, recomputed every
-                        week from points scored through Week {view.provisionalRevisit.throughWeek}, and becomes final when
-                        the season ends.{" "}
-                      </strong>
-                    ) : null}
-                    Wins, playoff berths and championships are{" "}
-                    <strong className="text-foreground">not</strong> inputs, so winning the league
-                    cannot rescue a bad draft and a title-less season cannot sink a good one.
-                  </p>
-                  <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {view.revisitWeights.map((w, i) => (
-                      <div key={w.key} className="flex gap-2">
-                        <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
-                          {revisitPercents[i]}%
-                        </dt>
-                        <dd className="text-sm text-muted-foreground">
-                          <span className="font-medium text-foreground">{w.label}</span> — {w.description}
-                        </dd>
-                      </div>
-                    ))}
-                  </dl>
-                  <p className="mt-2 flex items-start gap-2 text-[13px] text-muted-foreground">
-                    <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                    Production is measured per game played, so a pick whose season was cut short by
-                    injury is judged on how good the player was rather than how long he lasted.
-                  </p>
-                </>
-              ) : (
-                <p className="mt-1 flex items-start gap-2 text-sm text-muted-foreground">
-                  <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                  {/* Why it is missing depends on the season: the ESPN
-                      explanation was shown for the current Sleeper season too,
-                      where the grade is simply not due yet. */}
-                  <span>
-                    {!isComplete && view.status != null
-                      ? `The hindsight grade is written once the ${view.seasonYear} season ends.`
-                      : isEspnEra
-                        ? "Not available for this season. A hindsight grade needs per-player weekly scoring, and ESPN does not expose that for its archived seasons. Rather than fall back to final standings — which would grade the season instead of the draft — no revisited grade is issued."
-                        : "Not available for this season. A hindsight grade needs per-player weekly scoring, and none is on record for it. Rather than fall back to final standings — which would grade the season instead of the draft — no revisited grade is issued."}
-                  </span>
-                </p>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {/*
-       * The whole season at a glance, before any of the long-form cards. The
-       * page previously opened with ten stacked report cards, so answering
-       * "who drafted best" meant scrolling past nine of them.
-       */}
-      {view.cards.length > 0 ? (
-        <section className="mt-8">
-          <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
-            {view.seasonYear} Draft Rankings
-          </h2>
-          <div className="relative overflow-x-auto rounded-lg border border-border/60">
-            <table className="w-full text-sm">
-              <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
-                <tr>
-                  <th className="px-2 py-2 text-left sm:px-4">#</th>
-                  <th className="px-2 py-2 text-left sm:px-4">Manager</th>
-                  <th className="px-2 py-2 text-center sm:px-4">Grade</th>
-                  <th className="px-2 py-2 text-right sm:px-4">Score</th>
-                  {(isComplete && view.revisitAvailable) || view.provisionalRevisit ? (
-                    <th className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">
-                      {view.provisionalRevisit ? `Revisited · thru Wk ${view.provisionalRevisit.throughWeek}` : "Revisited"}
-                    </th>
-                  ) : null}
-                  <th className="hidden px-2 py-2 text-left sm:px-4 md:table-cell">Strongest</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border/60">
-                {view.cards.map((card, index) => {
-                  // Never a dropped factor, nor one that scored the team by default.
-                  const best = strongestFactor(card.factors);
-                  return (
-                    <tr key={card.managerId}>
-                      <td className="px-2 py-2 font-mono tabular-nums text-muted-foreground sm:px-4">
-                        {index + 1}
-                      </td>
-                      <td className="px-2 py-2 sm:px-4">
-                        <Link
-                          href={`/managers/${card.managerId}`}
-                          className="font-medium hover:text-primary"
-                        >
-                          {card.managerName}
-                        </Link>
-                      </td>
-                      <td className="px-2 py-2 text-center sm:px-4">
-                        <span
-                          className={`inline-flex h-7 min-w-9 items-center justify-center rounded px-1.5 font-heading text-sm font-bold ${gradeColorClasses(card.grade)}`}
-                        >
-                          {gradeLetterToDisplay(card.grade)}
-                        </span>
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground sm:px-4">
-                        {card.score != null ? card.score.toFixed(1) : "—"}
-                      </td>
-                      {view.provisionalRevisit ? (
-                        <td className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">
-                          {(() => {
-                            const so = view.provisionalRevisit.grades[card.managerId];
-                            return so ? (
-                              <span
-                                className={`inline-flex h-7 min-w-9 items-center justify-center rounded px-1.5 font-heading text-sm font-bold ${gradeColorClasses(so.grade)}`}
-                                title={`Provisional: draft returns rank ${so.rank} of ${Object.keys(view.provisionalRevisit.grades).length} through Week ${view.provisionalRevisit.throughWeek}`}
-                              >
-                                {gradeLetterToDisplay(so.grade)}
-                              </span>
-                            ) : (
-                              "—"
-                            );
-                          })()}
-                        </td>
-                      ) : isComplete && view.revisitAvailable ? (
-                        <td className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">
-                          <span className="font-heading text-sm font-semibold text-muted-foreground">
-                            {card.revisitedGrade ? gradeLetterToDisplay(card.revisitedGrade) : "—"}
-                          </span>
-                        </td>
-                      ) : null}
-                      <td className="hidden px-2 py-2 text-xs text-muted-foreground sm:px-4 md:table-cell">
-                        {best ? best.label : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <p className="mt-2 text-xs text-muted-foreground">
-            Full report cards below — open one to see its factor breakdown and commentary.
-          </p>
-        </section>
-      ) : null}
-
-      <div className="mt-8">
-        {view.cards.length === 0 ? (
-          <EmptyState
-            icon={GraduationCap}
-            title="No draft grades for this season yet"
-            description="Grades generate once a season's draft has been synced and graded."
-          />
-        ) : (
-          <div className="space-y-3">
-            {view.cards.map((card, index) => {
-              const provisional = view.provisionalRevisit?.grades[card.managerId];
-              const revisitedGrade = provisional?.grade ?? (isComplete ? card.revisitedGrade : null);
-              const showRevisited = !!revisitedGrade;
-              return (
-                <Card key={card.managerId} className="py-0">
-                  <CardContent className="p-0">
-                    <details className="group">
-                      <summary className="flex cursor-pointer list-none items-center gap-3 px-6 py-4 hover:bg-muted/30">
-                        <span className="font-heading text-xl font-semibold tabular-nums text-muted-foreground">
-                          {index + 1}
-                        </span>
-                        <TeamAvatar
-                          name={card.managerName}
-                          imageUrl={card.avatarUrl}
-                          className="shrink-0"
-                        />
-                        {/* Wraps rather than truncates: "Michael Barkeme…" is
-                            not a name anyone in the league goes by. */}
-                        <span className="min-w-0 flex-1 font-heading text-lg font-semibold break-words">
-                          {card.managerName}
-                        </span>
-                        <span
-                          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg font-heading text-base font-bold tabular-nums ${gradeColorClasses(card.grade)}`}
-                        >
-                          {gradeLetterToDisplay(card.grade)}
-                        </span>
-                        <ChevronDown
-                          className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180"
-                          aria-hidden
-                        />
-                        <span className="sr-only">Show full report card</span>
-                      </summary>
-
-                      <div className="border-t border-border/50 px-6 py-4">
-                    <div className="mb-4 flex flex-wrap items-center gap-3">
-                      <Link
-                        href={`/managers/${card.managerId}`}
-                        className="min-w-0 text-sm font-medium break-words hover:text-primary"
-                      >
-                        View {card.managerName}&rsquo;s profile
-                      </Link>
-                      {/* How much the data behind this particular grade
-                          supports it — a letter reads as equally authoritative
-                          whether it rests on sixteen resolved picks or nine. */}
-                      <Badge
-                        variant="outline"
-                        className={`ml-auto shrink-0 ${card.confidence === "HIGH" ? "text-field" : card.confidence === "LOW" ? "text-destructive" : "text-muted-foreground"}`}
-                        title={
-                          card.confidenceReasons.length > 0
-                            ? card.confidenceReasons.join("; ")
-                            : `All ${card.pickCount} picks resolved with prior-season production on record.`
-                        }
-                      >
-                        {CONFIDENCE_LABEL[card.confidence]}
-                      </Badge>
-                    </div>
-
-                    {card.confidenceReasons.length > 0 ? (
-                      <p className="mb-3 text-xs text-muted-foreground">
-                        {asSentence(card.confidenceReasons)}
-                      </p>
-                    ) : null}
-
-                    {/* Original grade — the headline, always shown. */}
-                    <div className="flex flex-col gap-4 lg:flex-row">
-                      <div className="min-w-0 flex-1">
-                        <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                          Original draft grade
-                          <span className="ml-1 font-normal normal-case">— judged on draft day only</span>
-                        </p>
-                        <div className="flex items-start gap-3">
-                          <div
-                            className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-lg font-heading text-2xl font-bold tabular-nums ${gradeColorClasses(card.grade)}`}
-                          >
-                            {gradeLetterToDisplay(card.grade)}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            {card.score != null ? (
-                              <p className="mb-1 font-mono text-xs text-muted-foreground">
-                                Draft score {card.score.toFixed(1)}/100
-                              </p>
-                            ) : null}
-                            <p className="text-sm whitespace-pre-line text-foreground/90">
-                              {card.rationale ?? "No commentary yet."}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {card.factors.length > 0 ? (
-                        <div className="shrink-0 lg:w-96">
-                          <div className="space-y-1">
-                            {(() => {
-                              const percents = weightPercents(card.factors);
-                              return card.factors.map((f, i) => (
-                                <FactorBar key={f.key} factor={f} percent={percents[i]} />
-                              ));
-                            })()}
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {/* Revisited grade — visually separated and explicitly hindsight. */}
-                    {showRevisited ? (
-                      <div className="mt-5 rounded-lg border border-dashed border-border/60 bg-muted/20 p-4">
-                        <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                          {provisional ? `Revisited so far · through Week ${view.provisionalRevisit?.throughWeek}` : "Revisited in hindsight"}
-                          <span className="ml-1 font-normal normal-case">
-                            — what the picks actually produced. Does not replace the grade above.
-                          </span>
-                        </p>
-                        <div className="flex items-start gap-3">
-                          <div
-                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg font-heading text-lg font-bold tabular-nums ${gradeColorClasses(revisitedGrade)}`}
-                          >
-                            {gradeLetterToDisplay(revisitedGrade)}
-                          </div>
-                          {provisional ? (
-                            <AiText text={revisitTexts.get(card.managerId)} className="flex-1" />
-                          ) : (
-                            <p className="flex-1 text-sm whitespace-pre-line text-muted-foreground">
-                              {card.revisitedRationale ?? "No commentary yet."}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
-                      </div>
-                    </details>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </div>
+      {tab === "board" ? (
+        <BoardSection year={year} view={boardView} />
+      ) : (
+        <GradesSections tab={tab} year={year} />
+      )}
     </div>
   );
+}
+
+async function BoardSection({ year, view }: { year: number | null; view: BoardView }) {
+  const board = year != null ? await getDraftBoard(year) : null;
+  if (!board) {
+    return (
+      <div className="mt-8">
+        <EmptyState icon={ClipboardList} title="No draft recorded for this season yet" />
+      </div>
+    );
+  }
+
+  const isSleeper = board.dataSource === "SLEEPER";
+  const hindsight = isSleeper ? await loadPickReturns(board.seasonId) : null;
+  const hindsightNote = hindsight
+    ? null
+    : board.seasonYear <= LAST_ESPN_SEASON || !isSleeper
+      ? "Steal-or-bust colouring needs per-player weekly scoring, which ESPN did not keep for its archived seasons (2017-2022), so this board is coloured by position only."
+      : `Steal-or-bust colouring appears once the ${board.seasonYear} season has player scoring on record.`;
+
+  return <DraftBoard board={board} view={view} hindsight={hindsight} hindsightNote={hindsightNote} />;
+}
+
+async function GradesSections({ tab, year }: { tab: "grades" | "revisited"; year: number | null }) {
+  const view = await getDraftReportCards(year ?? undefined);
+  const revisitTexts: Map<string, RenderedText> = view.provisionalRevisit
+    ? await draftRevisitTexts()
+    : new Map();
+
+  if (tab === "grades") return <GradesTab view={view} revisitTexts={revisitTexts} />;
+
+  const [returns, chartResult] = await Promise.all([
+    view.seasonId && view.revisitAvailable ? loadDraftReturns(view.seasonId) : Promise.resolve(null),
+    gradeVsReality(view),
+  ]);
+
+  return (
+    <RevisitedTab
+      view={view}
+      revisitTexts={revisitTexts}
+      returns={returns?.available ? returns : null}
+      chart={chartResult.chart}
+      chartNote={chartResult.note}
+    />
+  );
+}
+
+/**
+ * Draft-day score against this week's power score, for the season in
+ * progress. Only once games have been played: the preseason power score is
+ * itself built from the drafted rosters, so plotting it against the draft
+ * grade would only show the draft grade agreeing with itself.
+ */
+async function gradeVsReality(
+  view: Awaited<ReturnType<typeof getDraftReportCards>>,
+): Promise<{ chart: GradeVsRealityChart | null; note: string | null }> {
+  const rankings = await getPowerRankings();
+  if (!rankings || view.seasonYear == null) return { chart: null, note: null };
+  if (rankings.seasonYear !== view.seasonYear) {
+    return {
+      chart: null,
+      note: `The draft-grade-vs-reality chart follows the season being played — pick ${rankings.seasonYear} to see it.`,
+    };
+  }
+  if (rankings.mode !== "IN_SEASON") {
+    return {
+      chart: null,
+      note: "The draft-grade-vs-reality chart appears once Week 1 is final: until then the power score is built from the drafted rosters themselves.",
+    };
+  }
+
+  const managers = await prisma.manager.findMany({ select: { id: true } });
+  const colors = teamColorMap(managers.map((m) => m.id));
+  const byManager = new Map(rankings.rows.filter((r) => r.managerId).map((r) => [r.managerId as string, r]));
+
+  const rows: GradeVsRealityChart["rows"] = [];
+  const points: GradeVsRealityChart["points"] = [];
+  for (const card of view.cards) {
+    const power = byManager.get(card.managerId);
+    if (card.score == null || !power) continue;
+    const grade = gradeLetterToDisplay(card.grade);
+    rows.push({
+      manager: card.managerName,
+      draftScore: card.score,
+      grade,
+      powerScore: power.score,
+      powerRank: power.rank,
+    });
+    points.push({
+      x: card.score,
+      y: power.score,
+      label: card.managerName.length > 14 ? `${card.managerName.slice(0, 13)}…` : card.managerName,
+      color: colors.get(card.managerId) ?? "var(--primary)",
+      detail: `Draft grade ${grade} · power rank #${power.rank} (${power.teamName})`,
+    });
+  }
+  if (points.length < 2) return { chart: null, note: null };
+  return { chart: { points, rows, throughWeek: rankings.throughWeek }, note: null };
 }

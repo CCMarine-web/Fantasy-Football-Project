@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import type { Prisma, TransactionStatus, TransactionType } from "@/generated/prisma/client";
 import { collapseChurn, describeChurn, type ChurnSummary } from "@/server/stats/transaction-churn";
+import { activityGrid, pickupStint, type ActivityCell, type StintRow } from "@/server/stats/transaction-activity";
 
 /**
  * The transaction wire.
@@ -399,4 +400,186 @@ export async function listRecentTransactions(seasonId: string, take = 5) {
     orderBy: { processedAt: "desc" },
     take,
   });
+}
+
+// ── Season charts: activity grid and best pickups ──────────────────────────
+
+export interface ActivityGridView {
+  /** Every week from 1 to the last week with a dated move. */
+  weeks: number[];
+  /** Managers with a team in the season, sorted by name. */
+  managers: { id: string; name: string }[];
+  /** Completed moves, keyed `${managerId}|${week}`. */
+  cells: Record<string, ActivityCell>;
+  /** The busiest manager-week, for scaling the heat. */
+  max: number;
+}
+
+export interface PickupView {
+  transactionId: string;
+  playerId: string;
+  playerName: string;
+  position: string;
+  managerId: string;
+  managerName: string;
+  addedWeek: number;
+  kind: "Waiver claim" | "Free agent";
+  startWeek: number;
+  endWeek: number;
+  weeksOnRoster: number;
+  startedWeeks: number;
+  /** Points scored for the acquiring team, as a starter, during the stint. */
+  starterPoints: number;
+}
+
+export interface TransactionSeasonCharts {
+  seasonYear: number;
+  activity: ActivityGridView;
+  /** Top ten waiver and free-agent adds by starter points for the acquiring team. */
+  bestPickups: PickupView[];
+  /** False when the season has no per-week player scores, so pickups cannot be scored. */
+  hasPlayerScores: boolean;
+}
+
+/**
+ * The whole-season view of the wire for one year: how busy each manager was
+ * week by week, and which waiver or free-agent adds actually paid.
+ *
+ * Only completed moves count. A pickup is scored from the week of the add
+ * until the player left the acquiring roster (see pickupStint), and only for
+ * weeks he was in that team's starting lineup.
+ */
+export async function getTransactionSeasonCharts(seasonYear: number): Promise<TransactionSeasonCharts | null> {
+  const season = await prisma.season.findFirst({ where: { year: seasonYear }, select: { id: true } });
+  if (!season) return null;
+
+  const [moves, teams] = await Promise.all([
+    prisma.transaction.findMany({
+      where: { seasonId: season.id, status: "COMPLETE" },
+      select: {
+        id: true,
+        week: true,
+        type: true,
+        processedAt: true,
+        assets: {
+          select: {
+            direction: true,
+            assetType: true,
+            playerId: true,
+            fantasyTeamId: true,
+            fantasyTeam: { select: { managerId: true } },
+            player: { select: { firstName: true, lastName: true, position: true } },
+          },
+        },
+      },
+      orderBy: [{ processedAt: "asc" }, { id: "asc" }],
+    }),
+    prisma.fantasyTeam.findMany({
+      where: { seasonId: season.id },
+      select: { id: true, managerId: true, manager: { select: { displayName: true } } },
+    }),
+  ]);
+
+  // ── Activity grid ────────────────────────────────────────────────────────
+  const grid = activityGrid(
+    moves.map((m) => ({
+      week: m.week,
+      type: m.type,
+      managerIds: m.assets.map((a) => a.fantasyTeam.managerId),
+    })),
+  );
+  const lastWeek = moves.reduce((max, m) => (m.week != null && m.week > max ? m.week : max), 0);
+  const managers = teams
+    .map((t) => ({ id: t.managerId, name: t.manager.displayName }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const cells = Object.fromEntries(grid);
+  const max = [...grid.values()].reduce((m, c) => Math.max(m, c.total), 0);
+
+  // ── Best pickups ─────────────────────────────────────────────────────────
+  const adds = moves.flatMap((m) =>
+    (m.type === "WAIVER" || m.type === "FREE_AGENT") && m.week != null
+      ? m.assets
+          .filter((a) => a.direction === "ADD" && a.assetType === "PLAYER" && a.playerId && a.player)
+          .map((a) => ({
+            transactionId: m.id,
+            week: m.week as number,
+            kind: m.type === "WAIVER" ? ("Waiver claim" as const) : ("Free agent" as const),
+            playerId: a.playerId as string,
+            player: a.player as { firstName: string; lastName: string; position: string },
+            fantasyTeamId: a.fantasyTeamId,
+            managerId: a.fantasyTeam.managerId,
+          }))
+      : [],
+  );
+
+  const [rosters, scoreRows] = adds.length
+    ? await Promise.all([
+        // Only snapshots with players in them: an empty shell for a week not
+        // yet synced would otherwise read as everyone leaving the roster.
+        prisma.roster.findMany({
+          where: { fantasyTeam: { seasonId: season.id }, playerScores: { some: {} } },
+          select: { week: true, fantasyTeamId: true },
+        }),
+        prisma.weeklyPlayerScore.findMany({
+          where: {
+            playerId: { in: [...new Set(adds.map((a) => a.playerId))] },
+            roster: { fantasyTeam: { seasonId: season.id } },
+          },
+          select: { playerId: true, isStarter: true, points: true, roster: { select: { week: true, fantasyTeamId: true } } },
+        }),
+      ])
+    : [[], []];
+
+  const teamWeeks = new Map<string, number[]>();
+  for (const r of rosters) {
+    const list = teamWeeks.get(r.fantasyTeamId) ?? [];
+    list.push(r.week);
+    teamWeeks.set(r.fantasyTeamId, list);
+  }
+  const rowsByPlayerTeam = new Map<string, StintRow[]>();
+  for (const s of scoreRows) {
+    const key = `${s.playerId}|${s.roster.fantasyTeamId}`;
+    const list = rowsByPlayerTeam.get(key) ?? [];
+    list.push({ week: s.roster.week, isStarter: s.isStarter, points: s.points });
+    rowsByPlayerTeam.set(key, list);
+  }
+  const hasPlayerScores = scoreRows.some((s) => s.points != null);
+
+  const nameByManager = new Map(managers.map((m) => [m.id, m.name]));
+  const seen = new Set<string>();
+  const pickups: PickupView[] = [];
+  for (const a of adds) {
+    const stint = pickupStint(a.week, teamWeeks.get(a.fantasyTeamId) ?? [], rowsByPlayerTeam.get(`${a.playerId}|${a.fantasyTeamId}`) ?? []);
+    if (stint.startWeek == null || stint.endWeek == null) continue;
+    // Add, drop, re-add in the same week resolves to the same stint: count it once.
+    const key = `${a.playerId}|${a.fantasyTeamId}|${stint.startWeek}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    pickups.push({
+      transactionId: a.transactionId,
+      playerId: a.playerId,
+      playerName: `${a.player.firstName} ${a.player.lastName}`,
+      position: a.player.position,
+      managerId: a.managerId,
+      managerName: nameByManager.get(a.managerId) ?? "Unknown",
+      addedWeek: a.week,
+      kind: a.kind,
+      startWeek: stint.startWeek,
+      endWeek: stint.endWeek,
+      weeksOnRoster: stint.weeksOnRoster,
+      startedWeeks: stint.startedWeeks,
+      starterPoints: stint.starterPoints,
+    });
+  }
+  const bestPickups = pickups
+    .filter((p) => p.starterPoints > 0)
+    .sort((x, y) => y.starterPoints - x.starterPoints || x.addedWeek - y.addedWeek)
+    .slice(0, 10);
+
+  return {
+    seasonYear,
+    activity: { weeks: Array.from({ length: lastWeek }, (_, i) => i + 1), managers, cells, max },
+    bestPickups,
+    hasPlayerScores,
+  };
 }

@@ -16,7 +16,9 @@ import { readServerClock } from "@/server/clock";
 import {
   getCurrentChampion,
   getChampionLineage,
+  getLinealBelt,
 } from "@/server/repositories/championship-belt-repository";
+import { LinealBeltSection } from "@/components/championship/lineal-belt-section";
 import { getLastSeasonNarrative } from "@/server/repositories/season-narrative-repository";
 
 export const metadata = { title: "Championship Belt" };
@@ -27,13 +29,14 @@ function recordLine(w: number, l: number, t: number): string {
 
 export default async function ChampionshipBeltPage() {
   await renderAtRequestIfNoDatabase();
-  const [champion, lineage, session, narrative, nowMs] = await Promise.all([
+  const [champion, lineage, session, narrative, nowMs, linealBelt] = await Promise.all([
     getCurrentChampion(),
     getChampionLineage(),
     auth(),
     getLastSeasonNarrative(),
     // Read outside the component body — see server/clock.ts.
     readServerClock(),
+    getLinealBelt(),
   ]);
   const isAdmin = session?.user?.role === "ADMIN";
   const shame = LEAGUE_CONFIG.shameCounter;
@@ -262,6 +265,8 @@ export default async function ChampionshipBeltPage() {
               </div>
             )}
           </section>
+
+          {linealBelt ? <LinealBeltSection belt={linealBelt} /> : null}
         </>
       )}
     </div>
