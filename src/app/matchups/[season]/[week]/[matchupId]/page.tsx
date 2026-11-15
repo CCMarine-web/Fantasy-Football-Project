@@ -19,6 +19,17 @@ import {
 } from "@/server/stats";
 import { ArrowLeft, Sparkles } from "lucide-react";
 
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
+
+/** Rendered on first request, then served from the ISR cache until the pipeline revalidates it. */
+export async function generateStaticParams() {
+  return [];
+}
+
 /** One load per request, shared by generateMetadata and the page. */
 const loadMatchup = cache(async (matchupId: string) => getMatchupById(matchupId));
 

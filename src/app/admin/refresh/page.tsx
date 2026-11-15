@@ -32,7 +32,7 @@ const ENV_VARS = [
   },
   {
     name: "CRON_SECRET",
-    what: "/api/cron/weekly requires it as a bearer token, and Vercel Cron sends it automatically. Without it the scheduled refresh is disabled in production rather than left open.",
+    what: "/api/cron/* require it as a bearer token, and Vercel Cron sends it automatically. Without it the scheduled pipeline is disabled in production rather than left open.",
     required: true,
   },
 ] as const;
@@ -46,20 +46,20 @@ export default async function AdminRefreshPage() {
     (await prisma.season.findFirst({ orderBy: { year: "desc" } }));
   const phase = season ? await getSeasonPhase(season.id, season.year) : null;
 
-  const recentRuns = await prisma.dataSyncLog.findMany({
-    where: { syncType: "STATS_RECALC" },
+  const pipelineRuns = await prisma.pipelineRun.findMany({
     orderBy: { startedAt: "desc" },
     take: 10,
-    select: {
-      id: true,
-      status: true,
-      startedAt: true,
-      finishedAt: true,
-      recordsProcessed: true,
-      errorMessage: true,
-      triggeredByUser: { select: { name: true } },
-    },
+    select: { id: true, job: true, trigger: true, status: true, startedAt: true, finishedAt: true, stepReached: true, errors: true, counts: true },
   });
+  const recentRuns = pipelineRuns.map((r) => ({
+    id: r.id,
+    status: r.status,
+    startedAt: r.startedAt,
+    finishedAt: r.finishedAt,
+    recordsProcessed: Object.keys((r.counts as Record<string, number>) ?? {}).length,
+    errorMessage: Array.isArray(r.errors) && r.errors.length ? (r.errors as string[]).join(" | ") : null,
+    triggeredByUser: { name: `${r.job} · ${r.trigger}${r.stepReached ? ` · reached ${r.stepReached}` : ""}` },
+  }));
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">

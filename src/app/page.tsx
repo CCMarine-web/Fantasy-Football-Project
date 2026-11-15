@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/empty-state";
-import { MatchupCard } from "@/components/shared/matchup-card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { ChampionshipBeltFeature } from "@/components/championship/championship-belt-feature";
 import { getHomepageData } from "@/server/repositories/homepage-repository";
@@ -27,8 +26,15 @@ import { initialRemaining } from "@/lib/countdown";
 import { chooseSeasonCountdown } from "@/lib/season-countdown";
 import { getNflCalendar, seasonStartDateFor } from "@/server/nfl-calendar";
 import { OffseasonPanel } from "@/components/home/offseason-panel";
+import { HomeHero, WeekGamesList } from "@/components/home/home-hero";
 import { getSeasonPhase } from "@/server/repositories/season-phase";
 import { getOffseasonData } from "@/server/repositories/offseason-repository";
+
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
 
 const TRANSACTION_LABEL: Record<string, string> = {
   WAIVER: "Waiver claim",
@@ -106,7 +112,6 @@ export default async function HomePage() {
     standings,
     recentTransactions,
     latestArticle,
-    featuredMatchup,
     historicalFact,
   } = data;
 
@@ -136,7 +141,7 @@ export default async function HomePage() {
           <p className="text-xs font-semibold tracking-[0.3em] text-primary uppercase">
             {/* "Week N" only once a week has actually been played. */}
             {phase?.phase === "IN_SEASON"
-              ? `${season.year} Season · ${phase.label}`
+              ? `${season.year} Season · ${data.clock?.label ?? phase.label}`
               : (phase?.label ?? `${season.year} Season`)}
           </p>
           <h1 className="mt-2 font-heading text-4xl font-semibold tracking-wide uppercase sm:text-5xl">
@@ -159,13 +164,16 @@ export default async function HomePage() {
         ) : null}
       </section>
 
-      {/* Straight to the one-stop weekly view, now called Matchups. */}
-      <div className="mt-6">
-        <Button render={<Link href="/matchups" />} nativeButton={false}>
+      {/* The phase-driven hero: slate, results, bracket or draft board. */}
+      {data.hero ? (
+        <div className="mt-6">
+          <HomeHero data={data.hero} />
+        </div>
+      ) : null}
+      <div className="mt-4">
+        <Button render={<Link href="/matchups" />} nativeButton={false} variant="outline">
           <CalendarDays className="h-4 w-4" />
-          {phase?.phase === "IN_SEASON"
-            ? `This week in the league — ${phase.label}`
-            : "Matchups"}
+          {data.clock ? `Matchups — ${data.clock.label}` : "Matchups"}
         </Button>
       </div>
 
@@ -201,57 +209,21 @@ export default async function HomePage() {
           {/* 3 — Current matchups */}
           {/* A "featured matchup" with no scores and no form behind it is just
               two names, so it waits until the season starts. */}
-          {featuredMatchup && phase?.phase === "IN_SEASON" ? (
-            <section>
-              <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
-                Featured Matchup
-              </h2>
-              <MatchupCard data={featuredMatchup} className="border-primary/40" />
-            </section>
-          ) : null}
-
           {/*
-           * Before the season starts there are no matchups worth showing, and
-           * an empty "Week 1 Matchups" grid told a visitor nothing. What the
-           * offseason actually has is a draft to look forward to and a season
-           * just finished to look back on, so that is what fills the space.
+           * The hero above shows the focus week; this is the other one — last
+           * week's results while a slate is live, next week's slate while last
+           * week's results lead.
            */}
           {phase?.phase === "IN_SEASON" ? (
-            <>
-              <section>
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-                    Week {currentWeek} Matchups
-                  </h2>
-                  <Link href="/matchups" className="text-sm text-primary hover:underline">
-                    View all
-                  </Link>
-                </div>
-                {currentWeekMatchups.length === 0 ? (
-                  <EmptyState title="No matchups yet" description="Check back once this week is scheduled." />
-                ) : (
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {currentWeekMatchups.map((m) => (
-                      <MatchupCard key={m.matchupId} data={m} />
-                    ))}
-                  </div>
-                )}
-              </section>
-
-              {upcomingMatchups.length > 0 ? (
-                <section>
-                  <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
-                    {data.clock?.currentWeekState === "IN_PROGRESS" ? "In Progress" : "Up Next"} — Week{" "}
-                    {data.slateWeek}
-                  </h2>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {upcomingMatchups.map((m) => (
-                      <MatchupCard key={m.matchupId} data={m} />
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-            </>
+            data.clock?.focus === "SLATE" ? (
+              <WeekGamesList title={`Week ${currentWeek} results`} games={currentWeekMatchups} href={`/matchups?week=${currentWeek}`} />
+            ) : (
+              <WeekGamesList
+                title={`Up next — Week ${data.slateWeek}`}
+                games={upcomingMatchups}
+                href={`/matchups?week=${data.slateWeek}`}
+              />
+            )
           ) : (
             <OffseasonPanel phase={phase} narrative={seasonNarrative} data={offseason} />
           )}

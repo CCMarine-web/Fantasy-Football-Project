@@ -3,6 +3,9 @@ import { getCurrentSeason } from "@/server/repositories/season-repository";
 import { getMatchupsForWeek } from "@/server/repositories/matchup-repository";
 import { getStandingsForSeason } from "@/server/repositories/standings-repository";
 import { getLeagueClock, withClockStatus } from "@/server/league-clock";
+import { draftDateFor } from "@/lib/draft-date";
+import type { HeroData } from "@/components/home/home-hero";
+import type { MatchupCardData } from "@/types/view-models";
 
 /**
  * Returns homepage data, or `null` when there's nothing to show yet — either
@@ -79,8 +82,39 @@ async function loadHomepageData() {
   const historicalFact =
     randomQuote.length > 0 ? randomQuote[Math.floor(randomQuote.length / 2)] : null;
 
+  /*
+   * The phase-driven hero: the focus week's games (the live slate, or last
+   * week's results), the championship bracket in the playoffs, the draft
+   * board link on draft day.
+   */
+  let hero: HeroData | null = null;
+  if (clock) {
+    const [focusGames, bracketRows, draft] = await Promise.all([
+      clock.focusWeek != null ? getMatchupsForWeek(season.id, clock.focusWeek, season.year) : Promise.resolve([] as MatchupCardData[]),
+      clock.phase === "PLAYOFFS"
+        ? prisma.matchup.findMany({
+            where: { seasonId: season.id, isPlayoff: true, bracketType: "WINNERS" },
+            select: { week: true },
+            distinct: ["week"],
+          })
+        : Promise.resolve([] as { week: number }[]),
+      prisma.draft.findFirst({ where: { seasonId: season.id }, select: { sleeperDraftId: true } }),
+    ]);
+    const bracketWeeks = await Promise.all(bracketRows.map((r) => getMatchupsForWeek(season.id, r.week, season.year)));
+    hero = {
+      clock,
+      games: withClockStatus(focusGames, clock),
+      bracket: bracketWeeks.flat().filter((g) => g.isPlayoff),
+      draft: {
+        iso: draftDateFor(season.year),
+        boardUrl: draft?.sleeperDraftId ? `https://sleeper.com/draft/nfl/${draft.sleeperDraftId}` : null,
+      },
+    };
+  }
+
   return {
     season,
+    hero,
     clock,
     slateWeek,
     currentWeek,

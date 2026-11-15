@@ -12,6 +12,17 @@ import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repositor
 import { LOPSIDEDNESS_LABEL } from "@/server/stats/trade-value";
 import { Sparkles, Trophy } from "lucide-react";
 
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
+
+/** Rendered on first request, then served from the ISR cache until the pipeline revalidates it. */
+export async function generateStaticParams() {
+  return [];
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ season: string }> }): Promise<Metadata> {
   const { season } = await params;
   const title = `${season} Season`;

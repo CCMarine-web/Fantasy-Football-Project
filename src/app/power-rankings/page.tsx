@@ -8,6 +8,12 @@ import { getPowerRankings } from "@/server/repositories/power-rankings-repositor
 import { distributePercentages } from "@/lib/format";
 import { ArrowDown, ArrowUp, Info, Minus, TrendingUp } from "lucide-react";
 
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
+
 export const metadata = { title: "Power Rankings" };
 
 /**

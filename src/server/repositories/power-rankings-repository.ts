@@ -52,7 +52,12 @@ export interface PowerRankingsView {
  * and the full page cannot drift apart — they call the same function and show
  * the same numbers in the same order.
  */
-async function buildRankings(seasonId: string, seasonYear: number): Promise<PowerRankingsView> {
+/**
+ * Every input the ranking model reads, for one season. Split out so the
+ * pipeline can recompute the ranking AS OF any week (rank-by-week history)
+ * from exactly the inputs the page uses.
+ */
+export async function loadRankingInputs(seasonId: string, seasonYear: number) {
   const [teams, matchupTeams, rosters, draftPicks] = await Promise.all([
     prisma.fantasyTeam.findMany({
       where: { seasonId },
@@ -355,6 +360,35 @@ async function buildRankings(seasonId: string, seasonYear: number): Promise<Powe
       projectedPoints: null,
     };
   });
+
+  return { inputs, teams };
+}
+
+/**
+ * The ranking as it stood after each completed week: the same model, with the
+ * games after that week left out. Used by the pipeline to store weekly
+ * snapshots (and to backfill weeks played before snapshots existed).
+ */
+export async function computeRankingHistory(
+  seasonId: string,
+  seasonYear: number,
+): Promise<{ week: number; rows: { fantasyTeamId: string; rank: number; score: number }[] }[]> {
+  const { inputs } = await loadRankingInputs(seasonId, seasonYear);
+  const latestWeek = Math.max(0, ...inputs.flatMap((i) => i.weeks.map((w) => w.week)));
+  const history: { week: number; rows: { fantasyTeamId: string; rank: number; score: number }[] }[] = [];
+  for (let week = 1; week <= latestWeek; week += 1) {
+    const result = computeWeeklyPowerRankings(inputs.map((i) => ({ ...i, weeks: i.weeks.filter((w) => w.week <= week) })));
+    if (result.mode !== "IN_SEASON") continue;
+    history.push({
+      week,
+      rows: result.rows.map((r) => ({ fantasyTeamId: r.fantasyTeamId, rank: r.rank, score: r.score })),
+    });
+  }
+  return history;
+}
+
+async function buildRankings(seasonId: string, seasonYear: number): Promise<PowerRankingsView> {
+  const { inputs, teams } = await loadRankingInputs(seasonId, seasonYear);
 
   /*
    * Last week's order, for the movement arrows: the same model on the same

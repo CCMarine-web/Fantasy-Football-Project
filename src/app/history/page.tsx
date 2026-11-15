@@ -13,6 +13,12 @@ import {
 } from "@/server/repositories/history-repository";
 import { History as HistoryIcon, ScrollText, Trophy } from "lucide-react";
 
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
+
 export const metadata = { title: "League History" };
 
 const SEASON_STATUS_LABEL: Record<string, string> = {

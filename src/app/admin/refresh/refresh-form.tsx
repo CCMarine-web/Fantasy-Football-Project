@@ -7,6 +7,7 @@ import { runWeeklyRefreshAction, type RefreshFormState } from "./actions";
 
 const STATUS_STYLE = {
   SUCCESS: "bg-field text-field-foreground",
+  PARTIAL: "bg-muted text-foreground",
   FAILED: "bg-destructive text-destructive-foreground",
   SKIPPED: "",
 } as const;
@@ -20,8 +21,13 @@ export function WeeklyRefreshForm() {
   return (
     <div className="space-y-4">
       <form action={action} className="flex flex-wrap items-center gap-3">
+        <select name="job" defaultValue="weekly" className="h-9 rounded-md border border-border bg-background px-2 text-sm" aria-label="Which job">
+          <option value="weekly">Weekly rebuild</option>
+          <option value="thursday">Stat corrections + previews</option>
+          <option value="daily">Daily light sync</option>
+        </select>
         <Button type="submit" disabled={pending}>
-          {pending ? "Running…" : "Run weekly refresh now"}
+          {pending ? "Running…" : "Run now"}
         </Button>
         <label className="flex items-center gap-2 text-sm text-muted-foreground">
           <input type="checkbox" name="skipSync" value="1" className="h-4 w-4" />
@@ -44,12 +50,10 @@ export function WeeklyRefreshForm() {
       {state.result ? (
         <div className="rounded-lg border border-border/60 bg-card/30 p-3">
           <div className="mb-2 flex flex-wrap items-center gap-2 text-sm">
-            <Badge className={state.result.ok ? "bg-field text-field-foreground" : "bg-destructive text-destructive-foreground"}>
-              {state.result.ok ? "Completed" : "Completed with failures"}
-            </Badge>
+            <Badge className={STATUS_STYLE[state.result.status]}>{state.result.status}</Badge>
             <span className="text-muted-foreground">
-              {state.result.seasonYear ?? "—"} · {state.result.phase ?? "—"}
-              {state.result.currentWeek != null ? ` · week ${state.result.currentWeek}` : ""} ·{" "}
+              {state.result.job} · {state.result.seasonYear ?? "—"} · {state.result.phase ?? "—"}
+              {state.result.week != null ? ` · week ${state.result.week}` : ""} ·{" "}
               {(state.result.durationMs / 1000).toFixed(1)}s
             </span>
           </div>
@@ -60,7 +64,7 @@ export function WeeklyRefreshForm() {
                   <Badge variant={step.status === "SKIPPED" ? "outline" : "default"} className={STATUS_STYLE[step.status]}>
                     {step.status}
                   </Badge>
-                  <span className="font-medium">{step.label}</span>
+                  <span className="font-medium">{step.key}</span>
                   <span className="text-xs text-muted-foreground">
                     {(step.durationMs / 1000).toFixed(1)}s
                   </span>

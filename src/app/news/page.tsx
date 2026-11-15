@@ -8,6 +8,12 @@ import { MatchupsHubLink } from "@/components/shared/matchups-hub-link";
 import { Newspaper } from "lucide-react";
 import { BRAND } from "@/lib/branding";
 
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
+
 export const metadata = { title: "News" };
 
 /** Readable names for the article types, rather than the database enum. */

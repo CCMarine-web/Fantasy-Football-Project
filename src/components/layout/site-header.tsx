@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, LogOut, Menu, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
@@ -89,7 +89,35 @@ function NavDropdown({
   );
 }
 
-export function SiteHeader({ user }: { user: SiteHeaderUser | null }) {
+/**
+ * The signed-in user, read in the browser from the Auth.js session endpoint.
+ *
+ * The root layout used to call `auth()` on the server, which reads cookies and
+ * so made EVERY page dynamic — no page could be pre-rendered or served from
+ * ISR, and every navigation flashed a loading skeleton. The header is the only
+ * thing in the layout that needs the session, so it asks for it here instead.
+ * Access control is unaffected: admin pages and server actions check the
+ * session themselves.
+ */
+function useSessionUser(): SiteHeaderUser | null {
+  const [user, setUser] = useState<SiteHeaderUser | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((s: { user?: SiteHeaderUser } | null) => {
+        if (!cancelled) setUser(s?.user ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return user;
+}
+
+export function SiteHeader() {
+  const user = useSessionUser();
   const [open, setOpen] = useState(false);
   const isAdmin = user?.role === "ADMIN";
 

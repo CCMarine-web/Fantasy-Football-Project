@@ -8,6 +8,12 @@ import { TeamAvatar } from "@/components/shared/team-avatar";
 import { getComputedRivalries, type RivalryView } from "@/server/repositories/computed-rivalries-repository";
 import { Swords, Trophy } from "lucide-react";
 
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
+
 export const metadata = { title: "Rivalries" };
 
 /**

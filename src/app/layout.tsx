@@ -4,7 +4,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SiteHeader } from "@/components/layout/site-header";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { SiteBackground } from "@/components/layout/site-background";
-import { auth } from "@/auth";
+import { StalenessBanner } from "@/components/layout/staleness-banner";
 import { BRAND } from "@/lib/branding";
 import "./globals.css";
 
@@ -36,13 +36,11 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, nocache: true, googleBot: { index: false, follow: false } },
 };
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const session = await auth();
-
   return (
     <html
       lang="en"
@@ -52,7 +50,8 @@ export default async function RootLayout({
       <body className="flex min-h-full flex-col bg-background text-foreground">
         <SiteBackground />
         <TooltipProvider>
-          <SiteHeader user={session?.user ?? null} />
+          <SiteHeader />
+          <StalenessBanner />
           <main className="flex-1">{children}</main>
           <SiteFooter />
         </TooltipProvider>

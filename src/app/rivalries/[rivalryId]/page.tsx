@@ -13,6 +13,17 @@ import {
 import { cn } from "@/lib/utils";
 import { Trophy } from "lucide-react";
 
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
+
+/** Rendered on first request, then served from the ISR cache until the pipeline revalidates it. */
+export async function generateStaticParams() {
+  return [];
+}
+
 export async function generateMetadata({ params }: { params: Promise<{ rivalryId: string }> }) {
   const { rivalryId } = await params;
   const r = await getRivalryDetail(rivalryId);

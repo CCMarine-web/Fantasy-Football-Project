@@ -44,6 +44,12 @@ const envSchema = z.object({
   // Shared secret for the weekly cron endpoint. When set, /api/cron/weekly
   // requires `Authorization: Bearer <CRON_SECRET>` (Vercel Cron sends this).
   CRON_SECRET: z.string().optional().default(""),
+  // Optional. A Discord or Slack incoming-webhook URL; when set, a failed or
+  // partial pipeline run posts a one-line alert there. Unset = no alerts.
+  ALERT_WEBHOOK_URL: z.string().optional().default(""),
+  // Optional. The deployed site's base URL, so a CLI pipeline run can ask the
+  // live site to drop its caches (POST /api/cron/revalidate with CRON_SECRET).
+  SITE_URL: z.string().optional().default(""),
 });
 
 export type Env = z.infer<typeof envSchema>;

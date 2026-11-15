@@ -1484,3 +1484,71 @@ model ManagerRelationship {
   @@unique([managerAId, managerBId])
   @@index([managerBId])
 }
+
+// ---------------------------------------------------------------------------
+// Data pipeline (src/server/pipeline): run log and run lock
+// ---------------------------------------------------------------------------
+
+enum PipelineStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+  SKIPPED
+}
+
+/// One run of the data pipeline: sync -> compute -> generate-text -> revalidate.
+/// Written by every scheduled (Vercel Cron), admin and CLI run; /api/health
+/// and the staleness banner read the most recent successful one.
+model PipelineRun {
+  id          String         @id @default(cuid())
+  /// "daily" | "weekly" | "thursday" | "manual"
+  job         String
+  /// "cron" | "admin" | "cli"
+  trigger     String
+  status      PipelineStatus @default(RUNNING)
+  /// The last step that started.
+  stepReached String?
+  seasonYear  Int?
+  /// The week the run was about (last completed week at the time).
+  week        Int?
+  /// Per-step results: [{ key, status, detail, durationMs, counts }]
+  steps       Json           @default("[]")
+  /// Aggregate counts (records synced, texts generated, stale texts left, ...).
+  counts      Json           @default("{}")
+  /// Redacted error messages.
+  errors      Json           @default("[]")
+  startedAt   DateTime       @default(now())
+  finishedAt  DateTime?
+
+  @@index([status, startedAt])
+  @@index([job, startedAt])
+}
+
+/// A lease so two pipeline runs never overlap (a cron firing while a manual
+/// run is going, or Vercel retrying). Expires on its own if a run dies.
+model PipelineLock {
+  name       String   @id
+  holder     String
+  acquiredAt DateTime @default(now())
+  expiresAt  DateTime
+}
+
+/// The power ranking as it stood after each completed week, written by the
+/// pipeline's compute step (weeks before snapshots existed are backfilled by
+/// recomputing the model with later games left out). Insert-or-update per
+/// (season, week, team); never deleted. Powers the rank-by-week chart and the
+/// movement arrows.
+model PowerRankingSnapshot {
+  id            String   @id @default(cuid())
+  seasonId      String
+  seasonYear    Int
+  week          Int
+  fantasyTeamId String
+  rank          Int
+  score         Float
+  capturedAt    DateTime @default(now())
+
+  @@unique([seasonYear, week, fantasyTeamId])
+  @@index([seasonId, week])
+}

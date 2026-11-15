@@ -6,6 +6,12 @@ import { getStandingsView } from "@/server/repositories/standings-repository";
 import { MatchupsHubLink } from "@/components/shared/matchups-hub-link";
 import { BarChart3 } from "lucide-react";
 
+/**
+ * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
+ * revalidates every page when it does; the hour is only a safety net.
+ */
+export const revalidate = 3600;
+
 export const metadata = { title: "Standings" };
 
 export default async function StandingsPage() {
