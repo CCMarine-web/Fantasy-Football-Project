@@ -1,128 +1,142 @@
 import Link from "next/link";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TeamAvatar } from "@/components/shared/team-avatar";
+import { FormChips } from "@/components/shared/form-chips";
 import { cn } from "@/lib/utils";
 import type { StandingsRow } from "@/types/view-models";
 
-function FormBadge({ result }: { result: "W" | "L" | "T" }) {
-  return (
-    <span
-      className={cn(
-        "flex h-5 w-5 items-center justify-center rounded-sm text-[12px] font-bold",
-        result === "W" && "bg-field text-field-foreground",
-        result === "L" && "bg-destructive/20 text-destructive",
-        result === "T" && "bg-muted text-muted-foreground",
-      )}
-    >
-      {result}
-    </span>
-  );
+/** "Patrick McManus" → "McManus": the phone column's short name. */
+export function shortManagerName(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  return parts.length > 1 ? parts.slice(1).join(" ") : name;
 }
 
 /**
- * `caption` states what the order means. It is not decoration: before week 1
- * there are no standings, and a table that silently lists ten 0-0 teams as
- * positions 1 to 10 is telling every reader something untrue. So before any
- * game is played a row with no recorded position shows a dash. Once games have
- * been played the rows arrive already in standings order, and a season still
- * in progress has no stored rank yet — there the position in the list is the
- * rank, rather than a column of dashes.
+ * The standings table, used by /standings and the Matchups hub.
+ *
+ * Phone layout: every column is reachable by scrolling INSIDE the table (the
+ * page itself never scrolls sideways); the rank and team columns stay pinned on
+ * the left, and the team cell shows the manager's last name so it fits. The old
+ * table hid five columns behind breakpoints with no way to reach them.
+ *
+ * The playoff cut line sits under the last team in the field, labelled.
  */
-export function StandingsTable({ rows, caption }: { rows: StandingsRow[]; caption?: string }) {
+export function StandingsTable({
+  rows,
+  caption,
+  playoffTeams,
+  formLabel,
+}: {
+  rows: StandingsRow[];
+  caption?: string;
+  /** Draw the cut line after this many teams. Omit for no line. */
+  playoffTeams?: number;
+  /** e.g. "Last 5 through Week 9". */
+  formLabel?: string;
+}) {
   const gamesPlayed = rows.some((r) => r.wins + r.losses + r.ties > 0);
+  const showCut = gamesPlayed && playoffTeams != null && playoffTeams > 0 && playoffTeams < rows.length;
+  const pinned = "sticky z-10 bg-card";
+  const th = "px-3 py-2 text-xs font-medium tracking-wide text-muted-foreground uppercase whitespace-nowrap";
+  const td = "px-3 py-2 font-mono tabular-nums whitespace-nowrap";
+
   return (
-    <div className="overflow-x-auto rounded-lg border border-border/60">
+    <div className="rounded-lg border border-border/60 bg-card">
       {caption ? (
-        <p className="border-b border-border/60 bg-card/40 px-3 py-2 text-xs text-muted-foreground">
-          {caption}
-        </p>
+        <p className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">{caption}</p>
       ) : null}
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="w-10">#</TableHead>
-            <TableHead>Team</TableHead>
-            <TableHead className="text-center">W-L-T</TableHead>
-            <TableHead className="text-right">PF</TableHead>
-            <TableHead className="hidden text-right sm:table-cell">PA</TableHead>
-            <TableHead className="hidden text-center sm:table-cell">All-Play</TableHead>
-            <TableHead className="hidden text-right md:table-cell">Exp. W</TableHead>
-            <TableHead className="hidden text-right md:table-cell">Sched. Luck</TableHead>
-            <TableHead className="hidden text-right lg:table-cell">Form</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((row, index) => (
-            <TableRow key={row.fantasyTeamId}>
-              <TableCell className="font-mono text-muted-foreground">
-                {row.rank || (gamesPlayed ? index + 1 : "—")}
-              </TableCell>
-              {/* The team cell wraps instead of truncating: at 390px a 7rem
-                  cap cut names to "Marvin's Ro…". Wrapping keeps the table
-                  inside the screen (its width no longer follows the longest
-                  name), and the avatar drops below `sm` to give the name room. */}
-              <TableCell className="whitespace-normal">
-                <Link
-                  href={`/managers/${row.managerId}`}
-                  className="flex items-center gap-3 hover:text-primary"
-                >
-                  <TeamAvatar
-                    name={row.managerName}
-                    imageUrl={row.avatarUrl}
-                    className="hidden h-8 w-8 shrink-0 sm:flex"
-                  />
-                  <span className="min-w-0">
-                    <span className="block text-sm leading-snug font-semibold break-words">{row.teamName}</span>
-                    <span className="block text-xs break-words text-muted-foreground">{row.managerName}</span>
-                  </span>
-                </Link>
-              </TableCell>
-              <TableCell className="text-center font-mono tabular-nums">
-                {row.wins}-{row.losses}
-                {row.ties ? `-${row.ties}` : ""}
-              </TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
-                {row.pointsFor.toFixed(1)}
-              </TableCell>
-              {/* Points-against joins the progressively-disclosed columns: at
-                  phone widths there is not room for both points columns, and a
-                  half-visible number reads as a rendering bug. */}
-              <TableCell className="hidden text-right font-mono tabular-nums text-muted-foreground sm:table-cell">
-                {row.pointsAgainst.toFixed(1)}
-              </TableCell>
-              <TableCell className="hidden text-center font-mono tabular-nums sm:table-cell">
-                {row.allPlayRecord ?? "—"}
-              </TableCell>
-              <TableCell className="hidden text-right font-mono tabular-nums md:table-cell">
-                {row.expectedWins?.toFixed(1) ?? "—"}
-              </TableCell>
-              <TableCell
-                className={cn(
-                  "hidden text-right font-mono tabular-nums md:table-cell",
-                  (row.scheduleLuck ?? 0) > 0 && "text-field",
-                  (row.scheduleLuck ?? 0) < 0 && "text-destructive",
-                )}
-              >
-                {row.scheduleLuck != null ? (row.scheduleLuck > 0 ? "+" : "") + row.scheduleLuck.toFixed(1) : "—"}
-              </TableCell>
-              <TableCell className="hidden lg:table-cell">
-                <div className="flex justify-end gap-1">
-                  {row.recentForm && row.recentForm.length > 0 ? (
-                    row.recentForm.map((r, idx) => <FormBadge key={idx} result={r} />)
-                  ) : (
-                    <span className="text-muted-foreground">—</span>
-                  )}
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      {/* PA, All-Play and the rest are hidden on a phone; say so, or the
-          table reads as the whole picture. */}
-      <p className="border-t border-border/60 px-3 py-2 text-xs text-muted-foreground sm:hidden">
-        More columns on a wider screen
-      </p>
+      <div className="overflow-x-auto" role="region" aria-label="Standings table, scrolls sideways" tabIndex={0}>
+        <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
+          <thead>
+            <tr className="text-left">
+              <th scope="col" className={cn(th, pinned, "left-0 w-10")}>#</th>
+              <th scope="col" className={cn(th, pinned, "left-10 border-r border-border/40 sm:border-r-0")}>Team</th>
+              <th scope="col" className={cn(th, "text-center")}>W-L-T</th>
+              <th scope="col" className={cn(th, "text-right")} title="Points for">PF</th>
+              <th scope="col" className={cn(th, "text-right")} title="Points against">PA</th>
+              <th scope="col" className={cn(th, "text-center")} title="Record if you played every team every week">All-Play</th>
+              <th scope="col" className={cn(th, "text-right")} title="Wins expected from all-play rate">Exp. W</th>
+              <th scope="col" className={cn(th, "text-right")} title="Actual wins minus expected wins">Sched. Luck</th>
+              <th scope="col" className={cn(th, "text-right")}>{formLabel ?? "Form"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => {
+              const rank = row.rank || (gamesPlayed ? index + 1 : null);
+              const lastIn = showCut && rank === playoffTeams;
+              const border = lastIn ? "border-b-2 border-b-primary/70" : "border-b border-border/40";
+              return (
+                <tr key={row.fantasyTeamId} className="group">
+                  <td className={cn(td, pinned, border, "left-0 w-10 text-muted-foreground")}>{rank ?? "—"}</td>
+                  <td className={cn("px-3 py-2", pinned, border, "left-10 max-w-[9.5rem] border-r border-r-border/40 sm:max-w-none sm:border-r-0")}>
+                    <Link
+                      href={`/managers/${row.managerId}`}
+                      className="flex items-center gap-3 hover:text-primary"
+                      title={`${row.teamName} — ${row.managerName}`}
+                    >
+                      <TeamAvatar name={row.managerName} imageUrl={row.avatarUrl} className="hidden h-8 w-8 shrink-0 sm:flex" />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm leading-snug font-semibold sm:hidden">
+                          {shortManagerName(row.managerName)}
+                        </span>
+                        <span className="hidden text-sm leading-snug font-semibold break-words sm:block">{row.teamName}</span>
+                        <span className="block truncate text-xs text-muted-foreground sm:whitespace-normal">
+                          <span className="sm:hidden">{row.teamName}</span>
+                          <span className="hidden sm:inline">{row.managerName}</span>
+                        </span>
+                      </span>
+                    </Link>
+                  </td>
+                  <td className={cn(td, border, "text-center")}>
+                    {row.wins}-{row.losses}
+                    {row.ties ? `-${row.ties}` : ""}
+                    {row.tiebreak ? (
+                      <span className="ml-1 cursor-help text-[10px] text-muted-foreground" title={`Placed below the team above on ${row.tiebreak.toLowerCase()}`}>
+                        TB
+                      </span>
+                    ) : null}
+                  </td>
+                  <td className={cn(td, border, "text-right")}>{row.pointsFor.toFixed(1)}</td>
+                  <td className={cn(td, border, "text-right text-muted-foreground")}>{row.pointsAgainst.toFixed(1)}</td>
+                  <td className={cn(td, border, "text-center")}>{row.allPlayRecord ?? "—"}</td>
+                  <td className={cn(td, border, "text-right")}>{row.expectedWins?.toFixed(1) ?? "—"}</td>
+                  <td
+                    className={cn(
+                      td,
+                      border,
+                      "text-right",
+                      (row.scheduleLuck ?? 0) > 0 && "text-field",
+                      (row.scheduleLuck ?? 0) < 0 && "text-destructive",
+                    )}
+                  >
+                    {row.scheduleLuck != null ? (row.scheduleLuck > 0 ? "+" : "") + row.scheduleLuck.toFixed(1) : "—"}
+                  </td>
+                  <td className={cn("px-3 py-2", border)}>
+                    <div className="flex justify-end">
+                      {row.recentForm && row.recentForm.length > 0 ? (
+                        <FormChips form={row.recentForm} label={formLabel ?? "Form"} showLabel={false} />
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-3 py-2 text-xs text-muted-foreground">
+        {showCut ? (
+          <span className="flex items-center gap-2">
+            <span className="inline-block h-0.5 w-6 bg-primary/70" aria-hidden />
+            Playoff line: top {playoffTeams} make the postseason
+          </span>
+        ) : (
+          <span />
+        )}
+        <span className="sm:hidden">Swipe the table for more columns →</span>
+        <span className="hidden sm:inline">Order: win %, then points for. TB = placed by tiebreaker.</span>
+      </div>
     </div>
   );
 }

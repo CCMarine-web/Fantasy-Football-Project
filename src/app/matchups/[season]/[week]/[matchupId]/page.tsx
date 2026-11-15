@@ -7,17 +7,15 @@ import { Separator } from "@/components/ui/separator";
 import { DataFreshness } from "@/components/shared/data-freshness";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
-import {
-  getHeadToHeadGameLog,
-} from "@/server/repositories/manager-repository";
+import { getSeries } from "@/server/repositories/head-to-head-repository";
 import { getMatchupById, getRosterForTeamWeek } from "@/server/repositories/matchup-repository";
 import { positionLabel } from "@/lib/format";
 import { getMatchupAIContent } from "@/server/ai/weekly-pipeline";
 import {
   closestMeeting,
-  currentStreak,
-  headToHeadRecord,
+  describeSeries,
   largestBlowout,
+  SERIES_DEFINITION,
 } from "@/server/stats";
 import { ArrowLeft, Sparkles } from "lucide-react";
 
@@ -153,9 +151,9 @@ export default async function MatchupDetailPage({
     getRosterForTeamWeek(teamB.fantasyTeamId, matchup.week),
   ]);
 
-  const h2hGames = await getHeadToHeadGameLog(teamA.fantasyTeam.managerId, teamB.fantasyTeam.managerId);
-  const h2hRecord = headToHeadRecord(h2hGames);
-  const streak = currentStreak(h2hGames);
+  // The site's one head-to-head definition (stats/head-to-head.ts).
+  const h2h = await getSeries(teamA.fantasyTeam.managerId, teamB.fantasyTeam.managerId);
+  const h2hGames = h2h.meetings;
   const closest = closestMeeting(h2hGames);
   const blowout = largestBlowout(h2hGames);
 
@@ -166,16 +164,8 @@ export default async function MatchupDetailPage({
   const preview = aiContent.isMock ? null : aiContent.preview;
   const recap = aiContent.isMock ? null : aiContent.recap;
 
-  // The series from teamA's side; name whoever actually leads it.
   const nameA = teamA.fantasyTeam.manager.displayName;
   const nameB = teamB.fantasyTeam.manager.displayName;
-  const tiesSuffix = h2hRecord.ties ? `-${h2hRecord.ties}` : "";
-  const series =
-    h2hRecord.wins === h2hRecord.losses
-      ? { leader: null, score: `Series tied ${h2hRecord.wins}-${h2hRecord.losses}${tiesSuffix}` }
-      : h2hRecord.wins > h2hRecord.losses
-        ? { leader: nameA, score: `${h2hRecord.wins}-${h2hRecord.losses}${tiesSuffix}` }
-        : { leader: nameB, score: `${h2hRecord.losses}-${h2hRecord.wins}${tiesSuffix}` };
 
   // Recap first once the game is over; before then the preview leads.
   const writing = [
@@ -244,21 +234,27 @@ export default async function MatchupDetailPage({
             <CardTitle className="uppercase">Head-to-Head History</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {h2hGames.length > 0 ? (
-              <p>
-                {series.leader ? (
-                  <>
-                    <strong>{series.leader}</strong> leads the series <span className="font-mono">{series.score}</span>
-                  </>
-                ) : (
-                  <span className="font-mono">{series.score}</span>
-                )}
+            {h2h.games > 0 ? (
+              <p title={SERIES_DEFINITION}>
+                <strong>{describeSeries(h2h, nameA, nameB)}</strong>{" "}
+                <span className="text-muted-foreground">
+                  · {h2h.games} meeting{h2h.games === 1 ? "" : "s"}
+                  {h2h.averageMargin != null ? ` · ${h2h.averageMargin.toFixed(1)}-pt average margin` : ""}
+                </span>
               </p>
             ) : null}
-            {streak.winner ? (
+            {h2h.playoff.games > 0 ? (
               <p className="text-muted-foreground">
-                Current streak: {streak.winner === "self" ? teamA.fantasyTeam.manager.displayName : teamB.fantasyTeam.manager.displayName} has won {streak.length} straight.
+                Playoffs: {describeSeries(h2h.playoff, nameA, nameB)}
               </p>
+            ) : null}
+            {h2h.streak.holder && h2h.streak.length > 1 ? (
+              <p className="text-muted-foreground">
+                Current streak: {h2h.streak.holder === "A" ? nameA : nameB} has won {h2h.streak.length} straight.
+              </p>
+            ) : null}
+            {h2h.games > 0 ? (
+              <p className="text-xs text-muted-foreground/80">{SERIES_DEFINITION}</p>
             ) : null}
             {closest ? (
               <p className="text-muted-foreground">

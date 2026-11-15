@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/db";
+import { loadVerifiedGames, type VerifiedGameRow } from "@/server/repositories/verified-games";
+import { countsForSeries, summarizeSeries } from "./head-to-head";
+import type { GameResult } from "./types";
 
 /**
  * Head-to-head statistics for every pair of managers that has met, stored in
@@ -35,111 +38,93 @@ export function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`;
 }
 
-export async function collectMeetings(): Promise<Map<string, Meeting[]>> {
-  /*
-   * Verified scores only, on BOTH sides. Ethan Jones's three abandoned weeks in
-   * 2022 were counted as head-to-head wins for whoever happened to be scheduled
-   * against him, which inflated their records, their points totals and their
-   * biggest-win margins, and put a 100-point "blowout" at the top of two
-   * rivalry pages. See scripts/import/audit-suspect-scores.ts.
-   */
-  const rows = await prisma.matchupTeam.findMany({
-    where: { score: { not: null }, verifiedScore: true },
-    select: {
-      score: true,
-      fantasyTeam: { select: { managerId: true } },
-      matchup: {
-        select: {
-          id: true,
-          week: true,
-          isPlayoff: true,
-          bracketType: true,
-          roundName: true,
-          season: { select: { year: true, dataSource: true } },
-          teams: {
-            select: {
-              score: true,
-              verifiedScore: true,
-              fantasyTeam: { select: { managerId: true } },
-            },
-          },
-        },
-      },
-    },
-  });
-
-  // Champion per season, plus the final playoff week per season — together
-  // these identify a title game without inventing bracket data we don't have.
-  const champs = await prisma.championship.findMany({
-    select: { championManagerId: true, season: { select: { year: true } } },
-  });
-  const championByYear = new Map(champs.map((c) => [c.season.year, c.championManagerId]));
-
+/**
+ * Every counted meeting per pair, from the SAME verified rows every other
+ * head-to-head surface reads (server/repositories/verified-games.ts), filtered
+ * by the same rule (`countsForSeries`). Pure, so the cross-page consistency
+ * test can run it on a fixture.
+ */
+export function meetingsFromVerifiedRows(
+  rows: VerifiedGameRow[],
+  championByYear: Map<number, string> = new Map(),
+): Map<string, Meeting[]> {
+  // Final playoff week per season — with the champion, identifies a title game
+  // when the bracket's own round name is missing.
   const finalPlayoffWeek = new Map<number, number>();
   for (const r of rows) {
-    if (!r.matchup.isPlayoff) continue;
-    const y = r.matchup.season.year;
-    finalPlayoffWeek.set(y, Math.max(finalPlayoffWeek.get(y) ?? 0, r.matchup.week));
+    if (!r.isPlayoff) continue;
+    finalPlayoffWeek.set(r.year, Math.max(finalPlayoffWeek.get(r.year) ?? 0, r.week));
   }
 
   const seen = new Set<string>();
   const byPair = new Map<string, Meeting[]>();
-
   for (const r of rows) {
-    const m = r.matchup;
-    if (m.teams.length !== 2) continue;
-    if (seen.has(m.id)) continue;
-    seen.add(m.id);
-
-    // Consolation-bracket meetings decide nothing and are not counted
-    // anywhere else on the site; a rivalry record including them disagreed
-    // with the same pairing's head-to-head on the manager pages.
-    if (m.isPlayoff && m.bracketType === "CONSOLATION") continue;
-
-    const [t1, t2] = m.teams;
-    const a = t1.fantasyTeam.managerId;
-    const b = t2.fantasyTeam.managerId;
+    if (seen.has(r.matchupId)) continue;
+    seen.add(r.matchupId);
+    if (!countsForSeries({ isPlayoff: r.isPlayoff, bracket: r.bracket })) continue;
+    const a = r.managerId;
+    const b = r.opponentManagerId;
     if (!a || !b || a === b) continue;
-    if (t1.score == null || t2.score == null) continue;
-    // A contest needs two real results. Filtering only the queried side left
-    // the opponent's row in, so the abandoned team still appeared as a loss.
-    if (!t1.verifiedScore || !t2.verifiedScore) continue;
 
-    const year = m.season.year;
-    const champion = championByYear.get(year);
-    /*
-     * Prefer the bracket's own designation. The old heuristic — last playoff
-     * week, champion involved — also matched the third-place game and any
-     * consolation game played that week, so a toilet-bowl meeting could be
-     * recorded as a championship meeting.
-     */
+    const champion = championByYear.get(r.year);
     const isTitleGame =
-      m.bracketType === "WINNERS" && m.roundName === "Championship"
+      r.bracket === "WINNERS" && r.roundName === "Championship"
         ? true
-        : m.bracketType == null &&
-          m.isPlayoff &&
-          m.week === finalPlayoffWeek.get(year) &&
+        : r.bracket == null &&
+          r.isPlayoff &&
+          r.week === finalPlayoffWeek.get(r.year) &&
           champion != null &&
           (champion === a || champion === b);
 
     const key = pairKey(a, b);
     const list = byPair.get(key) ?? [];
     list.push({
-      seasonYear: year,
-      week: m.week,
-      isPlayoff: m.isPlayoff,
+      seasonYear: r.year,
+      week: r.week,
+      isPlayoff: r.isPlayoff,
       isChampionship: isTitleGame,
-      bracketType: m.bracketType,
-      dataSource: m.season.dataSource as Meeting["dataSource"],
-      scores: { [a]: t1.score, [b]: t2.score },
+      bracketType: r.bracket,
+      dataSource: r.dataSource as Meeting["dataSource"],
+      scores: { [a]: r.score, [b]: r.opponentScore },
     });
     byPair.set(key, list);
   }
-
   for (const list of byPair.values()) {
     list.sort((x, y) => x.seasonYear - y.seasonYear || x.week - y.week);
   }
   return byPair;
+}
+
+export async function collectMeetings(): Promise<Map<string, Meeting[]>> {
+  /*
+   * Verified scores only, on BOTH sides (loadVerifiedGames enforces it). Ethan
+   * Jones's three abandoned weeks in 2022 were once counted as head-to-head
+   * wins for whoever happened to be scheduled against him.
+   */
+  const [rows, champs] = await Promise.all([
+    loadVerifiedGames(),
+    prisma.championship.findMany({
+      select: { championManagerId: true, season: { select: { year: true } } },
+    }),
+  ]);
+  return meetingsFromVerifiedRows(rows, new Map(champs.map((c) => [c.season.year, c.championManagerId])));
+}
+
+/** A meeting from one side's point of view, in the stats package's game shape. */
+export function meetingAsGame(m: Meeting, selfId: string, opponentId: string): GameResult {
+  const pf = m.scores[selfId];
+  const pa = m.scores[opponentId];
+  return {
+    season: m.seasonYear,
+    week: m.week,
+    isPlayoff: m.isPlayoff,
+    bracket: m.bracketType,
+    pointsFor: pf,
+    pointsAgainst: pa,
+    opponentId,
+    result: pf > pa ? "W" : pf < pa ? "L" : "T",
+    dataSource: m.dataSource,
+  };
 }
 
 export interface Computed {
@@ -174,12 +159,6 @@ export interface Computed {
 }
 
 export function computePair(aId: string, bId: string, meetings: Meeting[]): Computed {
-  let aWins = 0;
-  let bWins = 0;
-  let ties = 0;
-  let aPoints = 0;
-  let bPoints = 0;
-  let marginSum = 0;
   let playoffMeetings = 0;
   let consolationMeetings = 0;
   let championshipMeetings = 0;
@@ -199,10 +178,7 @@ export function computePair(aId: string, bId: string, meetings: Meeting[]): Comp
   for (const m of meetings) {
     const aScore = m.scores[aId];
     const bScore = m.scores[bId];
-    aPoints += aScore;
-    bPoints += bScore;
     const margin = Math.abs(aScore - bScore);
-    marginSum += margin;
     // Championship bracket only. A postseason meeting with no bracket on
     // record counts as neither, rather than being assumed to be a playoff game.
     if (m.isPlayoff && m.bracketType === "WINNERS") playoffMeetings++;
@@ -210,9 +186,6 @@ export function computePair(aId: string, bId: string, meetings: Meeting[]): Comp
     if (m.isChampionship) championshipMeetings++;
 
     const winnerId = aScore > bScore ? aId : bScore > aScore ? bId : null;
-    if (winnerId === aId) aWins++;
-    else if (winnerId === bId) bWins++;
-    else ties++;
 
     // Ties end a streak without starting a new one.
     if (winnerId === null) {
@@ -239,8 +212,16 @@ export function computePair(aId: string, bId: string, meetings: Meeting[]): Comp
     lastWeek = m.week;
   }
 
-  const games = meetings.length;
-  const avgMargin = games ? marginSum / games : null;
+  /*
+   * The headline figures come from the site's one series function, so the
+   * stored rivalry can never disagree with the profile, the matchup card or the
+   * AI facts. The loop above keeps only what is rivalry-specific (closest game,
+   * blowout, longest streak, title meetings) and is asserted equal by the
+   * cross-page consistency test.
+   */
+  const series = summarizeSeries(meetings.map((m) => meetingAsGame(m, aId, bId)), bId);
+  const games = series.games;
+  const avgMargin = series.averageMargin;
   // Closeness and postseason stakes make a rivalry; volume alone doesn't.
   const rivalryScore =
     games * 3 + playoffMeetings * 6 + championshipMeetings * 10 + Math.max(0, 25 - (avgMargin ?? 25));
@@ -249,13 +230,13 @@ export function computePair(aId: string, bId: string, meetings: Meeting[]): Comp
     managerAId: aId,
     managerBId: bId,
     gamesPlayed: games,
-    managerAWins: aWins,
-    managerBWins: bWins,
-    ties,
-    managerAPoints: Number(aPoints.toFixed(2)),
-    managerBPoints: Number(bPoints.toFixed(2)),
-    averageMargin: avgMargin == null ? null : Number(avgMargin.toFixed(2)),
-    playoffMeetings,
+    managerAWins: series.aWins,
+    managerBWins: series.bWins,
+    ties: series.ties,
+    managerAPoints: series.aPoints,
+    managerBPoints: series.bPoints,
+    averageMargin: avgMargin,
+    playoffMeetings: series.playoff.games,
     consolationMeetings,
     championshipMeetings,
     closestGameMargin: closest ? Number(closest.margin.toFixed(2)) : null,
@@ -263,8 +244,9 @@ export function computePair(aId: string, bId: string, meetings: Meeting[]): Comp
     largestBlowoutMargin: blowout ? Number(blowout.margin.toFixed(2)) : null,
     largestBlowoutManagerId: blowout?.winnerId ?? null,
     largestBlowoutSeason: blowout?.season ?? null,
-    currentStreakManagerId: curStreak > 0 ? curStreakId : null,
-    currentStreakCount: curStreak,
+    currentStreakManagerId:
+      series.streak.holder === "A" ? aId : series.streak.holder === "B" ? bId : null,
+    currentStreakCount: series.streak.length,
     longestStreakManagerId: longestId,
     longestStreakCount: longest,
     lastMeetingWinnerId: lastWinnerId,

@@ -7,6 +7,8 @@ import {
   type FeaturedFactor,
 } from "@/server/stats/featured-matchup";
 import { loadVerifiedGames } from "./verified-games";
+import { seriesFromRows } from "./head-to-head-repository";
+import { describeSeries, type SeriesSummary } from "@/server/stats/head-to-head";
 import { getPowerRankings } from "./power-rankings-repository";
 import { getStandingsForSeason } from "./standings-repository";
 
@@ -42,11 +44,26 @@ export interface FeaturedTeam {
   powerRank: number | null;
   /** Standings position, null before week 1. */
   standing: number | null;
-  /** Last three results, most recent first. */
-  recentForm: ("W" | "L" | "T")[];
+  /**
+   * Regular-season results ENTERING this week, oldest first — the same five
+   * games the standings table's form column shows, with the week and opponent
+   * for the chip's tooltip.
+   */
+  recentForm: FormChip[];
   /** Highest-scoring starters this week, or the best of the roster beforehand. */
   keyPlayers: { name: string; position: string; detail: string }[];
 }
+
+export interface FormChip {
+  result: "W" | "L" | "T";
+  week: number;
+  opponentName: string;
+  score: number;
+  opponentScore: number;
+}
+
+/** How many form chips every surface shows. */
+export const FORM_LENGTH = 5;
 
 export interface FeaturedMatchupView {
   matchupId: string;
@@ -58,12 +75,19 @@ export interface FeaturedMatchupView {
   roundName: string | null;
   teams: [FeaturedTeam, FeaturedTeam];
   teamsRanked: number;
-  /** Head-to-head series, from verified games only. */
+  /**
+   * Head-to-head series — the site's one definition (stats/head-to-head.ts),
+   * every final game counted, this week's included once it is final.
+   */
   series: {
     games: number;
     teamAWins: number;
     teamBWins: number;
     ties: number;
+    /** "Anthony Cibilich leads 8-6" / "Series tied 7-7". */
+    text: string;
+    /** Championship-bracket meetings, phrased the same way; null when none. */
+    playoffText: string | null;
     averageMargin: number | null;
     lastMeeting: { seasonYear: number; week: number; winnerName: string | null } | null;
   };
@@ -188,19 +212,27 @@ export async function getFeaturedMatchup(
   };
 
   /**
-   * The form strip shown on the card: this season only, through this game once
-   * it is final, oldest first — the same reading as the standings table. The
-   * strip used to reach back into last season and stop short of the game on
-   * screen, so a 0-3 team showed "L L W".
+   * The form strip shown on the card: this season's regular-season games
+   * ENTERING this week, the last five, oldest first — the same window and order
+   * as the standings table, labelled as such on the card.
    */
-  const displayFormFor = (managerId: string | null, throughThisWeek: boolean): ("W" | "L" | "T")[] => {
+  const displayFormFor = (managerId: string | null): FormChip[] => {
     if (!managerId) return [];
     return (gamesByManager.get(managerId) ?? [])
-      .filter((g) => !g.isPlayoff && g.year === seasonYear && (throughThisWeek ? g.week <= week : g.week < week))
+      .filter((g) => !g.isPlayoff && g.year === seasonYear && g.week < week)
       .sort((a, b) => a.week - b.week)
-      .slice(-3)
-      .map((g) => resultOf(g.score, g.opponentScore));
+      .slice(-FORM_LENGTH)
+      .map((g) => ({
+        result: resultOf(g.score, g.opponentScore),
+        week: g.week,
+        opponentName: g.opponentManagerName,
+        score: g.score,
+        opponentScore: g.opponentScore,
+      }));
   };
+
+  const seriesOf = (aId: string | null, bId: string | null): SeriesSummary | null =>
+    aId && bId ? seriesFromRows(verified, aId, bId) : null;
 
   const candidates: FeaturedCandidate[] = playable.map((m) => {
     const [a, b] = m.teams;
@@ -209,15 +241,8 @@ export async function getFeaturedMatchup(
     const rivalry =
       managerAId && managerBId ? rivalryOf.get(rivalryKey(managerAId, managerBId)) : undefined;
 
-    // Verified head-to-head meetings, championship bracket and regular season
-    // alike but never consolation — the site does not count those anywhere.
-    const meetings = (managerAId ? (gamesByManager.get(managerAId) ?? []) : []).filter(
-      (g) => g.opponentManagerId === managerBId && g.bracket !== "CONSOLATION",
-    );
-    const averageMargin =
-      meetings.length > 0
-        ? meetings.reduce((sum, g) => sum + Math.abs(g.score - g.opponentScore), 0) / meetings.length
-        : null;
+    // The same series the card prints — one definition, one count.
+    const series = seriesOf(managerAId, managerBId);
 
     /*
      * Before kickoff the model weighs projections; afterwards it weighs the
@@ -244,8 +269,8 @@ export async function getFeaturedMatchup(
       standingB: standingOf.get(b.fantasyTeamId) ?? null,
       playoffSpots,
       isOfficialRivalry: rivalry?.isOfficial ?? false,
-      headToHeadGames: meetings.length,
-      headToHeadAverageMargin: averageMargin,
+      headToHeadGames: series?.games ?? 0,
+      headToHeadAverageMargin: series?.averageMargin ?? null,
       recentFormA: formFor(managerAId),
       recentFormB: formFor(managerBId),
       weeksRemaining,
@@ -291,22 +316,17 @@ export async function getFeaturedMatchup(
       isWinner: side.isWinner,
       powerRank: powerRankOf.get(side.fantasyTeamId) ?? null,
       standing: standingOf.get(side.fantasyTeamId) ?? null,
-      recentForm: displayFormFor(managerId, isFinal),
+      recentForm: displayFormFor(managerId),
       keyPlayers: keyPlayers.get(side.fantasyTeamId) ?? [],
     };
   };
 
-  // The all-time series between these two, from verified non-consolation games.
-  const meetings = (managerAId ? (gamesByManager.get(managerAId) ?? []) : [])
-    .filter((g) => g.opponentManagerId === managerBId && g.bracket !== "CONSOLATION")
-    // This week's game is not part of the history leading into it.
-    .filter((g) => !(g.year === seasonYear && g.week === week))
-    .sort((x, y) => y.year - x.year || y.week - x.week);
-
-  const teamAWins = meetings.filter((g) => g.isWinner === true).length;
-  const teamBWins = meetings.filter((g) => g.isWinner === false).length;
-  const ties = meetings.length - teamAWins - teamBWins;
-  const last = meetings[0];
+  // The all-time series — the same summary "Why this game" was scored on.
+  const series = seriesOf(managerAId, managerBId);
+  const teamAWins = series?.aWins ?? 0;
+  const teamBWins = series?.bWins ?? 0;
+  const ties = series?.ties ?? 0;
+  const last = series?.lastMeeting ?? null;
 
   const rivalryRow =
     managerAId && managerBId ? rivalryOf.get(rivalryKey(managerAId, managerBId)) : undefined;
@@ -344,25 +364,21 @@ export async function getFeaturedMatchup(
     teams: [teamA, teamB],
     teamsRanked: power?.rows.length ?? 0,
     series: {
-      games: meetings.length,
+      games: series?.games ?? 0,
       teamAWins,
       teamBWins,
       ties,
-      averageMargin:
-        meetings.length > 0
-          ? meetings.reduce((sum, g) => sum + Math.abs(g.score - g.opponentScore), 0) /
-            meetings.length
+      text: series ? describeSeries(series, teamA.managerName, teamB.managerName) : "First meeting",
+      playoffText:
+        series && series.playoff.games > 0
+          ? describeSeries(series.playoff, teamA.managerName, teamB.managerName)
           : null,
+      averageMargin: series?.averageMargin ?? null,
       lastMeeting: last
         ? {
-            seasonYear: last.year,
+            seasonYear: last.season,
             week: last.week,
-            winnerName:
-              last.isWinner === true
-                ? last.managerName
-                : last.isWinner === false
-                  ? last.opponentManagerName
-                  : null,
+            winnerName: last.winner === "A" ? teamA.managerName : last.winner === "B" ? teamB.managerName : null,
           }
         : null,
     },

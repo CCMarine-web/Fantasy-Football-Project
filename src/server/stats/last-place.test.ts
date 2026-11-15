@@ -82,3 +82,37 @@ describe("findLastPlace", () => {
     expect(result?.record).toBe("2-11-1");
   });
 });
+
+describe("the tiebreak tag", () => {
+  it("is absent when the last-place team is alone at the bottom (Shea 0-9, 2026)", () => {
+    const result = findLastPlace(2026, [
+      team({ managerId: "shea", wins: 0, losses: 9, pointsFor: 1080 }),
+      team({ managerId: "schwing", wins: 2, losses: 7, pointsFor: 1096 }),
+      team({ managerId: "mcmanus", wins: 8, losses: 1 }),
+    ], { isCurrent: true });
+    expect(result?.managerId).toBe("shea");
+    expect(result?.basis).toBe("POINTS_FALLBACK");
+    expect(result?.tiebreak).toBeNull();
+    expect(result?.isCurrent).toBe(true);
+  });
+
+  it("names who was tied and how it was broken when a tie was real", () => {
+    const result = findLastPlace(2019, [
+      team({ managerId: "a", wins: 3, losses: 11, pointsFor: 1560 }),
+      team({ managerId: "b", wins: 3, losses: 11, pointsFor: 1600 }),
+      team({ managerId: "c", wins: 9, losses: 5 }),
+    ]);
+    expect(result?.managerId).toBe("a");
+    expect(result?.tiebreak).toEqual({ tiedWith: ["b"], decidedBy: "Points for" });
+  });
+
+  it("credits the league's own order when the platform ranked a tie", () => {
+    const result = findLastPlace(2024, [
+      team({ managerId: "a", wins: 3, losses: 11, regularSeasonRank: 9 }),
+      team({ managerId: "b", wins: 3, losses: 11, regularSeasonRank: 10 }),
+    ]);
+    expect(result?.managerId).toBe("b");
+    expect(result?.tiebreak?.decidedBy).toBe("League standings order");
+    expect(result?.isCurrent).toBe(false);
+  });
+});

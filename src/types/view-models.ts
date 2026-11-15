@@ -41,7 +41,10 @@ export interface StandingsRow {
   expectedWins?: number;
   scheduleLuck?: number;
   playoffProbability?: number | null;
-  recentForm?: ("W" | "L" | "T")[];
+  /** Last five regular-season results, oldest first, with week and opponent. */
+  recentForm?: { result: "W" | "L" | "T"; week: number; opponentName: string; score: number; opponentScore: number }[];
+  /** Which tiebreaker placed this team below an identical record above it. */
+  tiebreak?: string | null;
 }
 
 export interface ManagerSummary {

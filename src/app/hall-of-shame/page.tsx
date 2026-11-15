@@ -162,9 +162,16 @@ export default async function HallOfShamePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
-                {shame.lastPlace.map((t) => (
-                  <tr key={t.year}>
-                    <td className="px-2 py-2 font-medium sm:px-4">{t.year}</td>
+                {[...(shame.currentLastPlace ? [shame.currentLastPlace] : []), ...shame.lastPlace].map((t) => (
+                  <tr key={t.year} className={t.isCurrent ? "bg-muted/20" : undefined}>
+                    <td className="px-2 py-2 font-medium sm:px-4">
+                      {t.year}
+                      {t.isCurrent ? (
+                        <Badge variant="outline" className="ml-2 align-middle text-[10px]" title="Season in progress: a position, not a final result">
+                          Current{"throughWeek" in t && t.throughWeek ? ` · thru Wk ${t.throughWeek}` : ""}
+                        </Badge>
+                      ) : null}
+                    </td>
                     <td className="px-2 py-2 sm:px-4">
                       {!noRoastIds.has(t.managerId) ? (
                         <BrandArt
@@ -175,9 +182,14 @@ export default async function HallOfShamePage() {
                         />
                       ) : null}
                       <ManagerLink managerId={t.managerId}>{t.managerName}</ManagerLink>
-                      {t.basis === "POINTS_FALLBACK" ? (
-                        <Badge variant="secondary" className="ml-2 align-middle text-[10px]">
-                          points tiebreak
+                      {/* Only when a tie was actually broken. */}
+                      {t.tiebreak ? (
+                        <Badge
+                          variant="secondary"
+                          className="ml-2 align-middle text-[10px]"
+                          title={`Tied on record with ${t.tiebreak.tiedWith.join(", ")}; decided by ${t.tiebreak.decidedBy.toLowerCase()}`}
+                        >
+                          {t.tiebreak.decidedBy === "Points for" ? "points tiebreak" : "standings tiebreak"}
                         </Badge>
                       ) : null}
                     </td>
@@ -189,6 +201,7 @@ export default async function HallOfShamePage() {
                       {t.pointsFor.toFixed(0)}
                     </td>
                     <td className="hidden px-2 py-2 text-right text-muted-foreground sm:px-4 md:table-cell">
+                      {t.isCurrent ? "currently " : ""}
                       {ordinal(t.teamsInSeason)} of {t.teamsInSeason}
                     </td>
                   </tr>

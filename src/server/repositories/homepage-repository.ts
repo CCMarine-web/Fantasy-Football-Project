@@ -2,6 +2,7 @@ import { prisma, isDatabaseUnavailableError } from "@/lib/db";
 import { getCurrentSeason } from "@/server/repositories/season-repository";
 import { getMatchupsForWeek } from "@/server/repositories/matchup-repository";
 import { getStandingsForSeason } from "@/server/repositories/standings-repository";
+import { getLeagueClock, withClockStatus } from "@/server/league-clock";
 
 /**
  * Returns homepage data, or `null` when there's nothing to show yet — either
@@ -27,19 +28,23 @@ async function loadHomepageData() {
     return null;
   }
 
-  // The latest week actually played, not the latest week on the schedule —
-  // Sleeper publishes all seventeen weeks up front, so "highest week with a
-  // matchup" was week 17 from the day the schedule appeared.
-  const latestPlayed = await prisma.matchup.findFirst({
-    where: { seasonId: season.id, status: "FINAL", teams: { some: { score: { not: null } } } },
-    orderBy: { week: "desc" },
-  });
-  const currentWeek = latestPlayed?.week ?? 1;
+  /*
+   * Which weeks to show comes from the league clock (server/league-clock.ts),
+   * the one definition of "what week is it" — not from the database alone,
+   * which only learns a week has started when the next sync runs. Results are
+   * the last week with stored final scores; the slate is the week being played
+   * or next to be played.
+   */
+  const clock = await getLeagueClock();
+  const currentWeek = clock?.lastStoredWeek ?? 1;
+  const slateWeek = clock?.currentWeek ?? null;
 
   const [currentWeekMatchups, upcomingMatchups, standings, defendingChampionship, recentTransactions, latestArticle, randomQuote] =
     await Promise.all([
       getMatchupsForWeek(season.id, currentWeek, season.year),
-      getMatchupsForWeek(season.id, currentWeek + 1, season.year),
+      slateWeek != null && slateWeek !== clock?.lastStoredWeek
+        ? getMatchupsForWeek(season.id, slateWeek, season.year)
+        : Promise.resolve([]),
       getStandingsForSeason(season.id),
       prisma.championship.findFirst({
         where: { season: { year: season.year - 1 } },
@@ -76,9 +81,11 @@ async function loadHomepageData() {
 
   return {
     season,
+    clock,
+    slateWeek,
     currentWeek,
     currentWeekMatchups,
-    upcomingMatchups,
+    upcomingMatchups: withClockStatus(upcomingMatchups, clock),
     standings,
     defendingChampionship,
     recentTransactions,

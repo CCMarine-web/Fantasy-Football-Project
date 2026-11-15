@@ -7,7 +7,6 @@ import {
   filterByDataSource,
   finalsAppearances,
   finishesBySeason,
-  headToHeadRecord,
   playoffAppearances,
 } from "@/server/stats";
 import type { GameDataSource, GameResult, SeasonFinish } from "@/server/stats/types";
@@ -16,7 +15,9 @@ import {
   loadVerifiedGames,
   loadVerifiedTeamWeeks,
   toGameResult,
+  type VerifiedGameRow,
 } from "@/server/repositories/verified-games";
+import { seriesByOpponent } from "@/server/repositories/head-to-head-repository";
 import { getManagerLuck } from "@/server/repositories/luck-repository";
 import { getLastPlaceBySeason } from "@/server/repositories/hall-of-shame-repository";
 import { cached, CACHE_TAGS } from "@/server/cache";
@@ -50,14 +51,6 @@ export async function buildManagerGameLog(managerId: string): Promise<GameResult
 }
 
 const buildGameLog = buildManagerGameLog;
-
-export async function getHeadToHeadGameLog(managerId: string, opponentManagerId: string): Promise<GameResult[]> {
-  const games = await buildManagerGameLog(managerId);
-  // Consolation-bracket games are not counted anywhere a manager's record is
-  // quoted (the page says so). They were leaking into head-to-head, career
-  // points and highs/lows: 148 head-to-head games against 136 career games.
-  return games.filter((g) => g.opponentId === opponentManagerId && !isConsolation(g));
-}
 
 /** A postseason game in the consolation bracket — decides nothing. */
 export function isConsolation(g: { isPlayoff: boolean; bracket?: string | null }): boolean {
@@ -144,6 +137,40 @@ export interface HeadToHeadLine {
   games: number;
   pointsForAvg: number;
   pointsAgainstAvg: number;
+  /** Championship-bracket meetings only. */
+  playoffWins: number;
+  playoffLosses: number;
+  averageMargin: number | null;
+}
+
+/**
+ * The profile's head-to-head list. Built by the site's one series function
+ * from the verified rows (server/repositories/head-to-head-repository.ts), so
+ * it agrees with the rivalry pages and the matchup cards by construction.
+ */
+export function headToHeadLines(rows: VerifiedGameRow[], managerId: string): HeadToHeadLine[] {
+  const oppName = new Map<string, string>();
+  for (const row of rows) {
+    if (row.managerId !== managerId) oppName.set(row.managerId, row.managerName);
+  }
+  return [...seriesByOpponent(rows, managerId).entries()]
+    // An opponent id with no name behind it is a deleted or unmerged manager
+    // row; it rendered as a nameless "14g" line.
+    .filter(([opponentId]) => opponentId && oppName.has(opponentId))
+    .map(([opponentId, s]) => ({
+      opponentId,
+      opponentName: oppName.get(opponentId) as string,
+      wins: s.aWins,
+      losses: s.bWins,
+      ties: s.ties,
+      games: s.games,
+      pointsForAvg: Number((s.aPoints / s.games).toFixed(1)),
+      pointsAgainstAvg: Number((s.bPoints / s.games).toFixed(1)),
+      playoffWins: s.playoff.aWins,
+      playoffLosses: s.playoff.bWins,
+      averageMargin: s.averageMargin,
+    }))
+    .sort((a, b) => b.games - a.games || a.opponentName.localeCompare(b.opponentName));
 }
 
 /**
@@ -431,36 +458,8 @@ export async function getManagerProfileDetailed(managerId: string) {
     count: finishCounts.get(i + 1) ?? 0,
   }));
 
-  // Head-to-head vs every other manager.
-  const byOpp = new Map<string, GameResult[]>();
-  const oppName = new Map<string, string>();
-  for (const row of allGames) {
-    if (row.managerId !== managerId) oppName.set(row.managerId, row.managerName);
-  }
-  for (const g of games) {
-    const list = byOpp.get(g.opponentId) ?? [];
-    list.push(g);
-    byOpp.set(g.opponentId, list);
-  }
-  const headToHead: HeadToHeadLine[] = [...byOpp.entries()]
-    // An opponent id with no name behind it is a deleted or unmerged manager
-    // row. Such an entry rendered as a nameless row showing only "14g", which
-    // reads as a broken record rather than as missing data.
-    .filter(([opponentId]) => opponentId && oppName.has(opponentId))
-    .map(([opponentId, log]) => {
-      const rec = headToHeadRecord(log);
-      return {
-        opponentId,
-        opponentName: oppName.get(opponentId) as string,
-        wins: rec.wins,
-        losses: rec.losses,
-        ties: rec.ties,
-        games: rec.wins + rec.losses + rec.ties,
-        pointsForAvg: Number(avg(log.map((g) => g.pointsFor)).toFixed(1)),
-        pointsAgainstAvg: Number(avg(log.map((g) => g.pointsAgainst)).toFixed(1)),
-      };
-    })
-    .sort((a, b) => b.games - a.games || a.opponentName.localeCompare(b.opponentName));
+  // Head-to-head vs every other manager: the shared series path.
+  const headToHead = headToHeadLines(allGames, managerId);
 
   const champs = await prisma.championship.count({ where: { championManagerId: managerId } });
 

@@ -302,3 +302,25 @@ describe("letterFromDraftRank", () => {
     expect(letterFromDraftRank(1, 1)).toBe("A_PLUS");
   });
 });
+
+describe("strongestFactor", () => {
+  it("never names a dropped or ungraded factor (2026: four teams showed 'Risk concentration')", async () => {
+    const { strongestFactor } = await import("./draft-quality");
+    const factors = [
+      { key: "starterQuality" as const, label: "Starter quality", value: 12.6, weight: 0.286, raw: "" },
+      { key: "positionalScarcity" as const, label: "Positional scarcity", value: 66.6, weight: 0.171, raw: "" },
+      { key: "riskConcentration" as const, label: "Risk concentration", value: 100, weight: 0.057, raw: "2 from one NFL team (0 above the incidental 3)" },
+      { key: "valueVsAdp" as const, label: "Value vs ADP", value: 100, weight: 0, raw: "no ADP on record" },
+    ];
+    expect(strongestFactor(factors)?.key).toBe("positionalScarcity");
+  });
+
+  it("does count risk concentration when the team actually stacked", async () => {
+    const { strongestFactor } = await import("./draft-quality");
+    const f = strongestFactor([
+      { key: "riskConcentration" as const, label: "Risk", value: 90, weight: 0.057, raw: "5 from one NFL team (2 above the incidental 3)" },
+      { key: "benchUpside" as const, label: "Bench", value: 10, weight: 0.143, raw: "" },
+    ]);
+    expect(f?.key).toBe("riskConcentration");
+  });
+});

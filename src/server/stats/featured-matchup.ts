@@ -116,6 +116,13 @@ export interface FeaturedChoice {
   ranked: { matchupId: string; score: number }[];
 }
 
+/** 1 → "1st", 2 → "2nd", 11 → "11th". */
+function ordinalOf(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+}
+
 function clamp(value: number, min = 0, max = 100): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -174,7 +181,7 @@ function measure(c: FeaturedCandidate) {
   // this is null and its weight is redistributed rather than scored as zero —
   // treating a preseason week as "no stakes" would let noise pick the game.
   let stakes: number | null = null;
-  if (c.standingA != null && c.standingB != null && c.playoffSpots > 0) {
+  if (c.standingA != null && c.standingB != null && c.standingA > 0 && c.standingB > 0 && c.playoffSpots > 0) {
     const cut = c.playoffSpots + 0.5;
     // Distance from the cut line, so a game between the teams either side of it
     // scores highest.
@@ -237,8 +244,9 @@ function reasonFor(key: FeaturedFactorKey, c: FeaturedCandidate): string {
     }
     case "stakes": {
       if (c.isPlayoff) return "a playoff game";
-      if (c.standingA == null || c.standingB == null) return "no standings yet";
-      return `${c.standingA}${c.standingA === c.standingB ? "" : ` and ${c.standingB}`} in the table with ${c.weeksRemaining} week${c.weeksRemaining === 1 ? "" : "s"} to play`;
+      // A position below 1 is "no position", never "0th in the table".
+      if (c.standingA == null || c.standingB == null || c.standingA < 1 || c.standingB < 1) return "no standings yet";
+      return `${ordinalOf(c.standingA)}${c.standingA === c.standingB ? "" : ` and ${ordinalOf(c.standingB)}`} in the table with ${c.weeksRemaining} regular-season week${c.weeksRemaining === 1 ? "" : "s"} to play`;
     }
     case "officialRivalry":
       return c.isOfficialRivalry ? "an official league rivalry" : "not an official rivalry";

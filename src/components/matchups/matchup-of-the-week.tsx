@@ -2,8 +2,10 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
+import { FormChips } from "@/components/shared/form-chips";
 import { ordinal } from "@/lib/format";
 import type { FeaturedMatchupView, FeaturedTeam } from "@/server/repositories/featured-matchup-repository";
+import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
 import { Flame, Star, Swords } from "lucide-react";
 
 /**
@@ -18,38 +20,18 @@ import { Flame, Star, Swords } from "lucide-react";
  * one is decided by the game's own state, not the calendar.
  */
 
-function FormPips({ form }: { form: ("W" | "L" | "T")[] }) {
-  if (form.length === 0) return null;
-  return (
-    <span className="flex items-center gap-1" aria-label={`Recent form: ${form.join(", ")}`}>
-      {form.map((result, index) => (
-        <span
-          key={index}
-          className={`flex h-4 w-4 items-center justify-center rounded-sm text-[10px] font-bold ${
-            result === "W"
-              ? "bg-field/20 text-field"
-              : result === "L"
-                ? "bg-destructive/20 text-destructive"
-                : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {result}
-        </span>
-      ))}
-    </span>
-  );
-}
-
 function TeamSide({
   team,
   teamsRanked,
   isFinal,
   align,
+  week,
 }: {
   team: FeaturedTeam;
   teamsRanked: number;
   isFinal: boolean;
   align: "left" | "right";
+  week: number;
 }) {
   const right = align === "right";
   return (
@@ -90,7 +72,7 @@ function TeamSide({
             {ordinal(team.standing)} in the table
           </Badge>
         ) : null}
-        <FormPips form={team.recentForm} />
+        <FormChips form={team.recentForm} label={`Form entering Week ${week}`} />
       </div>
 
       {/* Score, or the projection when there is not one yet. */}
@@ -166,12 +148,12 @@ export function MatchupOfTheWeek({ featured }: { featured: FeaturedMatchupView }
 
         {/* ── The two sides ──────────────────────────────────────────────── */}
         <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-start sm:gap-6">
-          <TeamSide team={a} teamsRanked={featured.teamsRanked} isFinal={featured.isFinal} align="left" />
+          <TeamSide team={a} teamsRanked={featured.teamsRanked} isFinal={featured.isFinal} align="left" week={featured.week} />
           <div className="flex shrink-0 items-center justify-center sm:self-center">
             <Swords className="h-5 w-5 text-muted-foreground" aria-hidden />
             <span className="sr-only">versus</span>
           </div>
-          <TeamSide team={b} teamsRanked={featured.teamsRanked} isFinal={featured.isFinal} align="right" />
+          <TeamSide team={b} teamsRanked={featured.teamsRanked} isFinal={featured.isFinal} align="right" week={featured.week} />
         </div>
 
         {/* ── Head-to-head series ────────────────────────────────────────── */}
@@ -182,20 +164,18 @@ export function MatchupOfTheWeek({ featured }: { featured: FeaturedMatchupView }
             </p>
           ) : (
             <div className="flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm">
-              <span>
+              <span title={SERIES_DEFINITION}>
                 <span className="text-xs tracking-wide text-muted-foreground uppercase">
                   Series
                 </span>{" "}
-                <span className="font-mono font-semibold tabular-nums">
-                  {series.teamAWins}-{series.teamBWins}
-                  {series.ties ? `-${series.ties}` : ""}
-                </span>{" "}
+                <span className="font-semibold">{series.text}</span>{" "}
                 <span className="text-muted-foreground">
-                  to {series.teamAWins === series.teamBWins ? "nobody" : series.teamAWins > series.teamBWins ? a.managerName : b.managerName}
-                  {" over "}
-                  {series.games} meeting{series.games === 1 ? "" : "s"}
+                  · {series.games} meeting{series.games === 1 ? "" : "s"}
                 </span>
               </span>
+              {series.playoffText ? (
+                <span className="text-muted-foreground">Playoffs: {series.playoffText}</span>
+              ) : null}
               {series.averageMargin != null ? (
                 <span className="text-muted-foreground">
                   {series.averageMargin.toFixed(1)}-point average margin

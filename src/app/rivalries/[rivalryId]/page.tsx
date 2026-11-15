@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
@@ -99,7 +100,7 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
       <PageHeader freshness
         eyebrow={r.isOfficial ? "Official rivalry" : "Head to head"}
         title={`${r.managerAName} vs ${r.managerBName}`}
-        description={`${r.gamesPlayed} ${r.gamesPlayed === 1 ? "meeting" : "meetings"} on record, computed from verified results.`}
+        description={`${r.seriesText} across ${r.gamesPlayed} ${r.gamesPlayed === 1 ? "meeting" : "meetings"}. ${SERIES_DEFINITION}`}
       />
 
       {/* Series header */}
@@ -125,7 +126,9 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
                 {r.managerBWins}
                 {r.ties ? <span className="text-muted-foreground">–{r.ties}</span> : null}
               </div>
-              <div className="text-xs text-muted-foreground">series record</div>
+              <div className="text-xs text-muted-foreground" title={SERIES_DEFINITION}>
+                {r.seriesText}
+              </div>
             </div>
             <Link
               href={`/managers/${r.managerBId}`}

@@ -346,7 +346,12 @@ export default async function MatchupsPage({
         {/* Before week 1 the order is stated rather than presented as a
             ranking — see standings-repository. */}
         {hub.standings.length > 0 ? (
-          <StandingsTable rows={hub.standings} caption={hub.standingsOrderingLabel} />
+          <StandingsTable
+            rows={hub.standings}
+            caption={hub.standingsOrderingLabel}
+            playoffTeams={hub.standingsPlayoffTeams}
+            formLabel={hub.standingsThroughWeek ? `Last 5 through Week ${hub.standingsThroughWeek}` : "Form"}
+          />
         ) : (
           <EmptyState
             title="No teams on record yet"

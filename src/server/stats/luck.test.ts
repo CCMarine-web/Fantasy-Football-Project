@@ -40,27 +40,28 @@ function game(part: Partial<LuckGame>): LuckGame {
 }
 
 describe("luckLabel", () => {
-  it("reserves Neutral for exactly 50", () => {
+  it("gives career scores (37-58 in 2026) distinct labels instead of all 'Slightly'", () => {
+    const career = { McManus: 58, Jones: 55, Shea: 55, Mire: 52, Cibilich: 50, Barkemeyer: 46, Javier: 45, Fuentes: 41, Schwing: 37 };
+    const labels = new Set(Object.values(career).map(luckLabel));
+    expect(labels).toEqual(new Set(["Slightly Lucky", "Neutral", "Slightly Unlucky", "Unlucky"]));
     expect(luckLabel(50)).toBe("Neutral");
-    // The old bands called anything from 45 to 55 neutral, which claimed the
-    // luck had evened out when the maths had found a lean.
-    expect(luckLabel(49)).toBe("Slightly Unlucky");
-    expect(luckLabel(51)).toBe("Slightly Lucky");
+    expect(luckLabel(49)).toBe("Neutral");
   });
 
   it("matches the published band boundaries exactly", () => {
     expect(luckLabel(100)).toBe("Extremely Lucky");
-    expect(luckLabel(81)).toBe("Extremely Lucky");
-    expect(luckLabel(80)).toBe("Very Lucky");
-    expect(luckLabel(66)).toBe("Very Lucky");
-    expect(luckLabel(65)).toBe("Slightly Lucky");
-    expect(luckLabel(51)).toBe("Slightly Lucky");
-    expect(luckLabel(50)).toBe("Neutral");
-    expect(luckLabel(49)).toBe("Slightly Unlucky");
-    expect(luckLabel(35)).toBe("Slightly Unlucky");
-    expect(luckLabel(34)).toBe("Very Unlucky");
-    expect(luckLabel(20)).toBe("Very Unlucky");
-    expect(luckLabel(19)).toBe("Extremely Unlucky");
+    expect(luckLabel(75)).toBe("Extremely Lucky");
+    expect(luckLabel(74)).toBe("Lucky");
+    expect(luckLabel(62)).toBe("Lucky");
+    expect(luckLabel(61)).toBe("Slightly Lucky");
+    expect(luckLabel(55)).toBe("Slightly Lucky");
+    expect(luckLabel(54)).toBe("Neutral");
+    expect(luckLabel(46)).toBe("Neutral");
+    expect(luckLabel(45)).toBe("Slightly Unlucky");
+    expect(luckLabel(39)).toBe("Slightly Unlucky");
+    expect(luckLabel(38)).toBe("Unlucky");
+    expect(luckLabel(26)).toBe("Unlucky");
+    expect(luckLabel(25)).toBe("Extremely Unlucky");
     expect(luckLabel(0)).toBe("Extremely Unlucky");
   });
 
@@ -68,11 +69,9 @@ describe("luckLabel", () => {
     for (let score = 0; score <= 100; score += 1) {
       expect(luckLabel(score)).not.toBe("");
     }
-    // Exactly one score is Neutral.
-    const neutral = Array.from({ length: 101 }, (_, i) => luckLabel(i)).filter(
-      (l) => l === "Neutral",
-    );
-    expect(neutral).toHaveLength(1);
+    // Neutral is the 46-54 band, symmetric around 50.
+    const neutral = Array.from({ length: 101 }, (_, i) => i).filter((i) => luckLabel(i) === "Neutral");
+    expect(neutral).toEqual([46, 47, 48, 49, 50, 51, 52, 53, 54]);
   });
 });
 

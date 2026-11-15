@@ -2,6 +2,8 @@ import { prisma } from "@/lib/db";
 import { expectedWins, scheduleLuck, seasonAllPlayTotals, weeklyAllPlay } from "@/server/stats";
 import type { WeeklyScore } from "@/server/stats/types";
 import type { StandingsRow } from "@/types/view-models";
+import { rankStandings } from "@/server/stats/standings";
+import { loadVerifiedGames } from "./verified-games";
 
 /**
  * ── Which games count ──────────────────────────────────────────────────────
@@ -34,10 +36,14 @@ export interface StandingsView {
   hasPlayedGames: boolean;
   /** What the order means, for the table caption. */
   orderingLabel: string;
+  /** Teams that make the postseason — where the table draws its cut line. */
+  playoffTeams: number;
+  /** Last week with final results in this season, or null before week 1. */
+  throughWeek: number | null;
 }
 
 export async function getStandingsView(seasonId: string): Promise<StandingsView> {
-  const [teams, regularSeasonMatchupTeams, season] = await Promise.all([
+  const [teams, regularSeasonMatchupTeams, season, verifiedRows] = await Promise.all([
     prisma.fantasyTeam.findMany({ where: { seasonId }, include: { manager: true } }),
     prisma.matchupTeam.findMany({
       where: {
@@ -47,8 +53,13 @@ export async function getStandingsView(seasonId: string): Promise<StandingsView>
       },
       include: { matchup: { select: { week: true } } },
     }),
-    prisma.season.findUnique({ where: { id: seasonId }, select: { year: true } }),
+    prisma.season.findUnique({ where: { id: seasonId }, select: { year: true, playoffTeams: true, status: true } }),
+    loadVerifiedGames({ seasonId }),
   ]);
+  const playoffTeams = season?.playoffTeams ?? 6;
+  const throughWeek = regularSeasonMatchupTeams.length
+    ? Math.max(...regularSeasonMatchupTeams.map((mt) => mt.matchup.week))
+    : null;
 
   const weeks = new Map<number, WeeklyScore[]>();
   for (const mt of regularSeasonMatchupTeams) {
@@ -68,14 +79,26 @@ export async function getStandingsView(seasonId: string): Promise<StandingsView>
     }
   }
 
-  const recentFormByTeam = new Map<string, ("W" | "L" | "T")[]>();
+  /*
+   * Form: the last five regular-season results, oldest first, from verified
+   * games — so every chip can say which week and which opponent it was.
+   */
+  const recentFormByTeam = new Map<string, NonNullable<StandingsRow["recentForm"]>>();
   for (const team of teams) {
-    const games = regularSeasonMatchupTeams
-      .filter((mt) => mt.fantasyTeamId === team.id)
-      .sort((a, b) => b.matchup.week - a.matchup.week)
-      .slice(0, 5)
-      .map((mt): "W" | "L" | "T" => (mt.isWinner === true ? "W" : mt.isWinner === false ? "L" : "T"));
-    recentFormByTeam.set(team.id, games.reverse());
+    recentFormByTeam.set(
+      team.id,
+      verifiedRows
+        .filter((g) => g.fantasyTeamId === team.id && !g.isPlayoff)
+        .sort((a, b) => a.week - b.week)
+        .slice(-5)
+        .map((g) => ({
+          result: g.score > g.opponentScore ? "W" : g.score < g.opponentScore ? "L" : g.isWinner === true ? "W" : g.isWinner === false ? "L" : "T",
+          week: g.week,
+          opponentName: g.opponentManagerName,
+          score: g.score,
+          opponentScore: g.opponentScore,
+        })),
+    );
   }
 
   const hasPlayedGames = teams.some((t) => t.wins + t.losses + t.ties > 0) || weeks.size > 0;
@@ -137,23 +160,31 @@ export async function getStandingsView(seasonId: string): Promise<StandingsView>
   });
 
   if (hasPlayedGames) {
-    rows.sort((a, b) => {
-      if (a.rank && b.rank) return a.rank - b.rank;
-      if (b.wins !== a.wins) return b.wins - a.wins;
-      return b.pointsFor - a.pointsFor;
-    });
     /*
-     * A stored rank exists only once a season has been finalised. While it is
-     * in progress the position IS the order above — wins, then points for, the
-     * same order Sleeper ranks by — so number it, rather than showing a column
-     * of dashes (and "0th in the table" on the Matchup of the Week).
+     * One ranker (stats/standings.ts): win %, then points for — Sleeper's
+     * default, which this league uses. A completed season keeps the rank the
+     * platform recorded.
      */
-    if (rows.some((r) => !r.rank)) rows.forEach((r, i) => (r.rank = i + 1));
+    const stored = new Map(teams.map((t) => [t.id, season?.status === "COMPLETE" ? t.regularSeasonRank : null]));
+    const ranked = rankStandings(
+      rows.map((r) => ({
+        ...r,
+        id: r.fantasyTeamId,
+        name: r.teamName,
+        storedRank: stored.get(r.fantasyTeamId) ?? null,
+      })),
+    );
+    const ordered = ranked.map(({ team, rank, separatedBy }) => {
+      const row = rows.find((r) => r.fantasyTeamId === team.id) as StandingsRow;
+      return { ...row, rank, tiebreak: separatedBy };
+    });
     return {
-      rows,
+      rows: ordered,
       ordering: "STANDINGS",
       hasPlayedGames: true,
-      orderingLabel: "Current standings",
+      orderingLabel: season?.status === "COMPLETE" ? "Final regular-season standings" : `Standings through Week ${throughWeek}`,
+      playoffTeams,
+      throughWeek,
     };
   }
 
@@ -172,6 +203,8 @@ export async function getStandingsView(seasonId: string): Promise<StandingsView>
 
   return {
     rows,
+    playoffTeams,
+    throughWeek,
     ordering: usePrior ? "PRIOR_SEASON_FINISH" : "ALPHABETICAL",
     hasPlayedGames: false,
     orderingLabel: usePrior

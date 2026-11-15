@@ -109,3 +109,22 @@ describe("wordCount", () => {
     expect(wordCount("")).toBe(0);
   });
 });
+
+describe("sentence boundaries never fall inside a number (Nov 2026 review)", () => {
+  it("keeps decimals and thousands separators whole", () => {
+    const text = "He finished averaging 105.3 points. The defense produced 1,560.4 points with 109.25 per game. Done.";
+    expect(sentencesOf(text).map((s) => s.trim())).toEqual([
+      "He finished averaging 105.3 points.",
+      "The defense produced 1,560.4 points with 109.25 per game.",
+      "Done.",
+    ]);
+  });
+
+  it("never ends an excerpt on a bare number with a trailing period", () => {
+    const long = Array.from({ length: 40 }, (_, i) => `Sentence ${i} averaging 105.${i % 10} points and 1,560.5 total.`).join(" ");
+    const out = excerpt(long, { minWords: 20, maxWords: 40 }) ?? "";
+    expect(out).not.toMatch(/\d\.$/);
+    expect(out).not.toMatch(/\d,\d{3}\.$/);
+    expect(out.endsWith(".")).toBe(true);
+  });
+});

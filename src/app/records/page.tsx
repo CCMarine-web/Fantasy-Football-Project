@@ -5,8 +5,10 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   getComputedRecords,
+  getRecordWatch,
   type RecordEntry,
 } from "@/server/repositories/computed-records-repository";
+import { RecordWatch } from "@/components/shared/record-watch";
 import { Award } from "lucide-react";
 
 export const metadata = { title: "Records" };
@@ -53,7 +55,8 @@ async function withPreciseClosestGame(records: RecordEntry[]): Promise<RecordEnt
 }
 
 export default async function RecordsPage() {
-  const records = await withPreciseClosestGame(await getComputedRecords());
+  const [rawRecords, watch] = await Promise.all([getComputedRecords(), getRecordWatch()]);
+  const records = await withPreciseClosestGame(rawRecords);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
@@ -78,6 +81,10 @@ export default async function RecordsPage() {
         elsewhere on the site. Scores that could not be verified as real contest results are excluded;
         see the Hall of Shame for what that covers.
       </p>
+
+      {watch && watch.items.length > 0 ? (
+        <RecordWatch className="mt-8" seasonYear={watch.seasonYear} items={watch.items} />
+      ) : null}
 
       <div className="mt-8">
         {records.length === 0 ? (

@@ -56,7 +56,12 @@ export default async function StandingsPage() {
 
       <div className="mt-8">
         {view.rows.length > 0 ? (
-          <StandingsTable rows={view.rows} caption={view.orderingLabel} />
+          <StandingsTable
+            rows={view.rows}
+            caption={view.orderingLabel}
+            playoffTeams={view.playoffTeams}
+            formLabel={view.throughWeek ? `Last 5 through Week ${view.throughWeek}` : "Form"}
+          />
         ) : (
           <EmptyState
             icon={BarChart3}

@@ -7,13 +7,13 @@ import { LUCK_CLOSE_GAME_MARGIN, LUCK_WEIGHTS, type LuckScore } from "@/server/s
  * anything, it just renders what the maths produced.
  */
 
-// Tones follow the published label bands exactly, so the colour and the word
-// can never disagree. Neutral grey is reserved for a score of exactly 50.
+// Tones follow the published label bands exactly (LUCK_BANDS), so the colour
+// and the word can never disagree. Neutral grey is the 46-54 band.
 function toneFor(score: number): string {
-  if (score >= 66) return "border-field/50 bg-field/15 text-field";
-  if (score >= 51) return "border-field/30 bg-field/10 text-field";
-  if (score === 50) return "border-border/60 bg-muted text-muted-foreground";
-  if (score >= 35) return "border-destructive/30 bg-destructive/10 text-destructive";
+  if (score >= 62) return "border-field/50 bg-field/15 text-field";
+  if (score >= 55) return "border-field/30 bg-field/10 text-field";
+  if (score >= 46) return "border-border/60 bg-muted text-muted-foreground";
+  if (score >= 39) return "border-destructive/30 bg-destructive/10 text-destructive";
   return "border-destructive/50 bg-destructive/15 text-destructive";
 }
 

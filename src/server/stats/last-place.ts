@@ -55,6 +55,15 @@ export interface LastPlaceFinish {
   /** How many teams the season had, so "10th of 10" can be stated. */
   teamsInSeason: number;
   basis: LastPlaceBasis;
+  /**
+   * Set ONLY when another team finished with the same win percentage, so a
+   * tie genuinely had to be broken: who it was broken against, and how. A 0-9
+   * team alone at the bottom was tagged "points tiebreak" merely because the
+   * season had no platform ranking — nothing was tied, nothing was broken.
+   */
+  tiebreak: { tiedWith: string[]; decidedBy: "League standings order" | "Points for" } | null;
+  /** True for a season still being played — shown as "Current", never counted. */
+  isCurrent: boolean;
 }
 
 export function winPercentage(t: Pick<SeasonStandingTeam, "wins" | "losses" | "ties">): number {
@@ -71,7 +80,11 @@ export function formatRecord(t: Pick<SeasonStandingTeam, "wins" | "losses" | "ti
  * games. A season where the platform ranked every team is decided by that
  * ranking; otherwise by record then points, flagged as a fallback.
  */
-export function findLastPlace(year: number, teams: SeasonStandingTeam[]): LastPlaceFinish | null {
+export function findLastPlace(
+  year: number,
+  teams: SeasonStandingTeam[],
+  options: { isCurrent?: boolean } = {},
+): LastPlaceFinish | null {
   const played = teams.filter((t) => t.wins + t.losses + t.ties > 0);
   if (played.length === 0) return null;
 
@@ -87,6 +100,10 @@ export function findLastPlace(year: number, teams: SeasonStandingTeam[]): LastPl
         (a, b) => winPercentage(a) - winPercentage(b) || a.pointsFor - b.pointsFor,
       )[0];
 
+  const tiedWith = played
+    .filter((t) => t.managerId !== worst.managerId && winPercentage(t) === winPercentage(worst))
+    .map((t) => t.managerName);
+
   return {
     year,
     managerId: worst.managerId,
@@ -101,6 +118,11 @@ export function findLastPlace(year: number, teams: SeasonStandingTeam[]): LastPl
     winPct: Number(winPercentage(worst).toFixed(3)),
     teamsInSeason: played.length,
     basis,
+    tiebreak:
+      tiedWith.length > 0
+        ? { tiedWith, decidedBy: basis === "LEAGUE_STANDINGS" ? "League standings order" : "Points for" }
+        : null,
+    isCurrent: options.isCurrent ?? false,
   };
 }
 

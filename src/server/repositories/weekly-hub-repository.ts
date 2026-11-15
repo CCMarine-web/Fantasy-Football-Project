@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import type { MatchupCardData, StandingsRow } from "@/types/view-models";
 import { getCurrentSeason } from "./season-repository";
 import { getSeasonPhase, type SeasonPhaseInfo } from "./season-phase";
+import { getLeagueClock, withClockStatus, type LeagueClock } from "@/server/league-clock";
 import { getStandingsView, type StandingsOrdering } from "./standings-repository";
 import { getMatchupsForWeek } from "./matchup-repository";
 import { getTransactionsPage, type TransactionView } from "./transaction-repository";
@@ -70,6 +71,8 @@ export interface WeeklyHubData {
   seasonYear: number;
   seasonId: string;
   phase: SeasonPhaseInfo;
+  /** The league clock — the one answer to "what week is it". */
+  clock: LeagueClock | null;
   /** How current the underlying data is. */
   sync: SyncState;
   /** The featured game for this week, chosen deterministically. */
@@ -85,6 +88,8 @@ export interface WeeklyHubData {
   /** What the standings order means — see standings-repository. */
   standingsOrdering: StandingsOrdering;
   standingsOrderingLabel: string;
+  standingsPlayoffTeams: number;
+  standingsThroughWeek: number | null;
   awards: WeeklyAwardView[];
   powerRankings: PowerRankingView[];
   powerRankingsTitle: string;
@@ -186,7 +191,7 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     }));
   if (!season) return null;
 
-  const phase = await getSeasonPhase(season.id, season.year);
+  const [phase, clock] = await Promise.all([getSeasonPhase(season.id, season.year), getLeagueClock()]);
 
   const scheduledWeeks = await prisma.matchup.findMany({
     where: { seasonId: season.id },
@@ -196,12 +201,14 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
   });
   const availableWeeks = scheduledWeeks.map((w) => w.week);
 
-  // The week to show: whatever was asked for if it exists, else the latest week
-  // with a score, else the first scheduled week, else nothing at all.
+  // The week to show: whatever was asked for if it exists, else the league
+  // clock's focus (the live slate during a game week, last week's results
+  // from MNF until the next kickoff), else the first scheduled week.
+  const clockWeek = clock?.seasonYear === season.year ? clock.focusWeek : null;
   const week =
     requestedWeek != null && availableWeeks.includes(requestedWeek)
       ? requestedWeek
-      : (phase.currentWeek ?? availableWeeks[0] ?? null);
+      : (clockWeek != null && availableWeeks.includes(clockWeek) ? clockWeek : (phase.currentWeek ?? availableWeeks[0] ?? null));
 
   const [standingsView, matchups, awards, power, transactions, verifiedGames, articles, sync, featured] =
     await Promise.all([
@@ -326,15 +333,18 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     seasonYear: season.year,
     seasonId: season.id,
     phase,
+    clock,
     sync,
     featured,
     week,
     availableWeeks,
     headline,
-    matchups,
+    matchups: withClockStatus(matchups, clock),
     standings: standingsView.rows,
     standingsOrdering: standingsView.ordering,
     standingsOrderingLabel: standingsView.orderingLabel,
+    standingsPlayoffTeams: standingsView.playoffTeams,
+    standingsThroughWeek: standingsView.throughWeek,
     awards,
     powerRankings: power?.rows ?? [],
     powerRankingsTitle: powerRankingsTitleFor(power?.mode ?? "MANAGER_BASELINE", power?.throughWeek ?? 0),

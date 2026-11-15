@@ -49,6 +49,8 @@ export interface HallOfShame {
   entries: ShameEntry[];
   /** Season-by-season regular-season last place, newest first. */
   lastPlace: LastPlaceFinish[];
+  /** Bottom of the season in progress, labelled "Current"; never counted. */
+  currentLastPlace: (LastPlaceFinish & { throughWeek: number | null }) | null;
   /** Every published punishment photograph, unlabelled. Leads the page. */
   gallery: GalleryPhoto[];
   /** Published punishment photographs, newest season first. */
@@ -247,7 +249,7 @@ async function buildHallOfShame(): Promise<HallOfShame> {
     });
   }
 
-  const lastPlace = await getLastPlaceBySeason();
+  const [lastPlace, currentLastPlace] = await Promise.all([getLastPlaceBySeason(), getCurrentLastPlace()]);
   const [photos, gallery, excludedScores] = await Promise.all([
     listPunishmentPhotos(),
     listUnlabelledPunishmentPhotos(),
@@ -257,6 +259,7 @@ async function buildHallOfShame(): Promise<HallOfShame> {
   return {
     entries,
     lastPlace,
+    currentLastPlace,
     gallery,
     punishmentPhotos: photos.filter((p): p is PunishmentPhoto => p.photoUrl != null),
     punishmentsWithoutPhotos: photos.filter((p) => p.photoUrl == null) as PunishmentPhoto[],
@@ -265,6 +268,47 @@ async function buildHallOfShame(): Promise<HallOfShame> {
     excludedScores,
     usesFallbackTiebreak: lastPlace.some((l) => l.basis === "POINTS_FALLBACK"),
   };
+}
+
+/**
+ * Who is bottom of the season in progress, shown as "Current" above the
+ * finished seasons. Never counted as a last-place finish anywhere — it is a
+ * position, not a result.
+ */
+export async function getCurrentLastPlace(): Promise<(LastPlaceFinish & { throughWeek: number | null }) | null> {
+  const season = await prisma.season.findFirst({ where: { isCurrent: true, status: "IN_PROGRESS" } });
+  if (!season) return null;
+  const [teams, lastFinal] = await Promise.all([
+    prisma.fantasyTeam.findMany({
+      where: { seasonId: season.id },
+      select: {
+        teamName: true, wins: true, losses: true, ties: true, pointsFor: true, pointsAgainst: true,
+        managerId: true, manager: { select: { displayName: true } },
+      },
+    }),
+    prisma.matchup.findFirst({
+      where: { seasonId: season.id, isPlayoff: false, status: "FINAL", teams: { some: { score: { not: null } } } },
+      orderBy: { week: "desc" },
+      select: { week: true },
+    }),
+  ]);
+  const finish = findLastPlace(
+    season.year,
+    teams.map((t) => ({
+      managerId: t.managerId,
+      managerName: t.manager.displayName,
+      teamName: t.teamName,
+      wins: t.wins,
+      losses: t.losses,
+      ties: t.ties,
+      pointsFor: t.pointsFor,
+      pointsAgainst: t.pointsAgainst,
+      // In progress: no platform rank yet, so the live order (record, then PF).
+      regularSeasonRank: null,
+    })),
+    { isCurrent: true },
+  );
+  return finish ? { ...finish, throughWeek: lastFinal?.week ?? null } : null;
 }
 
 /**

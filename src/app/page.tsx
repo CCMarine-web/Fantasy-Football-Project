@@ -241,8 +241,8 @@ export default async function HomePage() {
               {upcomingMatchups.length > 0 ? (
                 <section>
                   <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
-                    {upcomingMatchups.some((m) => m.status === "IN_PROGRESS") ? "In Progress" : "Up Next"} — Week{" "}
-                    {currentWeek + 1}
+                    {data.clock?.currentWeekState === "IN_PROGRESS" ? "In Progress" : "Up Next"} — Week{" "}
+                    {data.slateWeek}
                   </h2>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     {upcomingMatchups.map((m) => (

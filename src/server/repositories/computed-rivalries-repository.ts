@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import { cached, CACHE_TAGS } from "@/server/cache";
+import { describeSeries } from "@/server/stats/head-to-head";
 
 /**
  * Rivalries, read straight from the persisted Rivalry / RivalryMeeting tables.
@@ -62,6 +63,8 @@ export interface RivalryView {
   lastMeetingSeason: number | null;
   lastMeetingWeek: number | null;
   rivalryScore: number;
+  /** "{Leader} leads W-L" / "Series tied W-W" — the site's one phrasing. */
+  seriesText: string;
   /** Persisted commentary, or null when none has been generated yet. */
   blurb: string | null;
   meetings: RivalryMeetingView[];
@@ -145,6 +148,11 @@ function toView(r: RivalryRow, meetings: RivalryMeetingView[] = []): RivalryView
     lastMeetingSeason: r.lastMeetingSeason,
     lastMeetingWeek: r.lastMeetingWeek,
     rivalryScore: r.rivalryScore,
+    seriesText: describeSeries(
+      { games: games, aWins: r.managerAWins, bWins: r.managerBWins, ties: r.ties },
+      r.managerA.displayName,
+      r.managerB.displayName,
+    ),
     // Never surface placeholder copy.
     blurb: r.summary && !r.summaryIsMock ? r.summary : null,
     meetings,

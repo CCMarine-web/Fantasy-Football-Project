@@ -141,18 +141,23 @@ function mean(values: number[]): number {
  * The published label bands. The score is always a whole number, so these
  * cover 0-100 with no gaps and no overlap.
  *
- * "Neutral" is reserved for EXACTLY 50. A band of 45-55 called neutral was
- * claiming the luck had evened out when the maths had actually found a lean;
- * anything either side of dead centre is now named as the lean it is.
+ * Calibrated to what the scores actually do (Nov 2026 review). Career scores
+ * regress toward 50 and ran 37-58; season scores ran 11-89 with the middle 80%
+ * between 29 and 71. The previous bands (Neutral = exactly 50, "Slightly"
+ * from 35 to 65) labelled every career but one "Slightly Lucky/Unlucky", so the
+ * label said nothing. Neutral is now a real band (46-54, within about half a
+ * typical season's spread of dead centre), and the "Slightly" bands are narrow
+ * enough that the next step up means something. Labels only — the score itself
+ * is unchanged.
  */
 export const LUCK_BANDS = [
-  { min: 81, max: 100, label: "Extremely Lucky" },
-  { min: 66, max: 80, label: "Very Lucky" },
-  { min: 51, max: 65, label: "Slightly Lucky" },
-  { min: 50, max: 50, label: "Neutral" },
-  { min: 35, max: 49, label: "Slightly Unlucky" },
-  { min: 20, max: 34, label: "Very Unlucky" },
-  { min: 0, max: 19, label: "Extremely Unlucky" },
+  { min: 75, max: 100, label: "Extremely Lucky" },
+  { min: 62, max: 74, label: "Lucky" },
+  { min: 55, max: 61, label: "Slightly Lucky" },
+  { min: 46, max: 54, label: "Neutral" },
+  { min: 39, max: 45, label: "Slightly Unlucky" },
+  { min: 26, max: 38, label: "Unlucky" },
+  { min: 0, max: 25, label: "Extremely Unlucky" },
 ] as const;
 
 export function luckLabel(score: number): string {

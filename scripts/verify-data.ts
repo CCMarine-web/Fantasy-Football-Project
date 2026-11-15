@@ -1,6 +1,7 @@
 import "./lib/load-env";
 import { prisma } from "@/lib/db";
 import { verifyAllData } from "@/server/verify/data-verification";
+import { verifyHeadToHeadConsistency } from "@/server/verify/head-to-head-consistency";
 
 /**
  * Reconciles stored league data against its sources. Read-only.
@@ -41,7 +42,14 @@ async function main() {
     }
     console.log(`\n${report.totalMismatches === 0 ? "All seasons reconcile." : `${report.totalMismatches} problem(s) found.`}`);
   }
-  if (report.totalMismatches > 0) process.exitCode = 1;
+  // Cross-page head-to-head: stored rivalry vs profile vs matchup card.
+  const h2h = await verifyHeadToHeadConsistency();
+  if (!process.argv.includes("--json")) {
+    console.log(`
+Head-to-head consistency: ${h2h.pairsChecked} pairs, ${h2h.problems.length === 0 ? "rivalry, profile and matchup paths agree" : `${h2h.problems.length} DISAGREE`}`);
+    for (const p of h2h.problems) console.log(`    ${p.pair}: rivalry ${p.rivalry}, profile ${p.profile}, matchup ${p.matchup}`);
+  }
+  if (report.totalMismatches > 0 || h2h.problems.length > 0) process.exitCode = 1;
 }
 
 main()

@@ -333,11 +333,25 @@ export async function revisitDraftGradesForSeason(
     return { seasonId, revisited: 0, skipped: 0 };
   }
 
-  const [grades, picks, playerTotals] = await Promise.all([
+  const [grades, returns] = await Promise.all([
     prisma.draftGrade.findMany({
       where: { seasonId },
       include: { manager: { select: { displayName: true } } },
     }),
+    loadDraftReturns(seasonId),
+  ]);
+  const safeguards = await getContentSafeguards();
+  return writeRevisits(seasonId, season.year, grades, returns, safeguards, options);
+}
+
+/**
+ * The hindsight inputs for one season — every drafted player's production on
+ * the drafting team's scored weeks — and the draft-return computation over
+ * them. Works for a season in progress too (production so far), which is what
+ * the provisional in-season revisit uses.
+ */
+export async function loadDraftReturns(seasonId: string) {
+  const [picks, playerTotals] = await Promise.all([
     prisma.draftPick.findMany({
       where: { draft: { seasonId } },
       select: {
@@ -386,9 +400,52 @@ export async function revisitDraftGradesForSeason(
     byManager.set(pick.managerId, entry);
   }
 
-  const returns = computeDraftReturns([...byManager.values()]);
-  const safeguards = await getContentSafeguards();
+  return computeDraftReturns([...byManager.values()]);
+}
 
+/**
+ * The revisited grade so far for a Sleeper season still being played —
+ * derived on read from player scoring to date, never stored, so it moves every
+ * week with the results. Null for ESPN seasons (no per-player weekly scoring)
+ * and for completed seasons (those have the stored, final revisit).
+ */
+export async function getProvisionalRevisit(
+  seasonId: string,
+): Promise<{ throughWeek: number; byManager: Map<string, { grade: GradeLetter; rank: number; score: number }> } | null> {
+  const season = await prisma.season.findUnique({
+    where: { id: seasonId },
+    select: { status: true, dataSource: true },
+  });
+  if (!season || season.status !== "IN_PROGRESS" || season.dataSource !== "SLEEPER") return null;
+  const [returns, lastWeek] = await Promise.all([
+    loadDraftReturns(seasonId),
+    prisma.matchup.findFirst({
+      where: { seasonId, status: "FINAL", teams: { some: { score: { not: null } } } },
+      orderBy: { week: "desc" },
+      select: { week: true },
+    }),
+  ]);
+  if (!returns.available || !lastWeek) return null;
+  const n = returns.teams.length;
+  return {
+    throughWeek: lastWeek.week,
+    byManager: new Map(
+      returns.teams.map((t) => [
+        t.managerId,
+        { grade: letterFromDraftRank(t.rank, n) as GradeLetter, rank: t.rank, score: t.score },
+      ]),
+    ),
+  };
+}
+
+async function writeRevisits(
+  seasonId: string,
+  seasonYear: number,
+  grades: Awaited<ReturnType<typeof prisma.draftGrade.findMany<{ include: { manager: { select: { displayName: true } } } }>>>,
+  returns: Awaited<ReturnType<typeof loadDraftReturns>>,
+  safeguards: Awaited<ReturnType<typeof getContentSafeguards>>,
+  options: { force?: boolean },
+): Promise<RevisitGradesResult> {
   let revisited = 0;
   let skipped = 0;
 
@@ -418,7 +475,7 @@ export async function revisitDraftGradesForSeason(
 
     const { text, providerName } = await generateDraftRevisitRationale(
       {
-        seasonYear: season.year,
+        seasonYear,
         managerName: grade.manager.displayName,
         originalGrade: gradeLetterToDisplay(grade.grade),
         originalRationale: grade.rationale ?? undefined,
@@ -556,6 +613,11 @@ export interface DraftReportCardsView {
   revisitWeights: { key: string; label: string; description: string; weight: number }[];
   /** False when the season has no per-player scoring, so no revisited grade exists. */
   revisitAvailable: boolean;
+  /**
+   * The revisited grade SO FAR, for a Sleeper season still being played:
+   * recomputed from player scoring through `throughWeek`, never stored.
+   */
+  provisionalRevisit: { throughWeek: number; grades: Record<string, { grade: GradeLetter; rank: number; score: number }> } | null;
   /** Season-wide confidence, and what is missing behind it. */
   confidence: DraftConfidence;
   confidenceReasons: string[];
@@ -595,6 +657,7 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
       adpAvailable: false,
       revisitWeights: [],
       revisitAvailable: false,
+      provisionalRevisit: null,
       confidence: "LOW",
       confidenceReasons: ["No draft is on record for this season."],
     };
@@ -608,6 +671,7 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
   });
 
   const adpAvailable = grades.some((g) => g.adpAvailable);
+  const provisional = await getProvisionalRevisit(season.id);
 
   /*
    * The methodology panel reads its weights from the factors actually STORED
@@ -706,7 +770,10 @@ export async function getDraftReportCards(seasonYear?: number): Promise<DraftRep
     status: season.status,
     adpAvailable,
     // A revisited grade exists only where per-player weekly scoring does.
-    revisitAvailable: grades.some((g) => g.revisitedGrade != null),
+    revisitAvailable: grades.some((g) => g.revisitedGrade != null) || provisional != null,
+    provisionalRevisit: provisional
+      ? { throughWeek: provisional.throughWeek, grades: Object.fromEntries(provisional.byManager) }
+      : null,
     revisitWeights: (Object.keys(RETURN_WEIGHTS) as ReturnFactorKey[]).map((key) => ({
       key,
       label: RETURN_FACTOR_META[key].label,

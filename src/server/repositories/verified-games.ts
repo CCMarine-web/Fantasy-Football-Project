@@ -22,6 +22,8 @@ import type { GameResult } from "@/server/stats/types";
  */
 
 export interface VerifiedGameRow {
+  matchupId: string;
+  roundName: string | null;
   seasonId: string;
   year: number;
   dataSource: SeasonDataSource;
@@ -58,6 +60,8 @@ const SELECT = {
   },
   matchup: {
     select: {
+      id: true,
+      roundName: true,
       seasonId: true,
       week: true,
       isPlayoff: true,
@@ -114,6 +118,8 @@ export async function loadVerifiedGames(options: LoadOptions = {}): Promise<Veri
     if (!opponentManagerId) continue;
 
     games.push({
+      matchupId: mt.matchup.id,
+      roundName: mt.matchup.roundName,
       seasonId: mt.matchup.seasonId,
       year: mt.matchup.season.year,
       dataSource: mt.matchup.season.dataSource,

@@ -4,6 +4,7 @@ import { longestLosingStreak, longestWinningStreak } from "@/server/stats";
 import type { GameResult } from "@/server/stats/types";
 import { loadVerifiedGames } from "./verified-games";
 import { cached, CACHE_TAGS } from "@/server/cache";
+import { computeRecordWatch, type RecordWatchItem } from "@/server/stats/record-watch";
 
 export interface RecordEntry {
   key: string;
@@ -192,3 +193,47 @@ async function buildComputedRecords(): Promise<RecordEntry[]> {
 
   return entries;
 }
+
+/**
+ * Active record chases for the season in progress (stats/record-watch.ts):
+ * streaks near the all-time marks, season-high/low games in the all-time top
+ * 10, and season pace against COMPLETED-season records. Empty outside a season.
+ */
+export const getRecordWatch = cached(
+  async (): Promise<{ seasonYear: number; items: RecordWatchItem[] } | null> => {
+    const season = await prisma.season.findFirst({ where: { isCurrent: true, status: "IN_PROGRESS" } });
+    if (!season) return null;
+    const [rows, completed, current] = await Promise.all([
+      loadVerifiedGames(),
+      prisma.fantasyTeam.findMany({
+        where: { season: { status: "COMPLETE" } },
+        select: { wins: true, losses: true, ties: true, pointsFor: true, manager: { select: { displayName: true } }, season: { select: { year: true } } },
+      }),
+      prisma.fantasyTeam.findMany({
+        where: { seasonId: season.id },
+        select: { managerId: true, wins: true, losses: true, ties: true, pointsFor: true, manager: { select: { displayName: true } } },
+      }),
+    ]);
+    const items = computeRecordWatch({
+      seasonYear: season.year,
+      regularSeasonWeeks: season.regularSeasonWeeks,
+      games: rows.map((r) => ({
+        managerId: r.managerId,
+        managerName: r.managerName,
+        year: r.year,
+        week: r.week,
+        isPlayoff: r.isPlayoff,
+        score: r.score,
+        opponentScore: r.opponentScore,
+        opponentName: r.opponentManagerName,
+      })),
+      completedSeasons: completed
+        .filter((t) => t.wins + t.losses + t.ties > 0)
+        .map((t) => ({ managerName: t.manager.displayName, year: t.season.year, wins: t.wins, losses: t.losses, ties: t.ties, pointsFor: t.pointsFor })),
+      currentTeams: current.map((t) => ({ managerId: t.managerId, managerName: t.manager.displayName, wins: t.wins, losses: t.losses, ties: t.ties, pointsFor: t.pointsFor })),
+    });
+    return { seasonYear: season.year, items };
+  },
+  ["record-watch"],
+  { tags: [CACHE_TAGS.league] },
+);

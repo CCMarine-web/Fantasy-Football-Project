@@ -109,7 +109,7 @@ export default async function ManagersPage({
               {(LUCK_WEIGHTS.postseasonDraw * 100).toFixed(0)}%. Consolation games are never an
               input. Computed from recorded scores; a manager with too few games shows &ldquo;not
               enough games&rdquo; rather than &ldquo;neutral&rdquo;. Labels:{" "}
-              {LUCK_BANDS.map((b) => `${b.min === b.max ? b.min : `${b.min}–${b.max}`} ${b.label}`).join(", ")}.
+              {LUCK_BANDS.map((b) => `${b.min}–${b.max} ${b.label}`).join(", ")}.
               Full breakdown is on each manager&rsquo;s page.
             </dd>
           </div>

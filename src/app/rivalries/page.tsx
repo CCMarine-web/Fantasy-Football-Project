@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -62,7 +63,7 @@ function RivalryCard({ r }: { r: RivalryView }) {
             so the series score no longer said who had which record. */}
         <div className="sm:hidden">
           <p className="mb-2 text-xs text-muted-foreground">
-            Head-to-head wins · {r.gamesPlayed} {r.gamesPlayed === 1 ? "meeting" : "meetings"}
+            <span className="font-semibold text-foreground">{r.seriesText}</span> · {r.gamesPlayed} {r.gamesPlayed === 1 ? "meeting" : "meetings"}
             {r.ties ? ` · ${r.ties} ${r.ties === 1 ? "tie" : "ties"}` : ""}
           </p>
           <div className="space-y-2">
@@ -100,7 +101,9 @@ function RivalryCard({ r }: { r: RivalryView }) {
               {r.managerBWins}
               {r.ties ? <span className="text-muted-foreground">–{r.ties}</span> : null}
             </div>
-            <div className="text-xs text-muted-foreground">{r.gamesPlayed} {r.gamesPlayed === 1 ? "meeting" : "meetings"}</div>
+            <div className="text-xs text-muted-foreground" title={SERIES_DEFINITION}>
+              {r.seriesText} · {r.gamesPlayed} {r.gamesPlayed === 1 ? "meeting" : "meetings"}
+            </div>
           </div>
 
           <Link

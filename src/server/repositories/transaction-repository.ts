@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { Prisma, TransactionStatus, TransactionType } from "@/generated/prisma/client";
+import { collapseChurn, describeChurn, type ChurnSummary } from "@/server/stats/transaction-churn";
 
 /**
  * The transaction wire.
@@ -58,6 +59,8 @@ export interface TransactionView {
   /** One-line description a reader can scan, e.g. "Patrick Schwing claimed …". */
   summary: string;
   processedAt: Date;
+  /** Set when this row stands for several back-and-forth moves (see stats/transaction-churn.ts). */
+  churn?: ChurnSummary;
 }
 
 export interface TransactionPeriod {
@@ -346,7 +349,7 @@ export async function getTransactionsPage(
     }),
   ]);
 
-  const transactions: TransactionView[] = rows.map((t) => {
+  const views: TransactionView[] = rows.map((t) => {
     const status = OUTCOME[t.status];
     const added = t.assets.filter((a) => a.direction === "ADD").map(assetView);
     const dropped = t.assets.filter((a) => a.direction !== "ADD").map(assetView);
@@ -365,6 +368,11 @@ export async function getTransactionsPage(
     };
     return { ...partial, summary: describe(partial) };
   });
+
+  // Same manager, same week, the same players flipped back and forth: one row.
+  const transactions: TransactionView[] = collapseChurn(views).map((v) =>
+    v.churn ? { ...v, kindLabel: "Roster churn", summary: describeChurn(v.churn) } : v,
+  );
 
   return {
     transactions,

@@ -10,7 +10,7 @@ import {
   listGradedSeasons,
   gradeLetterToDisplay,
 } from "@/server/repositories/draft-grade-repository";
-import type { DraftFactor } from "@/server/stats/draft-quality";
+import { strongestFactor, type DraftFactor } from "@/server/stats/draft-quality";
 import { distributePercentages } from "@/lib/format";
 import { ChevronDown, GraduationCap, Info } from "lucide-react";
 
@@ -180,7 +180,15 @@ export default async function DraftReportCardsPage({
                   <p className="mt-1 text-sm text-muted-foreground">
                     A separate, clearly-labelled hindsight grade measuring only what the drafted
                     players went on to produce — per game, against the slot each was taken at. It
-                    never replaces the grade above. Wins, playoff berths and championships are{" "}
+                    never replaces the grade above.{" "}
+                    {view.provisionalRevisit ? (
+                      <strong className="text-foreground">
+                        {view.seasonYear} is still being played: the revisited column is provisional, recomputed every
+                        week from points scored through Week {view.provisionalRevisit.throughWeek}, and becomes final when
+                        the season ends.{" "}
+                      </strong>
+                    ) : null}
+                    Wins, playoff berths and championships are{" "}
                     <strong className="text-foreground">not</strong> inputs, so winning the league
                     cannot rescue a bad draft and a title-less season cannot sink a good one.
                   </p>
@@ -240,15 +248,18 @@ export default async function DraftReportCardsPage({
                   <th className="px-2 py-2 text-left sm:px-4">Manager</th>
                   <th className="px-2 py-2 text-center sm:px-4">Grade</th>
                   <th className="px-2 py-2 text-right sm:px-4">Score</th>
-                  {isComplete && view.revisitAvailable ? (
-                    <th className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">Revisited</th>
+                  {(isComplete && view.revisitAvailable) || view.provisionalRevisit ? (
+                    <th className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">
+                      {view.provisionalRevisit ? `Revisited · thru Wk ${view.provisionalRevisit.throughWeek}` : "Revisited"}
+                    </th>
                   ) : null}
                   <th className="hidden px-2 py-2 text-left sm:px-4 md:table-cell">Strongest</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/60">
                 {view.cards.map((card, index) => {
-                  const best = [...card.factors].sort((a, b) => b.value - a.value)[0];
+                  // Never a dropped factor, nor one that scored the team by default.
+                  const best = strongestFactor(card.factors);
                   return (
                     <tr key={card.managerId}>
                       <td className="px-2 py-2 font-mono tabular-nums text-muted-foreground sm:px-4">
@@ -272,7 +283,23 @@ export default async function DraftReportCardsPage({
                       <td className="px-2 py-2 text-right font-mono tabular-nums text-muted-foreground sm:px-4">
                         {card.score != null ? card.score.toFixed(1) : "—"}
                       </td>
-                      {isComplete && view.revisitAvailable ? (
+                      {view.provisionalRevisit ? (
+                        <td className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">
+                          {(() => {
+                            const so = view.provisionalRevisit.grades[card.managerId];
+                            return so ? (
+                              <span
+                                className={`inline-flex h-7 min-w-9 items-center justify-center rounded px-1.5 font-heading text-sm font-bold ${gradeColorClasses(so.grade)}`}
+                                title={`Provisional: draft returns rank ${so.rank} of ${Object.keys(view.provisionalRevisit.grades).length} through Week ${view.provisionalRevisit.throughWeek}`}
+                              >
+                                {gradeLetterToDisplay(so.grade)}
+                              </span>
+                            ) : (
+                              "—"
+                            );
+                          })()}
+                        </td>
+                      ) : isComplete && view.revisitAvailable ? (
                         <td className="hidden px-2 py-2 text-center sm:table-cell sm:px-4">
                           <span className="font-heading text-sm font-semibold text-muted-foreground">
                             {card.revisitedGrade ? gradeLetterToDisplay(card.revisitedGrade) : "—"}

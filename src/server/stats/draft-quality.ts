@@ -530,3 +530,24 @@ export function letterFromDraftRank(rank: number, fieldSize: number): GradeLette
   if (percentile < 1) return "D";
   return "F";
 }
+
+/**
+ * Whether a factor actually GRADED this team, as opposed to scoring it by
+ * default. Risk concentration measures only the stack ABOVE the incidental
+ * RISK_FREE_STACK; a team at or below that line has nothing to grade (the
+ * methodology says the factor is dropped there), so its 100 is "not
+ * concentrated", not a strength. A factor with no weight never graded anyone.
+ */
+export function factorGradedTeam(factor: Pick<DraftFactor, "key" | "weight" | "raw">): boolean {
+  if (factor.weight <= 0) return false;
+  if (factor.key === "riskConcentration") {
+    const excess = /\((\d+) above/.exec(factor.raw);
+    return excess != null && Number(excess[1]) > 0;
+  }
+  return true;
+}
+
+/** The team's best GRADED factor — never a dropped or ungraded one. */
+export function strongestFactor<T extends Pick<DraftFactor, "key" | "weight" | "raw" | "value">>(factors: T[]): T | null {
+  return [...factors].filter(factorGradedTeam).sort((a, b) => b.value - a.value)[0] ?? null;
+}
