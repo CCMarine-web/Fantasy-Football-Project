@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { RivalryGrid } from "@/components/rivalries/rivalry-grid";
 import { AiText } from "@/components/shared/ai-text";
 import { rivalryTexts } from "@/server/text/page-texts";
 import type { RenderedText } from "@/server/text/read";
@@ -187,12 +188,16 @@ export default async function RivalriesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader art="header-rivalries" freshness
         eyebrow="Bad Blood"
         title="Rivalries"
         description="The league's declared rivalries, plus the closest-fought pairings by the numbers. Every record is computed from verified matchup results."
       />
+
+      <div className="mt-8">
+        <RivalryGrid rivalries={all} />
+      </div>
 
       {official.length > 0 ? (
         <section className="mt-8">

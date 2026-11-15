@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { slugify } from "@/lib/slug";
 
 /**
  * Inline link to a manager's profile.
@@ -14,16 +15,20 @@ import { cn } from "@/lib/utils";
  */
 export function ManagerLink({
   managerId,
+  name,
   children,
   className,
 }: {
   managerId: string;
+  /** Display name — gives the readable /managers/first-last URL. */
+  name?: string;
   children: ReactNode;
   className?: string;
 }) {
+  const label = name ?? null;
   return (
     <Link
-      href={`/managers/${managerId}`}
+      href={label ? `/managers/${slugify(label)}` : `/managers/${managerId}`}
       className={cn("hover:text-primary inline-flex min-h-6 items-center py-0.5", className)}
     >
       {children}

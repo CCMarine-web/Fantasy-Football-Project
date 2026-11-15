@@ -2,6 +2,7 @@ import Link from "next/link";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { FormChips } from "@/components/shared/form-chips";
 import { cn } from "@/lib/utils";
+import { managerPath } from "@/lib/slug";
 import type { StandingsRow } from "@/types/view-models";
 
 /** "Patrick McManus" → "McManus": the phone column's short name. */
@@ -34,6 +35,8 @@ export function StandingsTable({
   formLabel?: string;
 }) {
   const gamesPlayed = rows.some((r) => r.wins + r.losses + r.ties > 0);
+  const hasOdds = rows.some((r) => r.odds);
+  const pct = (v: number) => (v >= 99.95 ? "100%" : v > 0 && v < 0.5 ? "<1%" : `${v.toFixed(0)}%`);
   const showCut = gamesPlayed && playoffTeams != null && playoffTeams > 0 && playoffTeams < rows.length;
   const pinned = "sticky z-10 bg-card";
   const th = "px-3 py-2 text-xs font-medium tracking-wide text-muted-foreground uppercase whitespace-nowrap";
@@ -44,13 +47,21 @@ export function StandingsTable({
       {caption ? (
         <p className="border-b border-border/60 px-3 py-2 text-xs text-muted-foreground">{caption}</p>
       ) : null}
-      <div className="overflow-x-auto" role="region" aria-label="Standings table, scrolls sideways" tabIndex={0}>
-        <table className="w-full min-w-[720px] border-separate border-spacing-0 text-sm">
+      <div className="relative overflow-x-auto" role="region" aria-label="Standings table, scrolls sideways" tabIndex={0}>
+        <table className={cn("w-full border-separate border-spacing-0 text-sm", hasOdds ? "min-w-[1040px]" : "min-w-[720px]")}>
           <thead>
             <tr className="text-left">
               <th scope="col" className={cn(th, pinned, "left-0 w-10")}>#</th>
               <th scope="col" className={cn(th, pinned, "left-10 border-r border-border/40 sm:border-r-0")}>Team</th>
               <th scope="col" className={cn(th, "text-center")}>W-L-T</th>
+              {hasOdds ? (
+                <>
+                  <th scope="col" className={cn(th, "text-right")} title="Share of 10,000 simulated seasons that end in the playoffs">Playoff</th>
+                  <th scope="col" className={cn(th, "text-right")} title="Simulated chance of a first-round bye">Bye</th>
+                  <th scope="col" className={cn(th, "text-right")} title="Simulated chance of winning the title">Title</th>
+                  <th scope="col" className={cn(th, "text-right")} title="Simulated chance of finishing last">Last</th>
+                </>
+              ) : null}
               <th scope="col" className={cn(th, "text-right")} title="Points for">PF</th>
               <th scope="col" className={cn(th, "text-right")} title="Points against">PA</th>
               <th scope="col" className={cn(th, "text-center")} title="Record if you played every team every week">All-Play</th>
@@ -69,7 +80,7 @@ export function StandingsTable({
                   <td className={cn(td, pinned, border, "left-0 w-10 text-muted-foreground")}>{rank ?? "—"}</td>
                   <td className={cn("px-3 py-2", pinned, border, "left-10 max-w-[9.5rem] border-r border-r-border/40 sm:max-w-none sm:border-r-0")}>
                     <Link
-                      href={`/managers/${row.managerId}`}
+                      href={managerPath(row.managerName)}
                       className="flex items-center gap-3 hover:text-primary"
                       title={`${row.teamName} — ${row.managerName}`}
                     >
@@ -95,6 +106,21 @@ export function StandingsTable({
                       </span>
                     ) : null}
                   </td>
+                  {hasOdds ? (
+                    <>
+                      <td className={cn(td, border, "text-right font-semibold")}>
+                        {row.odds?.clinched ? (
+                          <span className="rounded bg-field/20 px-1 text-field" title="Clinched a playoff spot">x</span>
+                        ) : row.odds?.eliminated ? (
+                          <span className="rounded bg-destructive/20 px-1 text-destructive" title="Eliminated from playoff contention">e</span>
+                        ) : null}{" "}
+                        {row.odds ? pct(row.odds.playoffPct) : "—"}
+                      </td>
+                      <td className={cn(td, border, "text-right text-muted-foreground")}>{row.odds ? pct(row.odds.byePct) : "—"}</td>
+                      <td className={cn(td, border, "text-right text-muted-foreground")}>{row.odds ? pct(row.odds.titlePct) : "—"}</td>
+                      <td className={cn(td, border, "text-right text-muted-foreground")}>{row.odds ? pct(row.odds.lastPct) : "—"}</td>
+                    </>
+                  ) : null}
                   <td className={cn(td, border, "text-right")}>{row.pointsFor.toFixed(1)}</td>
                   <td className={cn(td, border, "text-right text-muted-foreground")}>{row.pointsAgainst.toFixed(1)}</td>
                   <td className={cn(td, border, "text-center")}>{row.allPlayRecord ?? "—"}</td>
@@ -135,7 +161,9 @@ export function StandingsTable({
           <span />
         )}
         <span className="sm:hidden">Swipe the table for more columns →</span>
-        <span className="hidden sm:inline">Order: win %, then points for. TB = placed by tiebreaker.</span>
+        <span className="hidden sm:inline">
+          Order: win %, then points for. TB = placed by tiebreaker.{hasOdds ? " Odds: 10,000 simulated seasons; x = clinched, e = eliminated." : ""}
+        </span>
       </div>
     </div>
   );

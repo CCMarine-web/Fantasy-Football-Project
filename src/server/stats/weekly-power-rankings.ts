@@ -146,7 +146,7 @@ export const FACTOR_META: Record<FactorKey, { label: string; description: string
     description: "Scoring available on the bench — cover for injuries and bye weeks.",
   },
   scheduleStrength: {
-    label: "Schedule strength",
+    label: "Opponent PPG",
     description:
       "Average quality of opponents faced so far, so a hard slate is not held against a team.",
   },
@@ -595,7 +595,7 @@ function inSeasonRankings(
         m.efficiency == null ? "no data" : `${round(m.efficiency * 100)}% of optimal`,
       starterStrength: m.starter == null ? "no data" : `${round(m.starter)} starter pts`,
       benchDepth: m.bench == null ? "no data" : `${round(m.bench)} bench pts`,
-      scheduleStrength: `${round(m.sos)} pts allowed/gm`,
+      scheduleStrength: `${round(m.sos)} opponent PPG`,
     };
 
     const factors: RankingFactor[] = activeKeys.map((key) => ({

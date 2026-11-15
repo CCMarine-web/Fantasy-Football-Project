@@ -147,7 +147,7 @@ export default async function HallOfShamePage() {
         {shame.lastPlace.length === 0 ? (
           <EmptyState title="No completed seasons yet" />
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-border/60">
+          <div className="relative overflow-x-auto rounded-lg border border-border/60">
             <table className="w-full text-sm">
               <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
                 <tr>
@@ -181,7 +181,7 @@ export default async function HallOfShamePage() {
                           className="mr-2 inline-block h-10 w-8 rounded-sm object-cover align-middle"
                         />
                       ) : null}
-                      <ManagerLink managerId={t.managerId}>{t.managerName}</ManagerLink>
+                      <ManagerLink managerId={t.managerId} name={t.managerName}>{t.managerName}</ManagerLink>
                       {/* Only when a tie was actually broken. */}
                       {t.tiebreak ? (
                         <Badge
@@ -238,7 +238,7 @@ export default async function HallOfShamePage() {
                   <p className="mt-1 font-heading text-3xl font-semibold tabular-nums">{e.value}</p>
                   <p className="mt-1 text-sm font-medium">
                     {e.holderManagerId ? (
-                      <ManagerLink managerId={e.holderManagerId}>{e.holderName}</ManagerLink>
+                      <ManagerLink managerId={e.holderManagerId} name={e.holderName.includes(" & ") ? undefined : e.holderName}>{e.holderName}</ManagerLink>
                     ) : (
                       e.holderName
                     )}

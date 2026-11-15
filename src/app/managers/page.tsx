@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { ManagerComparisonTable } from "@/components/managers/comparison-table";
+import { FinishGrid } from "@/components/managers/finish-grid";
+import { getManagerComparison } from "@/server/repositories/manager-comparison";
+import { managerPath } from "@/lib/slug";
 import { AiText } from "@/components/shared/ai-text";
 import { managerBioTexts } from "@/server/text/page-texts";
 import { ordinal } from "@/lib/format";
@@ -39,6 +43,7 @@ export default async function ManagersPage({
     getCareerLuck(),
     managerBioTexts(),
   ]);
+  const comparison = await getManagerComparison();
   const active = all.filter((m) => m.isActive);
   const retired = all.filter((m) => !m.isActive);
   const managers = tab === "retired" ? retired : active;
@@ -119,6 +124,14 @@ export default async function ManagersPage({
         </dl>
       </details>
 
+      {/* Everyone side by side, sortable — then the finish grid. */}
+      <section className="mt-6 space-y-6" aria-label="Career comparison">
+        <ManagerComparisonTable rows={comparison.rows} />
+        <FinishGrid rows={comparison.rows} seasons={comparison.seasons} grid={comparison.grid} />
+      </section>
+
+      <h2 className="mt-10 font-heading text-lg font-semibold tracking-wide uppercase">Manager cards &amp; bios</h2>
+
       {/* Active / Retired tabs. Retired managers are those no longer in the
           league — they keep their full history and are never merged into an
           active manager. */}
@@ -161,7 +174,7 @@ export default async function ManagersPage({
         ) : (
           <div className="space-y-3">
             {managers.map((m) => (
-              <Link key={m.managerId} href={`/managers/${m.managerId}`} className="block">
+              <Link key={m.managerId} href={managerPath(m.displayName)} className="block">
                 <Card className="transition-colors hover:border-primary/60">
                   <CardContent className="flex flex-col gap-4 sm:flex-row sm:items-center">
                     {/* Identity */}
@@ -244,8 +257,8 @@ export default async function ManagersPage({
 
                   {bios.get(m.managerId) ? (
                     <CardContent className="border-t border-border/40 pt-3">
-                      {/* The same facts-first bio the profile shows (server/text). */}
-                      <AiText text={bios.get(m.managerId)} paragraphClassName="text-foreground/80" />
+                      {/* The same facts-first bio the profile shows (server/text), clamped. */}
+                      <AiText text={bios.get(m.managerId)} paragraphClassName="text-foreground/80 line-clamp-3" />
                       <span className="mt-2 inline-block text-xs font-medium text-primary">
                         View full profile →
                       </span>

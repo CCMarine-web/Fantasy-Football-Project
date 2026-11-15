@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { ChartFrame } from "@/components/charts/chart-frame";
+import { MultiLineChart, SimpleBars } from "@/components/charts/charts";
+import { teamColorMap } from "@/lib/chart-theme";
+import { prisma } from "@/lib/db";
 import { AiText } from "@/components/shared/ai-text";
 import { rivalryTexts } from "@/server/text/page-texts";
 import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
@@ -106,6 +110,25 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
    * meetings" gave a placement game the weight of a semifinal.
    */
   const playoffMeetings = r.meetings.filter((m) => m.isPlayoff && m.bracketType === "WINNERS");
+  // Charts: margin per meeting (A's side) and the running series, oldest first.
+  const palette = teamColorMap((await prisma.manager.findMany({ select: { id: true } })).map((m) => m.id));
+  const colorA = palette.get(r.managerAId) ?? "var(--primary)";
+  const colorB = palette.get(r.managerBId) ?? "var(--muted-foreground)";
+  const chrono = [...r.meetings].reverse();
+  const running: { meeting: string; a: number; b: number }[] = [];
+  for (const m of chrono) {
+    const prev = running.at(-1) ?? { a: 0, b: 0 };
+    running.push({
+      meeting: `${String(m.seasonYear).slice(2)}·W${m.week}`,
+      a: prev.a + (m.managerAScore > m.managerBScore ? 1 : 0),
+      b: prev.b + (m.managerBScore > m.managerAScore ? 1 : 0),
+    });
+  }
+  const marginBars = chrono.map((m) => ({
+    label: `${String(m.seasonYear).slice(2)}·W${m.week}`,
+    value: Math.round((m.managerAScore - m.managerBScore) * 10) / 10,
+    color: m.isPlayoff && m.bracketType === "WINNERS" ? "#F0E442" : m.managerAScore >= m.managerBScore ? colorA : colorB,
+  }));
   const aWinPct = r.gamesPlayed ? r.managerAWins / r.gamesPlayed : null;
   const bWinPct = r.gamesPlayed ? r.managerBWins / r.gamesPlayed : null;
 
@@ -247,6 +270,37 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
       {/* Season-by-season */}
       <Card className="mt-6">
         <CardContent>
+          {chrono.length > 1 ? (
+            <div className="mb-6 grid gap-4 lg:grid-cols-2">
+              <ChartFrame
+                title="Margin, meeting by meeting"
+                caption={`Up = ${r.managerAName} won, down = ${r.managerBName} won. Yellow = championship-bracket game.`}
+                summary={`The winning margin of each of the ${chrono.length} meetings, oldest first.`}
+                table={{ headers: ["Meeting", `Margin (${r.managerAName})`], rows: marginBars.map((m) => [m.label, m.value]) }}
+                height="h-64"
+              >
+                <SimpleBars data={marginBars} valueLabel="Margin" diverging valueFormat="fixed0" />
+              </ChartFrame>
+              <ChartFrame
+                title="The series over time"
+                caption="Running wins for each side."
+                summary={`Cumulative wins for ${r.managerAName} and ${r.managerBName} after each meeting.`}
+                table={{ headers: ["Meeting", r.managerAName, r.managerBName], rows: running.map((x) => [x.meeting, x.a, x.b]) }}
+                height="h-64"
+              >
+                <MultiLineChart
+                  data={running}
+                  xKey="meeting"
+                  xLabel="Meeting"
+                  yLabel="Wins"
+                  series={[
+                    { key: "a", label: r.managerAName, color: colorA },
+                    { key: "b", label: r.managerBName, color: colorB },
+                  ]}
+                />
+              </ChartFrame>
+            </div>
+          ) : null}
           <h2 className="mb-3 font-heading text-lg font-semibold">Every meeting</h2>
 
           {/* Phone: one compact row per game. The five-column table showed

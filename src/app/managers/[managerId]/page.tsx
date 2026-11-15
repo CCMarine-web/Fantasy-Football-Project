@@ -1,4 +1,10 @@
+import { prisma } from "@/lib/db";
 import { DataFreshness } from "@/components/shared/data-freshness";
+import { ChartFrame } from "@/components/charts/chart-frame";
+import { MultiLineChart, SimpleBars } from "@/components/charts/charts";
+import { managerPath } from "@/lib/slug";
+import { permanentRedirect } from "next/navigation";
+import { allManagerSlugs, resolveManagerParam } from "@/server/repositories/manager-slug";
 import { AiText } from "@/components/shared/ai-text";
 import { managerBioTexts, scoutingText } from "@/server/text/page-texts";
 import type { Metadata } from "next";
@@ -14,12 +20,11 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { EmptyState } from "@/components/shared/empty-state";
-import { ManagerTrajectoryChart } from "@/components/charts/manager-trajectory-chart";
 import {
   getManagerProfileDetailed,
 } from "@/server/repositories/manager-repository";
 import { getManagerAwardTally } from "@/server/repositories/weekly-awards-repository";
-import { Sparkles, TrendingUp } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 /**
  * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
@@ -29,7 +34,7 @@ export const revalidate = 3600;
 
 /** Rendered on first request, then served from the ISR cache until the pipeline revalidates it. */
 export async function generateStaticParams() {
-  return [];
+  return (await allManagerSlugs()).map((managerId) => ({ managerId }));
 }
 
 /**
@@ -42,8 +47,9 @@ export async function generateMetadata({
 }: {
   params: Promise<{ managerId: string }>;
 }): Promise<Metadata> {
-  const { managerId } = await params;
-  const profile = await getManagerProfileDetailed(managerId);
+  const { managerId: param } = await params;
+  const resolved = await resolveManagerParam(param);
+  const profile = resolved ? await getManagerProfileDetailed(resolved.id) : null;
   if (!profile) return { title: "Manager Profile" };
 
   const { manager, stats, eraStats, seasonLines } = profile;
@@ -85,7 +91,12 @@ export default async function ManagerProfilePage({
 }: {
   params: Promise<{ managerId: string }>;
 }) {
-  const { managerId } = await params;
+  const { managerId: param } = await params;
+  const resolved = await resolveManagerParam(param);
+  if (!resolved) notFound();
+  // Old id URLs (shared before readable slugs) move permanently to the slug.
+  if (resolved.isLegacyId) permanentRedirect(`/managers/${resolved.slug}`);
+  const managerId = resolved.id;
   const [profile, awardTally, bios] = await Promise.all([
     getManagerProfileDetailed(managerId),
     getManagerAwardTally(managerId),
@@ -93,6 +104,17 @@ export default async function ManagerProfilePage({
   ]);
   if (!profile) notFound();
   const bio = bios.get(managerId) ?? null;
+  const leagueTeams = await prisma.fantasyTeam.findMany({
+    where: { season: { status: { not: "UPCOMING" } } },
+    select: { pointsFor: true, wins: true, losses: true, ties: true, season: { select: { year: true } } },
+  });
+  const leaguePpg = new Map<number, number>();
+  for (const year of new Set(leagueTeams.map((t) => t.season.year))) {
+    const ts = leagueTeams.filter((t) => t.season.year === year && t.wins + t.losses + t.ties > 0);
+    const pf = ts.reduce((s, t) => s + t.pointsFor, 0);
+    const g = ts.reduce((s, t) => s + t.wins + t.losses + t.ties, 0);
+    if (g) leaguePpg.set(year, pf / g);
+  }
   const scouting = await scoutingText(managerId, profile.manager.displayName);
 
   const {
@@ -111,10 +133,17 @@ export default async function ManagerProfilePage({
   const currentTeam = manager.fantasyTeams[manager.fantasyTeams.length - 1];
   const photo = manager.photoUrl ?? manager.avatarUrl;
   const teamCount = finishDistribution.length || 10;
-  const trajectory = [...seasonLines]
-    .filter((l) => l.finalRank != null)
-    .map((l) => ({ year: l.year, finalRank: l.finalRank, teamCount }));
   const maxFinishCount = Math.max(1, ...finishDistribution.map((f) => f.count));
+  const trajectoryData = seasonLines
+    .filter((l) => l.finalRank != null || l.regularSeasonRank != null)
+    .map((l) => ({ season: l.year, regular: l.regularSeasonRank, final: l.finalRank, champion: l.isChampion }));
+  const ppgVsLeague = seasonLines
+    .filter((l) => l.wins + l.losses + l.ties > 0 && leaguePpg.has(l.year))
+    .map((l) => {
+      const ppg = l.pointsFor / (l.wins + l.losses + l.ties);
+      const league = leaguePpg.get(l.year) as number;
+      return { label: String(l.year), value: Math.round(((ppg - league) / league) * 1000) / 10, ppg, league };
+    });
   const hasBiography = !!(manager.bio || manager.nicknameOrigin || manager.signatureMove);
   const profileParagraphs = bio ? [bio.text] : [];
 
@@ -200,7 +229,7 @@ export default async function ManagerProfilePage({
         <p className="mb-2 text-xs text-muted-foreground sm:hidden" aria-hidden>
           Swipe the table sideways to see every column →
         </p>
-        <div className="overflow-x-auto rounded-lg border border-border/60">
+        <div className="relative overflow-x-auto rounded-lg border border-border/60">
           <table className="w-full min-w-[56rem] text-sm">
             <caption className="sr-only">Career, ESPN-era and Sleeper-era statistics</caption>
             <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
@@ -322,13 +351,13 @@ export default async function ManagerProfilePage({
       <Separator className="my-8" />
 
       {/* Season-by-season + trajectory */}
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-8">
         <section>
           <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Season by Season</h2>
           {seasonLines.length === 0 ? (
             <EmptyState title="No seasons played yet" />
           ) : (
-            <div className="overflow-x-auto rounded-lg border border-border/60">
+            <div className="relative overflow-x-auto rounded-lg border border-border/60">
               {/* No min-width: with PA hidden below `sm` the five remaining
                   columns fit a phone, and a 24rem floor was itself forcing a
                   28px overflow on a 356px container. */}
@@ -390,20 +419,41 @@ export default async function ManagerProfilePage({
           )}
         </section>
 
-        <section>
-          <h2 className="mb-3 flex items-center gap-2 font-heading text-lg font-semibold tracking-wide uppercase">
-            <TrendingUp className="h-4 w-4" /> Career Trajectory
-          </h2>
-          <Card>
-            <CardContent>
-              {trajectory.length > 0 ? (
-                <ManagerTrajectoryChart data={trajectory} />
-              ) : (
-                <EmptyState title="No completed seasons yet" />
-              )}
-            </CardContent>
-          </Card>
-        </section>
+        {trajectoryData.length > 0 ? (
+          <ChartFrame
+            title="Career trajectory"
+            caption="Regular-season finish (dashed) and final finish (solid) each completed season. 1 is the top; gold dots are title years."
+            summary={`${manager.displayName}'s regular-season and final finish in each completed season.`}
+            table={{ headers: ["Season", "Regular season", "Final"], rows: trajectoryData.map((d) => [d.season, d.regular ?? "—", d.final ?? "—"]) }}
+          >
+            <MultiLineChart
+              data={trajectoryData}
+              xKey="season"
+              xLabel="Season"
+              yLabel="Finish"
+              reversedY
+              yDomain={[1, teamCount]}
+              yTicks={Array.from({ length: teamCount }, (_, i) => i + 1)}
+              tooltipFormat="rank"
+              series={[
+                { key: "regular", label: "Regular-season finish", color: "var(--muted-foreground)", dashed: true },
+                { key: "final", label: "Final finish", color: "var(--primary)", highlight: trajectoryData.filter((d) => d.champion).map((d) => ({ x: d.season, color: "#F0E442", label: `${d.season} champion` })) },
+              ]}
+            />
+          </ChartFrame>
+        ) : null}
+
+        {ppgVsLeague.length > 0 ? (
+          <ChartFrame
+            title="Scoring vs. the league, by season"
+            caption="Points per game compared with that season's league average — raw totals aren't comparable across eras and rule changes."
+            summary={`How far above or below the league's average points per game ${manager.displayName} scored in each season.`}
+            table={{ headers: ["Season", "PPG", "League PPG", "Difference %"], rows: ppgVsLeague.map((d) => [d.label, d.ppg.toFixed(1), d.league.toFixed(1), `${d.value.toFixed(1)}%`]) }}
+            height="h-64"
+          >
+            <SimpleBars data={ppgVsLeague} valueLabel="% vs league average" diverging valueFormat="pct0" />
+          </ChartFrame>
+        ) : null}
       </div>
 
       <Separator className="my-8" />
@@ -440,33 +490,28 @@ export default async function ManagerProfilePage({
         {headToHead.length === 0 ? (
           <EmptyState title="No head-to-head games yet" />
         ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {headToHead.map((h) => {
-              const winning = h.wins > h.losses;
-              const losing = h.wins < h.losses;
-              return (
-                <Link
-                  key={h.opponentId}
-                  href={`/managers/${h.opponentId}`}
-                  className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/30 px-3 py-2 text-sm transition-colors hover:border-primary/60"
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">{h.opponentName}</span>
-                    <span className="block text-xs text-muted-foreground">
-                      {h.games} {h.games === 1 ? "meeting" : "meetings"} · {h.pointsForAvg} scored,{" "}
-                      {h.pointsAgainstAvg} allowed per game
-                    </span>
-                  </span>
-                  <span
-                    className={`shrink-0 font-mono text-base font-semibold ${winning ? "text-field" : losing ? "text-destructive" : ""}`}
-                  >
-                    {h.wins}-{h.losses}
-                    {h.ties ? `-${h.ties}` : ""}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
+          <ul className="space-y-1.5" aria-label="Head-to-head win percentage against each opponent">
+            {[...headToHead]
+              .sort((x, y) => y.wins / y.games - x.wins / x.games || y.games - x.games)
+              .map((h) => {
+                const pct = ((h.wins + 0.5 * h.ties) / h.games) * 100;
+                return (
+                  <li key={h.opponentId}>
+                    <Link href={managerPath(h.opponentName)} className="grid grid-cols-[7.5rem_1fr_4.5rem] items-center gap-2 text-sm hover:text-primary sm:grid-cols-[11rem_1fr_6rem]">
+                      <span className="truncate font-medium">{h.opponentName}</span>
+                      <span className="relative h-4 rounded bg-muted/40" title={`${pct.toFixed(0)}% over ${h.games} meetings · ${h.pointsForAvg} scored, ${h.pointsAgainstAvg} allowed per game`}>
+                        <span className="absolute inset-y-0 left-0 rounded" style={{ width: `${pct}%`, background: pct >= 50 ? "#3DD68C" : "#FF6369" }} />
+                        <span className="absolute inset-y-0 left-1/2 w-px bg-foreground/50" aria-hidden />
+                      </span>
+                      <span className="text-right font-mono tabular-nums">
+                        {h.wins}-{h.losses}
+                        {h.ties ? `-${h.ties}` : ""} <span className="text-xs text-muted-foreground">({h.games})</span>
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+          </ul>
         )}
       </section>
 
@@ -508,13 +553,17 @@ export default async function ManagerProfilePage({
             <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
               Weekly Award Tally
             </h2>
-            <div className="flex flex-wrap gap-2">
+            <ul className="max-w-xl space-y-1.5">
               {awardTally.map((a) => (
-                <Badge key={a.type} variant="secondary">
-                  {a.label}: {a.count}
-                </Badge>
+                <li key={a.type} className="grid grid-cols-[9.5rem_1fr_2rem] items-center gap-2 text-sm">
+                  <span className="truncate">{a.label}</span>
+                  <span className="h-3 rounded bg-muted/40">
+                    <span className="block h-3 rounded bg-primary" style={{ width: `${(a.count / Math.max(...awardTally.map((x) => x.count))) * 100}%` }} />
+                  </span>
+                  <span className="text-right font-mono tabular-nums">{a.count}</span>
+                </li>
               ))}
-            </div>
+            </ul>
           </section>
         </>
       ) : null}

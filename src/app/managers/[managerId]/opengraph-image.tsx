@@ -1,4 +1,5 @@
 import { getManagerProfileDetailed } from "@/server/repositories/manager-repository";
+import { resolveManagerParam } from "@/server/repositories/manager-slug";
 import { BRAND } from "@/lib/branding";
 import {
   brandCardResponse,
@@ -36,8 +37,9 @@ function Stat({ label, value, note }: { label: string; value: string; note?: str
 export default async function Image({ params }: { params: Promise<{ managerId: string }> }) {
   let profile: Awaited<ReturnType<typeof getManagerProfileDetailed>> = null;
   try {
-    const { managerId } = await params;
-    profile = await getManagerProfileDetailed(managerId);
+    const { managerId: param } = await params;
+    const resolved = await resolveManagerParam(param);
+    profile = resolved ? await getManagerProfileDetailed(resolved.id) : null;
   } catch (err) {
     console.error("[og] manager card:", err);
   }

@@ -45,6 +45,8 @@ export interface StandingsRow {
   recentForm?: { result: "W" | "L" | "T"; week: number; opponentName: string; score: number; opponentScore: number }[];
   /** Which tiebreaker placed this team below an identical record above it. */
   tiebreak?: string | null;
+  /** Monte Carlo odds over the remaining schedule (season in progress only). */
+  odds?: { playoffPct: number; byePct: number; titlePct: number; lastPct: number; clinched: boolean; eliminated: boolean } | null;
 }
 
 export interface ManagerSummary {

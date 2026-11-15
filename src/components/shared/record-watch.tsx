@@ -29,7 +29,7 @@ export function RecordWatch({
         {shown.map((item) => (
           <li key={item.key} className="px-4 py-3">
             <p className="text-sm font-semibold">
-              <ManagerLink managerId={item.managerId}>{item.managerName}</ManagerLink>
+              <ManagerLink managerId={item.managerId} name={item.managerName}>{item.managerName}</ManagerLink>
               {item.headline.slice(item.managerName.length)}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">{item.detail}</p>

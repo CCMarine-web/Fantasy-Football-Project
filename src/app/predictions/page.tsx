@@ -119,7 +119,7 @@ export default async function PredictionsPage() {
           </div>
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="relative overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border/60 text-left text-xs text-muted-foreground uppercase">
@@ -264,7 +264,7 @@ export default async function PredictionsPage() {
           </div>
           <Card>
             <CardContent className="p-0">
-              <div className="overflow-x-auto">
+              <div className="relative overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border/60 text-left text-xs text-muted-foreground uppercase">

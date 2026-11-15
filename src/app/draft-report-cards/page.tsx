@@ -243,7 +243,7 @@ export default async function DraftReportCardsPage({
           <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
             {view.seasonYear} Draft Rankings
           </h2>
-          <div className="overflow-x-auto rounded-lg border border-border/60">
+          <div className="relative overflow-x-auto rounded-lg border border-border/60">
             <table className="w-full text-sm">
               <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
                 <tr>

@@ -3,6 +3,7 @@ import { expectedWins, scheduleLuck, seasonAllPlayTotals, weeklyAllPlay } from "
 import type { WeeklyScore } from "@/server/stats/types";
 import type { StandingsRow } from "@/types/view-models";
 import { rankStandings } from "@/server/stats/standings";
+import { simulatePlayoffOdds } from "@/server/stats/playoff-odds";
 import { loadVerifiedGames } from "./verified-games";
 
 /**
@@ -174,9 +175,47 @@ export async function getStandingsView(seasonId: string): Promise<StandingsView>
         storedRank: stored.get(r.fantasyTeamId) ?? null,
       })),
     );
+    /*
+     * Playoff odds while the regular season still has games left: 10,000
+     * seeded simulations of the remaining schedule (stats/playoff-odds.ts).
+     */
+    let odds: ReturnType<typeof simulatePlayoffOdds> | null = null;
+    if (season?.status === "IN_PROGRESS") {
+      const remainingGames = await prisma.matchup.findMany({
+        where: { seasonId, isPlayoff: false, week: { gt: throughWeek ?? 0 } },
+        select: { teams: { select: { fantasyTeamId: true } } },
+      });
+      const games = remainingGames.filter((g) => g.teams.length === 2).map((g) => ({ a: g.teams[0].fantasyTeamId, b: g.teams[1].fantasyTeamId }));
+      if (games.length > 0) {
+        odds = simulatePlayoffOdds({
+          teams: rows.map((r) => ({
+            id: r.fantasyTeamId,
+            name: r.teamName,
+            wins: r.wins,
+            losses: r.losses,
+            ties: r.ties,
+            pointsFor: r.pointsFor,
+            pointsAgainst: r.pointsAgainst,
+            scores: verifiedRows
+              .filter((g) => g.fantasyTeamId === r.fantasyTeamId && !g.isPlayoff)
+              .sort((a, b) => a.week - b.week)
+              .map((g) => g.score),
+          })),
+          remaining: games,
+          playoffTeams,
+          sims: 10_000,
+        });
+      }
+    }
     const ordered = ranked.map(({ team, rank, separatedBy }) => {
       const row = rows.find((r) => r.fantasyTeamId === team.id) as StandingsRow;
-      return { ...row, rank, tiebreak: separatedBy };
+      const o = odds?.get(team.id);
+      return {
+        ...row,
+        rank,
+        tiebreak: separatedBy,
+        odds: o ? { playoffPct: o.playoffPct, byePct: o.byePct, titlePct: o.titlePct, lastPct: o.lastPct, clinched: o.clinched, eliminated: o.eliminated } : null,
+      };
     });
     return {
       rows: ordered,

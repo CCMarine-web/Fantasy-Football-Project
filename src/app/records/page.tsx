@@ -104,7 +104,7 @@ export default async function RecordsPage() {
                   <p className="mt-1 font-heading text-3xl font-semibold tabular-nums">{r.value}</p>
                   <p className="mt-1 text-sm font-medium">
                     {r.holderManagerId ? (
-                      <ManagerLink managerId={r.holderManagerId}>{r.holderName}</ManagerLink>
+                      <ManagerLink managerId={r.holderManagerId} name={r.holderName}>{r.holderName}</ManagerLink>
                     ) : (
                       r.holderName
                     )}

@@ -1,4 +1,8 @@
 import { cache } from "react";
+import { MatchupBreakdown, type BreakdownSide } from "@/components/matchups/matchup-breakdown";
+import { getWeekWindows } from "@/server/nfl-games";
+import { teamColorMap } from "@/lib/chart-theme";
+import { prisma } from "@/lib/db";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -84,7 +88,7 @@ function LineupTable({
       <h3 className="mb-2 font-heading text-sm font-semibold tracking-wide uppercase text-muted-foreground">
         {title}
       </h3>
-      <div className="overflow-x-auto rounded-lg border border-border/60">
+      <div className="relative overflow-x-auto rounded-lg border border-border/60">
         <table className="w-full text-sm">
           <tbody className="divide-y divide-border/60">
             {starters.map((p) => (
@@ -98,13 +102,16 @@ function LineupTable({
                     {positionLabel(p.player.position)}
                   </span>
                 </td>
+                <td className="px-3 py-1.5 text-right font-mono tabular-nums text-muted-foreground" title="Projected">
+                  {p.projectedPoints != null ? p.projectedPoints.toFixed(1) : ""}
+                </td>
                 <td className="px-3 py-1.5 text-right font-mono tabular-nums">
                   {fmt(p.points)}
                 </td>
               </tr>
             ))}
             <tr className="bg-card/40">
-              <td colSpan={3} className="px-3 py-1.5 text-xs font-medium tracking-wide uppercase">
+              <td colSpan={4} className="px-3 py-1.5 text-xs font-medium tracking-wide uppercase">
                 Bench{hasPoints ? ` (${benchPoints.toFixed(1)} pts)` : ""}
               </td>
             </tr>
@@ -114,6 +121,9 @@ function LineupTable({
                 <td className="px-3 py-1.5">
                   {p.player.firstName} {p.player.lastName}
                   <span className="ml-1 text-xs">{positionLabel(p.player.position)}</span>
+                </td>
+                <td className="px-3 py-1.5 text-right font-mono tabular-nums" title="Projected">
+                  {p.projectedPoints != null ? p.projectedPoints.toFixed(1) : ""}
                 </td>
                 <td className="px-3 py-1.5 text-right font-mono tabular-nums">
                   {fmt(p.points)}
@@ -170,6 +180,28 @@ export default async function MatchupDetailPage({
   const blowout = largestBlowout(h2hGames);
 
   const isFinal = matchup.status === "FINAL";
+
+  // The analysis block: game flow, slot-by-slot, best lineup, every meeting.
+  const [windowOf, allManagers] = await Promise.all([
+    getWeekWindows(matchup.season.year, matchup.week),
+    prisma.manager.findMany({ select: { id: true } }),
+  ]);
+  const palette = teamColorMap(allManagers.map((m) => m.id));
+  const toSide = (t: typeof teamA, roster: typeof rosterA): BreakdownSide => ({
+    name: t.fantasyTeam.manager.displayName,
+    team: t.fantasyTeam.teamName,
+    color: palette.get(t.fantasyTeam.managerId) ?? "var(--primary)",
+    players: (roster?.playerScores ?? []).map((p) => ({
+      id: p.id,
+      name: `${p.player.firstName} ${p.player.lastName}`.trim(),
+      position: p.player.position,
+      nflTeam: p.player.nflTeam ?? (p.player.position === "DEF" ? p.player.sleeperPlayerId : null),
+      slot: p.lineupSlot,
+      isStarter: p.isStarter,
+      points: p.points,
+      projected: p.projectedPoints,
+    })),
+  });
   const statusLabel = isFinal ? "Final" : matchup.status === "IN_PROGRESS" ? "Live" : "Upcoming";
   // Facts-first text (server/text): shown only while written from these facts.
   const texts = await matchupTexts(matchup.id);
@@ -231,6 +263,15 @@ export default async function MatchupDetailPage({
           {isFinal ? "Final" : "vs"}
         </div>
       </div>
+
+      <Separator className="my-8" />
+
+      <MatchupBreakdown
+        sides={[toSide(teamA, rosterA), toSide(teamB, rosterB)]}
+        windowOf={windowOf}
+        series={h2h}
+        final={isFinal}
+      />
 
       <Separator className="my-8" />
 

@@ -212,7 +212,7 @@ export default async function ChampionshipBeltPage() {
             {lineage.length === 0 ? (
               <EmptyState title="No titles recorded yet" />
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-border/60">
+              <div className="relative overflow-x-auto rounded-lg border border-border/60">
                 {/* Tighter cell padding below `sm`: at 390px the desktop
                     padding wrapped every name and the Runner-Up header. */}
                 <table className="w-full text-sm">
