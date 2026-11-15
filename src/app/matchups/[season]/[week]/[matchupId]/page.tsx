@@ -242,7 +242,7 @@ export default async function MatchupDetailPage({
   if (!isFinal) writing.reverse();
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <Link
         href={`/matchups?week=${matchup.week}`}
         className="inline-flex min-h-10 items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"

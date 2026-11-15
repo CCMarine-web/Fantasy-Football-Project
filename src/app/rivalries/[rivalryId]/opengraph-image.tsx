@@ -1,4 +1,5 @@
 import { getRivalryDetail, type RivalryView } from "@/server/repositories/computed-rivalries-repository";
+import { resolveRivalrySlugParam } from "@/server/repositories/rivalry-slug";
 import { BRAND } from "@/lib/branding";
 import {
   brandCardResponse,
@@ -46,7 +47,8 @@ export default async function Image({ params }: { params: Promise<{ rivalryId: s
   let r: RivalryView | null = null;
   try {
     const { rivalryId } = await params;
-    r = await getRivalryDetail(rivalryId);
+    const resolved = await resolveRivalrySlugParam(rivalryId);
+    r = resolved ? await getRivalryDetail(resolved.id) : null;
   } catch (err) {
     console.error("[og] rivalry card:", err);
   }

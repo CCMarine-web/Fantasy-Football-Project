@@ -75,3 +75,24 @@ Confirmed from the code:
 | 12 | Playoff odds | Real, fixed | Per-team sd shrunk toward the pooled sd (10-game prior), mean regressed (4-game prior) and redrawn per simulated season; ">99%"/"<1%" unless clinched/eliminated. |
 | 13 | Record Watch | Real, fixed | Only paces that would break the record, sorted by pace. |
 | 14 | Finish distribution | Real, fixed | Footnote: 2017 had 8 teams. |
+
+## Phase 3: charts and design (done)
+
+**Charts added or replaced**
+- Luck ledger (`/standings`, season; `/managers`, career): diverging bars from 0, sorted, signed labels. Replaces actual-vs-expected bars.
+- Weekly score vs league average (profile, season picker for Sleeper years): filled bars = wins, outlined = losses.
+- Scoring range (`/power-rankings`): a dot per week, a median tick, sorted by median. Replaces "Power score vs win %".
+- Playoff odds by week (`/standings`, in season): stored per week in `PlayoffOddsSnapshot` (additive migration), Weeks 1–9 of 2026 backfilled by the compute step; the latest week matches the table exactly. Top 6 bright, tap a team to follow it, direct end labels with collision handling.
+- Points left on the bench (`/power-rankings`): best legal lineup minus the started lineup, season total, per-game value in the tooltip/table.
+
+**Chart fixes**: rank by week uses direct end labels and tap/hover highlight; PF/PA scatter has round ticks, surname labels, label collision handling and one accent; week strip has surname labels, a week-average line, no jitter, hollow losses; game flow is accent vs neutral; rivalry margins coloured by winner, bracket games outlined, season ticks only; no mid-word truncation in chart text. Every chart's data table is now a visible "Show the numbers" disclosure (tap equivalent of every tooltip).
+
+Colour note: the spec's win/loss pair (#34C77B / #F0605D) fails a deuteranopia check (ΔE 5.8), so every use carries a second cue (direction from zero + signed label, or filled vs outlined).
+
+**Design**: tokens (#0B0F14 page, #121821 surface, #18202B raised, #243040 border, #E8EDF2 text, #93A1B2 muted, sky-blue accent), `color-scheme: dark`, type scale 12/14/16/20/28/40 (replaces the earlier +20% scale), card radius 12, one 1200px page width, nav Standings · Matchups · Power Rankings · Managers · History · More (Home in the mobile menu), compact page header with the photo only in the header band, shared `DataTable` (sticky first columns, mono right-aligned numbers, 44px rows, sortable headers with visible state) used by standings with "More columns", History index first with retrospectives collapsed, Rivalries "Show all", profile tabs (Overview / Seasons / Head-to-head / Story), Tribunal verdict list with expandable detail, methodology collapsed at the bottom, matchups awards paragraph removed, 44px week/season pills, visible focus rings, rivalry slug URLs (`/rivalries/gavin-detillier-vs-anthony-cibilich`) with permanent redirects from ids and reversed order.
+
+**Checks**: build, lint, typecheck, 467 tests. Browser at 390 and 1440 on 13 routes: all 200, no horizontal overflow, no console errors. Lighthouse accessibility: standings, power rankings, profile, matchups, history, rivalries, transactions, drafts 100; home, Tribunal 96 and managers 95 before the last contrast fixes.
+
+Heights at 390px (before → after): History 9,400 → 4,667; Rivalries 9,000 → 5,422; Trade Tribunal 7,100 → 2,455; profile 7,100 → 3,985.
+
+Also fixed while checking: the Matchups hub listed the whole season's moves as "this week" for a week with none (Week 15 showed 148).

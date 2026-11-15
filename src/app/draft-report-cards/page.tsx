@@ -1,5 +1,6 @@
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { prisma } from "@/lib/db";
+import { lastName } from "@/lib/chart-ticks";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { draftRevisitTexts } from "@/server/text/page-texts";
@@ -51,7 +52,7 @@ export default async function DraftsPage({
   const year = Number.isFinite(requested) ? requested : (graded[0]?.year ?? drafted[0]?.year ?? null);
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader
         art="header-draft-report-cards"
         freshness
@@ -161,7 +162,7 @@ async function gradeVsReality(
     points.push({
       x: card.score,
       y: power.score,
-      label: card.managerName.length > 14 ? `${card.managerName.slice(0, 13)}…` : card.managerName,
+      label: lastName(card.managerName),
       color: colors.get(card.managerId) ?? "var(--primary)",
       detail: `Draft grade ${grade} · power rank #${power.rank} (${power.teamName})`,
     });

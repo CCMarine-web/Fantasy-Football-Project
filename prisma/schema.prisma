@@ -1604,3 +1604,21 @@ model FeaturedSelection {
 
   @@unique([seasonYear, week])
 }
+
+/// Playoff odds as they stood after each week (the "Playoff odds by week"
+/// chart). Written by the pipeline's compute step; past weeks are backfilled
+/// by re-running the simulation on the games through that week.
+model PlayoffOddsSnapshot {
+  id            String   @id @default(cuid())
+  seasonYear    Int
+  /// Odds after this week's games (0 = before Week 1).
+  week          Int
+  fantasyTeamId String
+  playoffPct    Float
+  byePct        Float
+  titlePct      Float
+  createdAt     DateTime @default(now())
+
+  @@unique([seasonYear, week, fantasyTeamId])
+  @@index([seasonYear])
+}

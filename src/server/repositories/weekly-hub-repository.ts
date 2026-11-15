@@ -350,6 +350,8 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     }
   }
 
+  const weekMoves = week != null ? transactions.transactions.filter((t) => t.week === week) : transactions.transactions;
+
   return {
     seasonYear: season.year,
     seasonId: season.id,
@@ -387,8 +389,10 @@ export async function getWeeklyHub(requestedWeek?: number): Promise<WeeklyHubDat
     awards,
     powerRankings: power?.rows ?? [],
     powerRankingsTitle: powerRankingsTitleFor(power?.mode ?? "MANAGER_BASELINE", power?.throughWeek ?? 0),
-    successfulTransactions: transactions.transactions.filter((t) => t.outcome !== "FAILED"),
-    failedClaims: transactions.transactions.filter((t) => t.outcome === "FAILED"),
+    // The archive ignores a week with no moves and returns the whole season;
+    // "this week" must mean this week (Week 15 showed 148 season moves).
+    successfulTransactions: weekMoves.filter((t) => t.outcome !== "FAILED"),
+    failedClaims: weekMoves.filter((t) => t.outcome === "FAILED"),
     hasTransactionData: transactions.periods.some((p) => p.year === season.year),
     streaks,
     seasonNotables,

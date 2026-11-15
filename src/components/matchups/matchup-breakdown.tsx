@@ -84,11 +84,17 @@ export function MatchupBreakdown({
       : null,
   );
 
+  // Coloured by winner (accent = side A, neutral = side B); playoff games outlined.
   const margins = series.meetings.map((g) => ({
     label: `${String(g.season).slice(2)}·W${g.week}`,
     value: Math.round((g.pointsFor - g.pointsAgainst) * 10) / 10,
-    color: g.isPlayoff ? "#F0E442" : g.pointsFor >= g.pointsAgainst ? a.color : b.color,
+    color: g.pointsFor >= g.pointsAgainst ? "var(--primary)" : "var(--muted-foreground)",
+    outline: g.isPlayoff,
   }));
+  const seasonTicks: Record<string, string> = {};
+  for (const g of series.meetings) {
+    if (!Object.values(seasonTicks).includes(String(g.season))) seasonTicks[`${String(g.season).slice(2)}·W${g.week}`] = String(g.season);
+  }
 
   return (
     <div className="space-y-6">
@@ -105,8 +111,9 @@ export function MatchupBreakdown({
             xLabel="NFL window"
             yLabel="Points"
             series={[
-              { key: "a", label: a.name, color: a.color },
-              { key: "b", label: b.name, color: b.color },
+              // One accent, one neutral: two team colours were near-identical yellows.
+              { key: "a", label: a.name, color: "var(--primary)" },
+              { key: "b", label: b.name, color: "var(--muted-foreground)", dashed: true },
             ]}
             tooltipFormat="fixed1"
           />
@@ -200,12 +207,12 @@ export function MatchupBreakdown({
       {margins.length > 0 ? (
         <ChartFrame
           title="Every meeting"
-          caption={`Margin of each game from ${a.name}'s side; up = ${a.name} won. Yellow = championship-bracket game.`}
+          caption={`Margin of each game from ${a.name}'s side; up = ${a.name} won. Blue = ${a.name} won, grey = ${b.name} won; outlined = playoff game.`}
           summary={`Winning margin in each of the ${margins.length} meetings between ${a.name} and ${b.name}.`}
           table={{ headers: ["Meeting", `Margin (${a.name})`], rows: margins.map((m) => [m.label, m.value]) }}
           height="h-64"
         >
-          <SimpleBars data={margins} valueLabel={`Margin (${a.name})`} diverging valueFormat="fixed0" />
+          <SimpleBars data={margins} valueLabel={`Margin (${a.name})`} diverging valueFormat="fixed0" categoryTicks={seasonTicks} />
         </ChartFrame>
       ) : null}
     </div>

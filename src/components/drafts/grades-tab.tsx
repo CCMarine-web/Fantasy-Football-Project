@@ -40,73 +40,6 @@ export function GradesTab({
 
   return (
     <>
-      {/* Methodology, stated up front. */}
-      {view.weights.length > 0 ? (
-        <Card className="mt-6 border-border/60 bg-card/40">
-          <CardContent>
-            <h2 className="font-heading text-base font-semibold">How the draft-day grade is built</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Each factor is scored 0-100 against the other drafts in the same room, then blended with
-              the weights below and graded on a curve. Season results, championships, waiver pickups
-              and trades are deliberately <strong className="text-foreground">not</strong> inputs — a
-              good draft wrecked by injuries was still a good draft, and a poor one rescued on waivers
-              was still a poor one.
-            </p>
-            <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-              {view.weights.map((w, i) => (
-                <div key={w.key} className="flex gap-2">
-                  <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
-                    {originalPercents[i]}%
-                  </dt>
-                  <dd className="text-sm text-muted-foreground">
-                    <span className="font-medium text-foreground">{w.label}</span> — {w.description}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-            {!view.adpAvailable ? (
-              <p className="mt-3 flex items-start gap-2 text-[13px] text-muted-foreground">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                <span>
-                  There is no free, reliable source of average draft position for this league&rsquo;s
-                  format, so no ADP is on record for any season and the value-vs-ADP factor is left out.
-                  Its weight is spread across the factors above, and everything shown is measured from
-                  the draft board itself.
-                </span>
-              </p>
-            ) : null}
-
-            {/*
-             * What the recorded data does and does not support. A letter grade
-             * carries the same authority however thin the evidence behind it,
-             * so the evidence is stated next to it.
-             */}
-            {view.confidenceReasons.length > 0 ? (
-              <div className="mt-3 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-[13px] text-muted-foreground">
-                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
-                <span>
-                  <strong className="text-foreground">
-                    {CONFIDENCE_LABEL[view.confidence]} for {view.seasonYear}.
-                  </strong>{" "}
-                  {seasonReasons.length > 0
-                    ? asSentence(seasonReasons)
-                    : "The missing average draft position, noted above, is the only gap."}{" "}
-                  Every team&rsquo;s own confidence is shown on its card.
-                </span>
-              </div>
-            ) : null}
-
-            {/* The second, separate grade lives on its own tab. */}
-            <p className="mt-4 border-t border-border/40 pt-3 text-sm text-muted-foreground">
-              The hindsight grade — what the drafted players actually produced — is a separate verdict
-              that never replaces this one.{" "}
-              <Link href={draftsHref("revisited", view.seasonYear)} className="text-primary hover:underline">
-                See how it is built on the Revisited tab →
-              </Link>
-            </p>
-          </CardContent>
-        </Card>
-      ) : null}
 
       {/*
        * The whole season at a glance, before any of the long-form cards. The
@@ -316,6 +249,73 @@ export function GradesTab({
           </div>
         )}
       </div>
+      {/* Methodology: collapsed at the bottom ("How it's calculated"). */}
+      {view.weights.length > 0 ? (
+        <details className="mt-8 rounded-xl border border-border bg-card/40 p-4">
+          <summary className="flex min-h-11 cursor-pointer items-center font-heading text-base font-semibold">How it&rsquo;s calculated: the draft-day grade</summary>
+          <div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Each factor is scored 0-100 against the other drafts in the same room, then blended with
+              the weights below and graded on a curve. Season results, championships, waiver pickups
+              and trades are deliberately <strong className="text-foreground">not</strong> inputs — a
+              good draft wrecked by injuries was still a good draft, and a poor one rescued on waivers
+              was still a poor one.
+            </p>
+            <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+              {view.weights.map((w, i) => (
+                <div key={w.key} className="flex gap-2">
+                  <dt className="w-10 shrink-0 font-mono text-sm font-semibold tabular-nums text-primary">
+                    {originalPercents[i]}%
+                  </dt>
+                  <dd className="text-sm text-muted-foreground">
+                    <span className="font-medium text-foreground">{w.label}</span> — {w.description}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {!view.adpAvailable ? (
+              <p className="mt-3 flex items-start gap-2 text-[13px] text-muted-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                <span>
+                  There is no free, reliable source of average draft position for this league&rsquo;s
+                  format, so no ADP is on record for any season and the value-vs-ADP factor is left out.
+                  Its weight is spread across the factors above, and everything shown is measured from
+                  the draft board itself.
+                </span>
+              </p>
+            ) : null}
+
+            {/*
+             * What the recorded data does and does not support. A letter grade
+             * carries the same authority however thin the evidence behind it,
+             * so the evidence is stated next to it.
+             */}
+            {view.confidenceReasons.length > 0 ? (
+              <div className="mt-3 flex items-start gap-2 rounded-md border border-border/60 bg-muted/30 px-3 py-2 text-[13px] text-muted-foreground">
+                <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" aria-hidden />
+                <span>
+                  <strong className="text-foreground">
+                    {CONFIDENCE_LABEL[view.confidence]} for {view.seasonYear}.
+                  </strong>{" "}
+                  {seasonReasons.length > 0
+                    ? asSentence(seasonReasons)
+                    : "The missing average draft position, noted above, is the only gap."}{" "}
+                  Every team&rsquo;s own confidence is shown on its card.
+                </span>
+              </div>
+            ) : null}
+
+            {/* The second, separate grade lives on its own tab. */}
+            <p className="mt-4 border-t border-border/40 pt-3 text-sm text-muted-foreground">
+              The hindsight grade — what the drafted players actually produced — is a separate verdict
+              that never replaces this one.{" "}
+              <Link href={draftsHref("revisited", view.seasonYear)} className="text-primary hover:underline">
+                See how it is built on the Revisited tab →
+              </Link>
+            </p>
+          </div>
+        </details>
+      ) : null}
     </>
   );
 }

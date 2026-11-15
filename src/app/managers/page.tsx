@@ -15,6 +15,9 @@ import { Badge } from "@/components/ui/badge";
 import { getStatsCoverage, listManagerRows } from "@/server/repositories/manager-repository";
 import { getCareerLuckWins } from "@/server/repositories/luck-repository";
 import { LuckBadge } from "@/components/managers/luck-score";
+import { ChartFrame } from "@/components/charts/chart-frame";
+import { DivergingBars } from "@/components/charts/team-charts";
+import { lastName } from "@/lib/chart-ticks";
 import { LAST_PLACE_METHODOLOGY } from "@/server/stats/last-place";
 import { Trophy, Users, ChevronRight, Info } from "lucide-react";
 import { BRAND } from "@/lib/branding";
@@ -48,9 +51,18 @@ export default async function ManagersPage({
   const active = all.filter((m) => m.isActive);
   const retired = all.filter((m) => !m.isActive);
   const managers = tab === "retired" ? retired : active;
+  // Career luck ledger: every manager with enough games, in wins.
+  const careerLedger = all
+    .map((m) => ({ m, l: luckByManager.get(m.managerId) }))
+    .filter((x) => x.l && x.l.tone !== "insufficient")
+    .map(({ m, l }) => ({
+      label: lastName(m.displayName),
+      value: Number(l!.luckWins.toFixed(1)),
+      detail: `${l!.wins} wins vs ${l!.expected.toFixed(1)} expected in ${l!.games} games · ${l!.label}`,
+    }));
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader art="header-managers" freshness
         eyebrow="The League"
         title="Managers"
@@ -121,6 +133,17 @@ export default async function ManagersPage({
       {/* Everyone side by side, sortable — then the finish grid. */}
       <section className="mt-6 space-y-6" aria-label="Career comparison">
         <ManagerComparisonTable rows={comparison.rows} />
+        {careerLedger.length > 0 ? (
+          <ChartFrame
+            title="Career luck ledger"
+            caption="Career wins above or below what each manager's weekly scores would have earned against the whole league, regular season only. Right of zero: the record flatters them."
+            summary={`Career luck in wins for ${careerLedger.length} managers.`}
+            table={{ headers: ["Manager", "Luck (wins)", "Detail"], rows: careerLedger.map((d) => [d.label, d.value.toFixed(1), d.detail]) }}
+            height="h-auto"
+          >
+            <DivergingBars data={careerLedger} valueLabel="Wins above expected" unit=" wins" />
+          </ChartFrame>
+        ) : null}
         <FinishGrid rows={comparison.rows} seasons={comparison.seasons} grid={comparison.grid} />
       </section>
 
@@ -139,7 +162,7 @@ export default async function ManagersPage({
               : "rounded-md px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           }
         >
-          Active <span className="tabular-nums opacity-70">({active.length})</span>
+          Active <span className="tabular-nums opacity-90">({active.length})</span>
         </Link>
         <Link
           href="/managers?status=retired"
@@ -150,7 +173,7 @@ export default async function ManagersPage({
               : "rounded-md px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           }
         >
-          Retired <span className="tabular-nums opacity-70">({retired.length})</span>
+          Retired <span className="tabular-nums opacity-90">({retired.length})</span>
         </Link>
       </div>
 

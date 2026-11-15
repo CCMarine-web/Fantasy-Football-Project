@@ -138,7 +138,7 @@ export default async function TransactionsPage({
     page.week != null || page.type != null || page.managerId != null || page.playerQuery != null;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader freshness
         eyebrow="The Wire"
         title="Transactions"
@@ -162,8 +162,8 @@ export default async function TransactionsPage({
               aria-current={p.year === page.seasonYear ? "page" : undefined}
               className={
                 p.year === page.seasonYear
-                  ? "rounded-md bg-primary px-3 py-1 text-sm font-medium text-primary-foreground"
-                  : "rounded-md px-3 py-1 text-sm text-muted-foreground hover:text-foreground"
+                  ? "inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"
+                  : "inline-flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground hover:text-foreground"
               }
             >
               {p.year}
@@ -213,8 +213,8 @@ export default async function TransactionsPage({
             aria-current={page.type == null ? "page" : undefined}
             className={
               page.type == null
-                ? "rounded-md bg-primary px-3 py-1 text-sm font-medium text-primary-foreground"
-                : "rounded-md px-3 py-1 text-sm text-muted-foreground hover:text-foreground"
+                ? "inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"
+                : "inline-flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground hover:text-foreground"
             }
           >
             All
@@ -226,8 +226,8 @@ export default async function TransactionsPage({
               aria-current={page.type === t.value ? "page" : undefined}
               className={
                 page.type === t.value
-                  ? "rounded-md bg-primary px-3 py-1 text-sm font-medium text-primary-foreground"
-                  : "rounded-md px-3 py-1 text-sm text-muted-foreground hover:text-foreground"
+                  ? "inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"
+                  : "inline-flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground hover:text-foreground"
               }
             >
               {t.label}
@@ -247,8 +247,8 @@ export default async function TransactionsPage({
               aria-current={page.managerId == null ? "page" : undefined}
               className={
                 page.managerId == null
-                  ? "rounded-md bg-primary px-3 py-1 text-sm font-medium text-primary-foreground"
-                  : "rounded-md px-3 py-1 text-sm text-muted-foreground hover:text-foreground"
+                  ? "inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"
+                  : "inline-flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground hover:text-foreground"
               }
             >
               All
@@ -260,8 +260,8 @@ export default async function TransactionsPage({
                 aria-current={page.managerId === m.id ? "page" : undefined}
                 className={
                   page.managerId === m.id
-                    ? "rounded-md bg-primary px-3 py-1 text-sm font-medium text-primary-foreground"
-                    : "rounded-md px-3 py-1 text-sm text-muted-foreground hover:text-foreground"
+                    ? "inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground"
+                    : "inline-flex min-h-11 items-center rounded-md px-3 text-sm text-muted-foreground hover:text-foreground"
                 }
               >
                 {m.displayName}

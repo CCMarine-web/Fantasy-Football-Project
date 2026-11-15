@@ -2,12 +2,11 @@ import Link from "next/link";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { MultiLineChart, SimpleBars } from "@/components/charts/charts";
-import { teamColorMap } from "@/lib/chart-theme";
-import { prisma } from "@/lib/db";
 import { AiText } from "@/components/shared/ai-text";
 import { rivalryTexts } from "@/server/text/page-texts";
 import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
+import { resolveRivalrySlugParam } from "@/server/repositories/rivalry-slug";
 import { PageHeader } from "@/components/shared/page-header";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,9 +30,15 @@ export async function generateStaticParams() {
   return [];
 }
 
+/**
+ * The [rivalryId] segment is a readable slug ("gavin-detillier-vs-anthony-cibilich",
+ * managers in the stored A/B order). An old opaque id, or the pair named the
+ * other way round, still resolves — the page redirects it to the slug.
+ */
 export async function generateMetadata({ params }: { params: Promise<{ rivalryId: string }> }) {
-  const { rivalryId } = await params;
-  const r = await getRivalryDetail(rivalryId);
+  const { rivalryId: param } = await params;
+  const resolved = await resolveRivalrySlugParam(param);
+  const r = resolved ? await getRivalryDetail(resolved.id) : null;
   return { title: r ? `${r.managerAName} vs ${r.managerBName}` : "Rivalry" };
 }
 
@@ -98,8 +103,12 @@ function Compare({
 export default async function RivalryDetailPage({ params }: { params: Promise<{ rivalryId: string }> }) {
   // Pre-rendered when the build can reach the database; otherwise rendered per request.
   await renderAtRequestIfNoDatabase();
-  const { rivalryId } = await params;
-  const r = await getRivalryDetail(rivalryId);
+  const { rivalryId: param } = await params;
+  const resolved = await resolveRivalrySlugParam(param);
+  if (!resolved) notFound();
+  // Old id URLs, and the pair named in reverse, move permanently to the slug.
+  if (resolved.shouldRedirect) permanentRedirect(`/rivalries/${resolved.slug}`);
+  const r = await getRivalryDetail(resolved.id);
   if (!r) notFound();
   const story = (await rivalryTexts([r])).get(r.id);
 
@@ -114,9 +123,9 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
    */
   const playoffMeetings = r.meetings.filter((m) => m.isPlayoff && m.bracketType === "WINNERS");
   // Charts: margin per meeting (A's side) and the running series, oldest first.
-  const palette = teamColorMap((await prisma.manager.findMany({ select: { id: true } })).map((m) => m.id));
-  const colorA = palette.get(r.managerAId) ?? "var(--primary)";
-  const colorB = palette.get(r.managerBId) ?? "var(--muted-foreground)";
+  // One accent for the first-named manager, neutral for the other (no team palette).
+  const colorA = "var(--primary)";
+  const colorB = "var(--muted-foreground)";
   const chrono = [...r.meetings].reverse();
   const running: { meeting: string; a: number; b: number }[] = [];
   for (const m of chrono) {
@@ -127,16 +136,24 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
       b: prev.b + (m.managerBScore > m.managerAScore ? 1 : 0),
     });
   }
+  // Coloured by winner; championship-bracket games outlined.
   const marginBars = chrono.map((m) => ({
     label: `${String(m.seasonYear).slice(2)}·W${m.week}`,
     value: Math.round((m.managerAScore - m.managerBScore) * 10) / 10,
-    color: m.isPlayoff && m.bracketType === "WINNERS" ? "#F0E442" : m.managerAScore >= m.managerBScore ? colorA : colorB,
+    color: m.managerAScore >= m.managerBScore ? colorA : colorB,
+    outline: m.isPlayoff && m.bracketType === "WINNERS",
   }));
+  // Season ticks only: the first meeting of each season carries the year.
+  const seasonTicks: Record<string, string> = {};
+  for (const m of chrono) {
+    const key = `${String(m.seasonYear).slice(2)}·W${m.week}`;
+    if (!Object.values(seasonTicks).includes(String(m.seasonYear))) seasonTicks[key] = String(m.seasonYear);
+  }
   const aWinPct = r.gamesPlayed ? r.managerAWins / r.gamesPlayed : null;
   const bWinPct = r.gamesPlayed ? r.managerBWins / r.gamesPlayed : null;
 
   return (
-    <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader freshness
         eyebrow={r.isOfficial ? "Official rivalry" : "Head to head"}
         title={`${r.managerAName} vs ${r.managerBName}`}
@@ -277,12 +294,12 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
             <div className="mb-6 grid gap-4 lg:grid-cols-2">
               <ChartFrame
                 title="Margin, meeting by meeting"
-                caption={`Up = ${r.managerAName} won, down = ${r.managerBName} won. Yellow = championship-bracket game.`}
+                caption={`Up (blue) = ${r.managerAName} won, down (grey) = ${r.managerBName} won. Outlined = championship-bracket game.`}
                 summary={`The winning margin of each of the ${chrono.length} meetings, oldest first.`}
                 table={{ headers: ["Meeting", `Margin (${r.managerAName})`], rows: marginBars.map((m) => [m.label, m.value]) }}
                 height="h-64"
               >
-                <SimpleBars data={marginBars} valueLabel="Margin" diverging valueFormat="fixed0" />
+                <SimpleBars data={marginBars} valueLabel="Margin" diverging valueFormat="fixed0" categoryTicks={seasonTicks} />
               </ChartFrame>
               <ChartFrame
                 title="The series over time"
@@ -294,8 +311,9 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
                 <MultiLineChart
                   data={running}
                   xKey="meeting"
-                  xLabel="Meeting"
+                  xLabel="Season"
                   yLabel="Wins"
+                  xTickLabels={seasonTicks}
                   series={[
                     { key: "a", label: r.managerAName, color: colorA },
                     { key: "b", label: r.managerBName, color: colorB },

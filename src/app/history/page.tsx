@@ -7,6 +7,7 @@ import { TeamAvatar } from "@/components/shared/team-avatar";
 import { LeagueScoringTrendChart, type ScoringAnnotation } from "@/components/charts/league-scoring-trend-chart";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { SeasonIndexCardView } from "@/components/history/season-index-card";
+import { DISCLOSURE_SUMMARY_CLASS, DisclosureChevron } from "@/components/shared/disclosure";
 import {
   getLeagueScoringTrend,
   listSeasonIndex,
@@ -76,92 +77,14 @@ export default async function HistoryPage() {
   const current = trend.find((t) => t.inProgress);
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader art="header-history" freshness
         eyebrow="The Archive"
         title="League History"
         description="Every season, every champion, every finals matchup since founding."
       />
 
-      {articles.length > 0 ? (
-        <section className="mt-8">
-          <div className="mb-3 flex items-center gap-2">
-            <ScrollText className="h-4 w-4 text-primary" />
-            <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-              Season Retrospectives
-            </h2>
-          </div>
-          <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
-            The league&apos;s story season by season, built from the commissioner&apos;s own recaps and
-            the verified record. Where a narrative detail and the numbers disagree, the season pages
-            below are the record of truth. These are openings only — each season&apos;s full
-            retrospective is on its own page.
-          </p>
-          <div className="space-y-4">
-            {articles.map((article) => (
-              <Card key={article.id}>
-                <CardHeader>
-                  {/* The year lives here once. The article title deliberately
-                      does not repeat it — the two together used to render as
-                      "2023 2023 Season". */}
-                  <CardTitle className="flex flex-wrap items-baseline gap-2">
-                    <span className="font-mono text-primary">{article.year}</span>
-                    <span className="uppercase">{article.title}</span>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {/*
-                   * 150-250 words, cut from the full article on a paragraph or
-                   * sentence boundary. The index used to print all nine
-                   * retrospectives in full — several thousand words, most of it
-                   * restating the standings and champion shown in the tables
-                   * below. The complete recap is one click away.
-                   */}
-                  <div className="max-w-3xl space-y-4">
-                    {article.preview.map((paragraph, i) => (
-                      <p key={i} className="text-sm leading-relaxed text-foreground/90">
-                        {paragraph}
-                      </p>
-                    ))}
-                  </div>
-                  <Link
-                    href={`/history/${article.year}`}
-                    className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
-                  >
-                    {article.isTruncated
-                      ? `Read the full ${article.year} retrospective, standings, playoffs and draft →`
-                      : `${article.year} standings, playoffs and draft →`}
-                  </Link>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-      ) : narrative.length > 0 ? (
-        // Fallback while the articles have not been generated yet: show the
-        // commissioner's raw text rather than nothing at all.
-        <section className="mt-8">
-          <div className="mb-3 flex items-center gap-2">
-            <ScrollText className="h-4 w-4 text-primary" />
-            <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
-              From the Commissioner
-            </h2>
-          </div>
-          <div className="space-y-4">
-            {narrative.map((s) => (
-              <Card key={s.id}>
-                <CardHeader>
-                  <CardTitle className="uppercase">{s.title}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/90">{s.body}</p>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
+      {/* The season index comes first; the long retrospectives follow, collapsed. */}
       <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Season Index</h2>
@@ -231,6 +154,90 @@ export default async function HistoryPage() {
           </Card>
         </div>
       </div>
+
+      {articles.length > 0 ? (
+        <section className="mt-10">
+          <div className="mb-3 flex items-center gap-2">
+            <ScrollText className="h-4 w-4 text-primary" />
+            <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+              Season Retrospectives
+            </h2>
+          </div>
+          <p className="mb-4 max-w-3xl text-sm text-muted-foreground">
+            The league&apos;s story season by season, built from the commissioner&apos;s own recaps and
+            the verified record. Where a narrative detail and the numbers disagree, the season pages
+            above are the record of truth. These are openings only — each season&apos;s full
+            retrospective is on its own page.
+          </p>
+          {/* Collapsed by default: nine openings of prose made this the longest
+              page on the site, and pushed the season index off the first
+              screens. Each is still in the HTML, one tap away. */}
+          <div className="space-y-2">
+            {articles.map((article) => (
+              <details key={article.id} className="group rounded-xl border border-border/60 bg-card">
+                {/* The year lives here once. The article title deliberately
+                    does not repeat it — the two together used to render as
+                    "2023 2023 Season". */}
+                <summary className={DISCLOSURE_SUMMARY_CLASS}>
+                  <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-2 font-heading text-base font-semibold">
+                    <span className="font-mono text-primary">{article.year}</span>
+                    <span className="uppercase">{article.title}</span>
+                  </span>
+                  <DisclosureChevron />
+                </summary>
+                <div className="px-3 pt-1 pb-4">
+                  {/*
+                   * 150-250 words, cut from the full article on a paragraph or
+                   * sentence boundary. The index used to print all nine
+                   * retrospectives in full — several thousand words, most of it
+                   * restating the standings and champion shown in the season
+                   * index. The complete recap is one click away.
+                   */}
+                  <div className="max-w-3xl space-y-4">
+                    {article.preview.map((paragraph, i) => (
+                      <p key={i} className="text-sm leading-relaxed text-foreground/90">
+                        {paragraph}
+                      </p>
+                    ))}
+                  </div>
+                  <Link
+                    href={`/history/${article.year}`}
+                    className="mt-4 inline-block text-sm font-medium text-primary hover:underline"
+                  >
+                    {article.isTruncated
+                      ? `Read the full ${article.year} retrospective, standings, playoffs and draft →`
+                      : `${article.year} standings, playoffs and draft →`}
+                  </Link>
+                </div>
+              </details>
+            ))}
+          </div>
+        </section>
+      ) : narrative.length > 0 ? (
+        // Fallback while the articles have not been generated yet: show the
+        // commissioner's raw text rather than nothing at all.
+        <section className="mt-10">
+          <div className="mb-3 flex items-center gap-2">
+            <ScrollText className="h-4 w-4 text-primary" />
+            <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">
+              From the Commissioner
+            </h2>
+          </div>
+          <div className="space-y-2">
+            {narrative.map((s) => (
+              <details key={s.id} className="group rounded-xl border border-border/60 bg-card">
+                <summary className={DISCLOSURE_SUMMARY_CLASS}>
+                  <span className="min-w-0 flex-1 font-heading text-base font-semibold uppercase">{s.title}</span>
+                  <DisclosureChevron />
+                </summary>
+                <div className="px-3 pt-1 pb-4">
+                  <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/90">{s.body}</p>
+                </div>
+              </details>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

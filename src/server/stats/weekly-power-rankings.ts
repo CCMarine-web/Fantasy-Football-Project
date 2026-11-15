@@ -273,6 +273,11 @@ export interface PowerRankingRow {
   /** expectedWins - actualWins; positive means the team has been unlucky. */
   luck: number | null;
   lineupEfficiency: number | null;
+  /**
+   * Best legal lineup minus the lineup actually started, summed over the weeks
+   * with full player scoring (Sleeper seasons). In-season rows only.
+   */
+  pointsLeftOnBench?: { total: number; games: number } | null;
   factors: RankingFactor[];
 }
 
@@ -496,6 +501,13 @@ function inSeasonRankings(
         : null;
     const starter =
       withLineups.length > 0 ? mean(withLineups.map((w) => w.starterPoints ?? 0)) : null;
+    const benchLoss =
+      withLineups.length > 0
+        ? {
+            total: withLineups.reduce((s, w) => s + Math.max(0, (w.optimalPoints as number) - (w.starterPoints ?? 0)), 0),
+            games: withLineups.length,
+          }
+        : null;
     const benchWeeks = t.weeks.filter((w) => w.benchPoints != null);
     const bench =
       benchWeeks.length > 0 ? mean(benchWeeks.map((w) => w.benchPoints as number)) : null;
@@ -510,6 +522,7 @@ function inSeasonRankings(
       form,
       cv,
       efficiency,
+      benchLoss,
       starter,
       bench,
       sos: mean(t.weeks.map((w) => w.pointsAgainst)),
@@ -623,6 +636,7 @@ function inSeasonRankings(
       actualWins: m.actualWins,
       luck: round(m.actualWins - m.expectedWins),
       lineupEfficiency: m.efficiency == null ? null : round(m.efficiency * 100),
+      pointsLeftOnBench: m.benchLoss ? { total: round(m.benchLoss.total), games: m.benchLoss.games } : null,
       factors,
     };
   });

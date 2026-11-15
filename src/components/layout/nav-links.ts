@@ -15,76 +15,35 @@ export function isNavGroup(item: NavItem): item is NavGroup {
 }
 
 /**
- * Top nav, led by Matchups — the weekly league hub.
+ * Top nav (Nov 2026 redesign): Standings, Matchups, Power Rankings, Managers,
+ * History, More. Standings had been buried under "This Week"; it is the page
+ * most people want, so it leads. Everything else sits in "More" as separate,
+ * individually-labelled items — nothing is combined or removed.
  *
- * Standings, Transactions and News used to sit here as separate top-level
- * items, which meant answering "what happened this week" took several page
- * loads. /matchups answers it once and links onward, so it takes the first slot
- * and those move into the "This Week" group beside it — they still exist, they
- * are simply no longer the way in.
- *
- * The page was called "Weekly" until it was renamed to Matchups: nobody
- * arriving at a fantasy football site is looking for "Weekly", and the featured
- * Matchup of the Week is now the first thing on it. /weekly redirects here.
- *
- * Drafts and Trade Tribunal are top-level rather than buried in History —
- * they are recurring features people come back for, not archive material.
- * "Drafts" is the one entry for the merged draft page (/draft-report-cards,
- * with Board | Grades | Revisited tabs); the old History > Drafts board is
- * now its Board tab and /drafts redirects there. The label is shorter than the
- * "Draft Cards" it replaced, so the measurements below still hold.
- *
- * Ordering matters: the last items are the ones that fold into "More" on a
- * narrower desktop (see site-header.tsx).
+ * At the new type scale the five links plus "More" measure under 500px, so
+ * the whole row fits inline from `lg` (1024px) up; there are no fold tiers.
+ * Home is the masthead on desktop and the first item of the mobile menu.
  */
 export const primaryNav: NavItem[] = [
+  { href: "/standings", label: "Standings" },
   { href: "/matchups", label: "Matchups" },
   { href: "/power-rankings", label: "Power Rankings" },
   { href: "/managers", label: "Managers" },
-  { href: "/rivalries", label: "Rivalries" },
-  { href: "/draft-report-cards", label: "Drafts" },
-  { href: "/trade-tribunal", label: "Trade Tribunal" },
+  { href: "/history", label: "History" },
   {
-    label: "This Week",
+    label: "More",
     links: [
-      { href: "/standings", label: "Full Standings" },
-      { href: "/transactions", label: "Transaction Archive" },
-      { href: "/news", label: "News Archive" },
-    ],
-  },
-  {
-    label: "History",
-    links: [
-      { href: "/history", label: "Season History" },
+      { href: "/rivalries", label: "Rivalries" },
+      { href: "/draft-report-cards", label: "Drafts" },
+      { href: "/trade-tribunal", label: "Trade Tribunal" },
+      { href: "/transactions", label: "Transactions" },
+      { href: "/news", label: "News" },
       { href: "/records", label: "Records" },
       { href: "/hall-of-shame", label: "Hall of Shame" },
       { href: "/championship-belt", label: "Championship Belt" },
     ],
   },
 ];
-
-/**
- * How many direct links sit inline at each desktop tier. The rest fold into a
- * "More" menu, where every destination stays a separate, individually-labelled
- * item — nothing is ever combined.
- *
- * These are measured, not guessed. The row now measures:
- *   Matchups 82 · Power Rankings 127 · Managers 78 · Rivalries 67 ·
- *   Draft Cards 91 (now "Drafts", narrower) · Trade Tribunal 110, then the two dropdowns
- *   This Week 85 · History 74, with a 16px gap.
- *
- * The masthead takes 280px and the container 64px of padding, so:
- *   lg  (1024px): 680px of room -> 4 links + More + both dropdowns (679px)
- *   xl  (1280px): 936px of room -> all 6 links + both dropdowns (826px), so
- *                 "More" disappears entirely from here up
- *
- * Folding Standings, Transactions and News into the "This Week" group, and
- * deleting the public Chat item, is what bought the room: the row was ten items
- * wide and needed a 1298px container it could never have while the header is
- * capped at `max-w-7xl` (1280px) — see site-header.tsx.
- */
-export const INLINE_NAV_LG = 4;
-export const INLINE_NAV_XL = 6;
 
 /**
  * Extra destinations not in the top nav but linked in the footer. Draft Report
@@ -118,6 +77,6 @@ export const allNavLinks: NavLink[] = (() => {
 
 /** Grouped structure for the mobile menu (direct links collected under "Main"). */
 export const mobileNavGroups: NavGroup[] = [
-  { label: "Main", links: primaryNav.filter((i): i is NavLink => !isNavGroup(i)) },
+  { label: "Main", links: [{ href: "/", label: "Home" }, ...primaryNav.filter((i): i is NavLink => !isNavGroup(i))] },
   ...primaryNav.filter(isNavGroup),
 ];

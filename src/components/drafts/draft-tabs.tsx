@@ -70,7 +70,7 @@ export function DraftSeasonPicker({
   return (
     <div className="mt-4 flex flex-wrap gap-2" aria-label="Season">
       {years.map((year) => (
-        <Link key={year} href={draftsHref(tab, year, view)} aria-current={year === active ? "page" : undefined}>
+        <Link key={year} href={draftsHref(tab, year, view)} aria-current={year === active ? "page" : undefined} className="inline-flex min-h-11 items-center">
           <Badge variant={year === active ? "default" : "outline"}>{year}</Badge>
         </Link>
       ))}

@@ -304,7 +304,7 @@ export function DraftBoard({
         </table>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        Pick numbers read round.pick. Hover or long-press a pick for the details.
+        Pick numbers read round.pick. Each pick shows its slots gained or lost and points per game; hover a pick for its season total.
       </p>
     </section>
   );

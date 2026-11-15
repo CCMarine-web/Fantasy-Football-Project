@@ -27,6 +27,9 @@ import {
 } from "@/server/repositories/manager-repository";
 import { getManagerAwardTally } from "@/server/repositories/weekly-awards-repository";
 import { Sparkles } from "lucide-react";
+import { WeeklyVsAverage } from "@/components/managers/weekly-vs-average";
+import { Tabs } from "@/components/shared/tabs";
+import { getVerifiedRowsCached } from "@/server/repositories/head-to-head-repository";
 
 /**
  * Pre-rendered (ISR). The data changes when the pipeline runs, and the pipeline
@@ -116,6 +119,35 @@ export default async function ManagerProfilePage({
   ]);
   const careerLuck = careerLuckMap.get(managerId) ?? null;
   const seasonLuck = seasonLuckMap.get(managerId) ?? null;
+
+  // Weekly score vs that week's league average, for each Sleeper season.
+  const verifiedRows = await getVerifiedRowsCached();
+  const weekMean = new Map<string, { sum: number; n: number }>();
+  for (const g of verifiedRows) {
+    const k = `${g.year}|${g.week}`;
+    const m = weekMean.get(k) ?? { sum: 0, n: 0 };
+    m.sum += g.score;
+    m.n += 1;
+    weekMean.set(k, m);
+  }
+  const weeklySeasons = [...new Set(verifiedRows.filter((g) => g.dataSource === "SLEEPER" && g.managerId === managerId).map((g) => g.year))]
+    .sort((a, b) => b - a)
+    .map((year) => ({
+      year,
+      weeks: verifiedRows
+        .filter((g) => g.year === year && g.managerId === managerId)
+        .sort((a, b) => a.week - b.week)
+        .map((g) => {
+          const m = weekMean.get(`${g.year}|${g.week}`) as { sum: number; n: number };
+          const result: "W" | "L" | "T" = g.score > g.opponentScore ? "W" : g.score < g.opponentScore ? "L" : "T";
+          return {
+            label: String(g.week),
+            value: Math.round((g.score - m.sum / m.n) * 10) / 10,
+            result,
+            detail: `${result} ${g.score.toFixed(1)}-${g.opponentScore.toFixed(1)} vs ${g.opponentManagerName}${g.isPlayoff ? " (playoffs)" : ""}`,
+          };
+        }),
+    }));
   const leagueTeams = await prisma.fantasyTeam.findMany({
     where: { season: { status: { not: "UPCOMING" } } },
     select: { pointsFor: true, wins: true, losses: true, ties: true, season: { select: { year: true } } },
@@ -158,72 +190,15 @@ export default async function ManagerProfilePage({
   const hasBiography = !!(manager.bio || manager.nicknameOrigin || manager.signatureMove);
   const profileParagraphs = bio ? [bio.text] : [];
 
-  return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
-      {/* Header — identity only. Statistics come first, the biography follows. */}
-      <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-6">
-        {/* The trading card once it has been drawn; the photo until then. */}
-        <BrandArt
-          slot={managerSlotKey("card", manager.displayName)}
-          alt={`${manager.displayName} trading card`}
-          eager
-          sizes="160px"
-          className="h-56 w-40 shrink-0 rounded-xl border border-border/60 object-cover shadow-lg"
-          fallback={
-            manager.photoUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={photo ?? undefined} alt={manager.displayName} className="h-24 w-24 shrink-0 rounded-xl border border-border/60 object-cover" />
-            ) : (
-              <TeamAvatar name={manager.displayName} imageUrl={manager.photoUrl ?? manager.avatarUrl} className="h-20 w-20 shrink-0" />
-            )
-          }
-        />
-        <div className="min-w-0">
-          <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
-            {currentTeam?.teamName ?? "Free Agent"}
-          </p>
-          <h1 className="font-heading text-3xl font-semibold break-words uppercase sm:text-4xl">{manager.displayName}</h1>
-          {manager.nickname ? <p className="mt-1 text-sm text-primary">&ldquo;{manager.nickname}&rdquo;</p> : null}
-          <DataFreshness className="mt-2" />
-          <div className="mt-3 flex flex-wrap gap-2">
-            {stats.championships > 0 ? (
-              <Badge className="bg-primary text-primary-foreground">{stats.championships}&times; Champion</Badge>
-            ) : null}
-            {stats.finalsAppearances > 0 ? (
-              <Badge variant="secondary">{stats.finalsAppearances} Finals</Badge>
-            ) : null}
-            {lastPlaceYears.length > 0 ? (
-              <Badge
-                variant="outline"
-                className="text-destructive"
-                title={`Finished bottom of the regular-season standings in ${lastPlaceYears.join(", ")}. ${LAST_PLACE_METHODOLOGY}`}
-              >
-                {lastPlaceYears.length}&times; Last Place
-              </Badge>
-            ) : null}
-            {!manager.isActive ? <Badge variant="outline">Retired</Badge> : null}
-            {manager.noRoast ? <Badge variant="outline">No-Roast</Badge> : null}
-          </div>
-        </div>
-
-        {/* The Luck Score sits beside the name, as a number and its label, so a
-            reader meets it before the tables rather than three sections down. */}
-        {careerLuck || seasonLuck ? (
-          <div className="w-full sm:ml-auto sm:w-auto sm:min-w-72">
-            <LuckHeadline career={careerLuck} season={seasonLuck} seasonYear={currentSeason?.year ?? null} />
-          </div>
-        ) : null}
-      </div>
-
-      <Separator className="my-8" />
-
+  const overviewPanel = (
+    <div className="space-y-10">
       {/* Career / era breakdown — the headline table. */}
       <section>
         <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Career Statistics</h2>
         <p className="mt-1 mb-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
           The league ran on ESPN through 2022 and on Sleeper from 2023. Both eras are counted in the
           career totals. <strong className="text-foreground">Record</strong> is the regular season
-          only, so it matches the season-by-season table below.{" "}
+          only, so it matches the season-by-season table in the Seasons tab.{" "}
           <strong className="text-foreground">Playoffs</strong> counts championship-bracket games —
           the ones that decide the title — and nothing else. Consolation-bracket games are not
           counted anywhere on this page. Points per game is the fair comparison between eras of
@@ -310,16 +285,14 @@ export default async function ManagerProfilePage({
           </table>
         </div>
       </section>
-
       {/* Luck in wins, with its context rows (sample sizes shown, never blended). */}
       {careerLuck || seasonLuck ? (
-        <section className="mt-8">
+        <section>
           <LuckContextPanel career={careerLuck} season={seasonLuck} seasonYear={currentSeason?.year ?? null} />
         </section>
       ) : null}
-
       {/* Career headline stats */}
-      <section className="mt-8">
+      <section>
         <h2 className="font-heading text-lg font-semibold tracking-wide uppercase">Career Highs &amp; Splits</h2>
         <p className="mt-1 mb-4 text-sm text-muted-foreground">
           All-play, margins, close games and blowouts are regular season only. Highs, lows and points
@@ -354,117 +327,7 @@ export default async function ManagerProfilePage({
           />
         </div>
       </section>
-
-      <Separator className="my-8" />
-
-      {/* Season-by-season + trajectory */}
-      <div className="grid grid-cols-1 gap-8">
-        <section>
-          <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Season by Season</h2>
-          {seasonLines.length === 0 ? (
-            <EmptyState title="No seasons played yet" />
-          ) : (
-            <div className="relative overflow-x-auto rounded-lg border border-border/60">
-              {/* No min-width: with PA hidden below `sm` the five remaining
-                  columns fit a phone, and a 24rem floor was itself forcing a
-                  28px overflow on a 356px container. */}
-              <table className="w-full text-sm">
-                <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
-                  <tr>
-                    <th scope="col" className="px-2 py-2 sm:px-3 text-left">Year</th>
-                    {/* Era and PA are the least-cited columns, so they are the
-                        ones that step aside on a phone rather than the table
-                        clipping a number in half. */}
-                    <th scope="col" className="hidden px-2 py-2 text-left sm:table-cell sm:px-3">Era</th>
-                    <th scope="col" className="px-2 py-2 sm:px-3 text-right">W-L</th>
-                    <th scope="col" className="px-2 py-2 sm:px-3 text-right">PF</th>
-                    <th scope="col" className="hidden px-2 py-2 text-right sm:table-cell sm:px-3">PA</th>
-                    {/* Two separate columns: where the team finished the regular
-                        season, and where it finished the season overall. They
-                        are different facts and a single "Finish" column was
-                        ambiguous about which one it meant. */}
-                    <th scope="col" className="px-2 py-2 text-right sm:px-3" title="Regular-season standing">
-                      Reg.
-                    </th>
-                    <th scope="col" className="px-2 py-2 text-right sm:px-3" title="Final placing after the postseason">
-                      Final
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/60">
-                  {[...seasonLines].reverse().map((l) => (
-                    <tr key={l.year}>
-                      <th scope="row" className="px-2 py-2 sm:px-3 text-left font-medium">{l.year}</th>
-                      <td className="hidden px-2 py-2 text-xs text-muted-foreground sm:table-cell sm:px-3">
-                        {l.dataSource === "ESPN" ? "ESPN" : l.dataSource === "SLEEPER" ? "Sleeper" : "Manual"}
-                      </td>
-                      <td className="px-2 py-2 sm:px-3 text-right font-mono">
-                        {l.wins}-{l.losses}
-                        {l.ties ? `-${l.ties}` : ""}
-                      </td>
-                      <td className="px-2 py-2 sm:px-3 text-right font-mono">{l.pointsFor.toFixed(0)}</td>
-                      <td className="hidden px-2 py-2 text-right font-mono text-muted-foreground sm:table-cell sm:px-3">
-                        {l.pointsAgainst.toFixed(0)}
-                      </td>
-                      <td className="px-2 py-2 text-right font-mono sm:px-3">
-                        {l.regularSeasonRank ? `#${l.regularSeasonRank}` : <span className="text-muted-foreground">—</span>}
-                      </td>
-                      <td className="px-2 py-2 text-right sm:px-3">
-                        {l.isChampion ? (
-                          <Badge className="bg-primary text-primary-foreground">Champ</Badge>
-                        ) : l.finalRank ? (
-                          <span className="font-mono">#{l.finalRank}</span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-
-        {trajectoryData.length > 0 ? (
-          <ChartFrame
-            title="Career trajectory"
-            caption="Regular-season finish (dashed) and final finish (solid) each completed season. 1 is the top; gold dots are title years."
-            summary={`${manager.displayName}'s regular-season and final finish in each completed season.`}
-            table={{ headers: ["Season", "Regular season", "Final"], rows: trajectoryData.map((d) => [d.season, d.regular ?? "—", d.final ?? "—"]) }}
-          >
-            <MultiLineChart
-              data={trajectoryData}
-              xKey="season"
-              xLabel="Season"
-              yLabel="Finish"
-              reversedY
-              yDomain={[1, teamCount]}
-              yTicks={Array.from({ length: teamCount }, (_, i) => i + 1)}
-              tooltipFormat="rank"
-              series={[
-                { key: "regular", label: "Regular-season finish", color: "var(--muted-foreground)", dashed: true },
-                { key: "final", label: "Final finish", color: "var(--primary)", highlight: trajectoryData.filter((d) => d.champion).map((d) => ({ x: d.season, color: "#F0E442", label: `${d.season} champion` })) },
-              ]}
-            />
-          </ChartFrame>
-        ) : null}
-
-        {ppgVsLeague.length > 0 ? (
-          <ChartFrame
-            title="Scoring vs. the league, by season"
-            caption="Points per game compared with that season's league average — raw totals aren't comparable across eras and rule changes."
-            summary={`How far above or below the league's average points per game ${manager.displayName} scored in each season.`}
-            table={{ headers: ["Season", "PPG", "League PPG", "Difference %"], rows: ppgVsLeague.map((d) => [d.label, d.ppg.toFixed(1), d.league.toFixed(1), `${d.value.toFixed(1)}%`]) }}
-            height="h-64"
-          >
-            <SimpleBars data={ppgVsLeague} valueLabel="% vs league average" diverging valueFormat="pct0" />
-          </ChartFrame>
-        ) : null}
-      </div>
-
-      <Separator className="my-8" />
-
+      {weeklySeasons.length > 0 ? <WeeklyVsAverage seasons={weeklySeasons} managerName={manager.displayName} /> : null}
       {/* Weekly finish distribution */}
       <section>
         <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
@@ -489,42 +352,131 @@ export default async function ManagerProfilePage({
           ))}
         </div>
       </section>
-
-      <Separator className="my-8" />
-
-      {/* Head-to-head vs everyone */}
-      <section>
-        <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Head-to-Head</h2>
-        {headToHead.length === 0 ? (
-          <EmptyState title="No head-to-head games yet" />
-        ) : (
-          <ul className="space-y-1.5" aria-label="Head-to-head win percentage against each opponent">
-            {[...headToHead]
-              .sort((x, y) => y.wins / y.games - x.wins / x.games || y.games - x.games)
-              .map((h) => {
-                const pct = ((h.wins + 0.5 * h.ties) / h.games) * 100;
-                return (
-                  <li key={h.opponentId}>
-                    <Link href={managerPath(h.opponentName)} className="grid grid-cols-[7.5rem_1fr_4.5rem] items-center gap-2 text-sm hover:text-primary sm:grid-cols-[11rem_1fr_6rem]">
-                      <span className="truncate font-medium">{h.opponentName}</span>
-                      <span className="relative h-4 rounded bg-muted/40" title={`${pct.toFixed(0)}% over ${h.games} meetings · ${h.pointsForAvg} scored, ${h.pointsAgainstAvg} allowed per game`}>
-                        <span className="absolute inset-y-0 left-0 rounded" style={{ width: `${pct}%`, background: pct >= 50 ? "#3DD68C" : "#FF6369" }} />
-                        <span className="absolute inset-y-0 left-1/2 w-px bg-foreground/50" aria-hidden />
-                      </span>
-                      <span className="text-right font-mono tabular-nums">
-                        {h.wins}-{h.losses}
-                        {h.ties ? `-${h.ties}` : ""} <span className="text-xs text-muted-foreground">({h.games})</span>
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
+      {/* Weekly award tally */}
+      {awardTally.length > 0 ? (
+        <section>
+          <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
+            Weekly Award Tally
+          </h2>
+          <ul className="max-w-xl space-y-1.5">
+            {awardTally.map((a) => (
+              <li key={a.type} className="grid grid-cols-[9.5rem_1fr_2rem] items-center gap-2 text-sm">
+                <span className="truncate">{a.label}</span>
+                <span className="h-3 rounded bg-muted/40">
+                  <span className="block h-3 rounded bg-primary" style={{ width: `${(a.count / Math.max(...awardTally.map((x) => x.count))) * 100}%` }} />
+                </span>
+                <span className="text-right font-mono tabular-nums">{a.count}</span>
+              </li>
+            ))}
           </ul>
+        </section>
+      ) : null}
+    </div>
+  );
+
+  const seasonsPanel = (
+    <div className="space-y-10">
+      <section>
+        <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Season by Season</h2>
+        {seasonLines.length === 0 ? (
+          <EmptyState title="No seasons played yet" />
+        ) : (
+          <div className="relative overflow-x-auto rounded-lg border border-border/60">
+            {/* No min-width: with PA hidden below `sm` the five remaining
+                columns fit a phone, and a 24rem floor was itself forcing a
+                28px overflow on a 356px container. */}
+            <table className="w-full text-sm">
+              <thead className="bg-card/60 text-xs tracking-wide text-muted-foreground uppercase">
+                <tr>
+                  <th scope="col" className="px-2 py-2 sm:px-3 text-left">Year</th>
+                  {/* Era and PA are the least-cited columns, so they are the
+                      ones that step aside on a phone rather than the table
+                      clipping a number in half. */}
+                  <th scope="col" className="hidden px-2 py-2 text-left sm:table-cell sm:px-3">Era</th>
+                  <th scope="col" className="px-2 py-2 sm:px-3 text-right">W-L</th>
+                  <th scope="col" className="px-2 py-2 sm:px-3 text-right">PF</th>
+                  <th scope="col" className="hidden px-2 py-2 text-right sm:table-cell sm:px-3">PA</th>
+                  {/* Two separate columns: where the team finished the regular
+                      season, and where it finished the season overall. They
+                      are different facts and a single "Finish" column was
+                      ambiguous about which one it meant. */}
+                  <th scope="col" className="px-2 py-2 text-right sm:px-3" title="Regular-season standing">
+                    Reg.
+                  </th>
+                  <th scope="col" className="px-2 py-2 text-right sm:px-3" title="Final placing after the postseason">
+                    Final
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/60">
+                {[...seasonLines].reverse().map((l) => (
+                  <tr key={l.year}>
+                    <th scope="row" className="px-2 py-2 sm:px-3 text-left font-medium">{l.year}</th>
+                    <td className="hidden px-2 py-2 text-xs text-muted-foreground sm:table-cell sm:px-3">
+                      {l.dataSource === "ESPN" ? "ESPN" : l.dataSource === "SLEEPER" ? "Sleeper" : "Manual"}
+                    </td>
+                    <td className="px-2 py-2 sm:px-3 text-right font-mono">
+                      {l.wins}-{l.losses}
+                      {l.ties ? `-${l.ties}` : ""}
+                    </td>
+                    <td className="px-2 py-2 sm:px-3 text-right font-mono">{l.pointsFor.toFixed(0)}</td>
+                    <td className="hidden px-2 py-2 text-right font-mono text-muted-foreground sm:table-cell sm:px-3">
+                      {l.pointsAgainst.toFixed(0)}
+                    </td>
+                    <td className="px-2 py-2 text-right font-mono sm:px-3">
+                      {l.regularSeasonRank ? `#${l.regularSeasonRank}` : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="px-2 py-2 text-right sm:px-3">
+                      {l.isChampion ? (
+                        <Badge className="bg-primary text-primary-foreground">Champ</Badge>
+                      ) : l.finalRank ? (
+                        <span className="font-mono">#{l.finalRank}</span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
+      {trajectoryData.length > 0 ? (
+        <ChartFrame
+          title="Career trajectory"
+          caption="Regular-season finish (dashed) and final finish (solid) each completed season. 1 is the top; gold dots are title years."
+          summary={`${manager.displayName}'s regular-season and final finish in each completed season.`}
+          table={{ headers: ["Season", "Regular season", "Final"], rows: trajectoryData.map((d) => [d.season, d.regular ?? "—", d.final ?? "—"]) }}
+        >
+          <MultiLineChart
+            data={trajectoryData}
+            xKey="season"
+            xLabel="Season"
+            yLabel="Finish"
+            reversedY
+            yDomain={[1, teamCount]}
+            yTicks={Array.from({ length: teamCount }, (_, i) => i + 1)}
+            tooltipFormat="rank"
+            series={[
+              { key: "regular", label: "Regular-season finish", color: "var(--muted-foreground)", dashed: true },
+              { key: "final", label: "Final finish", color: "var(--primary)", highlight: trajectoryData.filter((d) => d.champion).map((d) => ({ x: d.season, color: "#F0E442", label: `${d.season} champion` })) },
+            ]}
+          />
+        </ChartFrame>
+      ) : null}
 
-      <Separator className="my-8" />
-
+      {ppgVsLeague.length > 0 ? (
+        <ChartFrame
+          title="Scoring vs. the league, by season"
+          caption="Points per game compared with that season's league average — raw totals aren't comparable across eras and rule changes."
+          summary={`How far above or below the league's average points per game ${manager.displayName} scored in each season.`}
+          table={{ headers: ["Season", "PPG", "League PPG", "Difference %"], rows: ppgVsLeague.map((d) => [d.label, d.ppg.toFixed(1), d.league.toFixed(1), `${d.value.toFixed(1)}%`]) }}
+          height="h-64"
+        >
+          <SimpleBars data={ppgVsLeague} valueLabel="% vs league average" diverging valueFormat="pct0" />
+        </ChartFrame>
+      ) : null}
       {/* Team name history */}
       <section>
         <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Team Name History</h2>
@@ -552,32 +504,46 @@ export default async function ManagerProfilePage({
           </ul>
         )}
       </section>
+    </div>
+  );
 
-      {/* Weekly award tally */}
-      {awardTally.length > 0 ? (
-        <>
-          <Separator className="my-8" />
-          <section>
-            <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">
-              Weekly Award Tally
-            </h2>
-            <ul className="max-w-xl space-y-1.5">
-              {awardTally.map((a) => (
-                <li key={a.type} className="grid grid-cols-[9.5rem_1fr_2rem] items-center gap-2 text-sm">
-                  <span className="truncate">{a.label}</span>
-                  <span className="h-3 rounded bg-muted/40">
-                    <span className="block h-3 rounded bg-primary" style={{ width: `${(a.count / Math.max(...awardTally.map((x) => x.count))) * 100}%` }} />
-                  </span>
-                  <span className="text-right font-mono tabular-nums">{a.count}</span>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </>
-      ) : null}
+  const headToHeadPanel = (
+    <div className="space-y-10">
+      {/* Head-to-head vs everyone */}
+      <section>
+        <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Head-to-Head</h2>
+        {headToHead.length === 0 ? (
+          <EmptyState title="No head-to-head games yet" />
+        ) : (
+          <ul className="space-y-1.5" aria-label="Head-to-head win percentage against each opponent">
+            {[...headToHead]
+              .sort((x, y) => y.wins / y.games - x.wins / x.games || y.games - x.games)
+              .map((h) => {
+                const pct = ((h.wins + 0.5 * h.ties) / h.games) * 100;
+                return (
+                  <li key={h.opponentId}>
+                    <Link href={managerPath(h.opponentName)} className="grid grid-cols-[7.5rem_1fr_4.5rem] items-center gap-2 text-sm hover:text-primary sm:grid-cols-[11rem_1fr_6rem]">
+                      <span className="truncate font-medium">{h.opponentName}</span>
+                      <span className="relative h-4 rounded bg-muted/40" title={`${pct.toFixed(0)}% over ${h.games} meetings · ${h.pointsForAvg} scored, ${h.pointsAgainstAvg} allowed per game`}>
+                        <span className="absolute inset-y-0 left-0 rounded" style={{ width: `${pct}%`, background: pct >= 50 ? "#34C77B" : "#F0605D" }} />
+                        <span className="absolute inset-y-0 left-1/2 w-px bg-foreground/50" aria-hidden />
+                      </span>
+                      <span className="text-right font-mono tabular-nums">
+                        {h.wins}-{h.losses}
+                        {h.ties ? `-${h.ties}` : ""} <span className="text-xs text-muted-foreground">({h.games})</span>
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
 
-      <Separator className="my-8" />
-
+  const storyPanel = (
+    <div className="space-y-10">
       {/* Biography — deliberately below the statistics tables. */}
       <section>
         <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase">Biography</h2>
@@ -613,9 +579,6 @@ export default async function ManagerProfilePage({
           <EmptyState title="No biography yet" description="A commissioner can add one from the admin manager editor." />
         ) : null}
       </section>
-
-      <Separator className="my-8" />
-
       {/*
         The "Famous Quotes" card has been removed. It was a permanent empty
         state promising quotes from the group-chat archive, which is admin-only
@@ -641,6 +604,80 @@ export default async function ManagerProfilePage({
           </CardContent>
         </Card>
       </div>
+    </div>
+  );
+
+  return (
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
+      {/* Header — identity only. Statistics come first, the biography follows. */}
+      <div className="flex flex-col items-start gap-5 sm:flex-row sm:items-center sm:gap-6">
+        {/* The trading card once it has been drawn; the photo until then. */}
+        <BrandArt
+          slot={managerSlotKey("card", manager.displayName)}
+          alt={`${manager.displayName} trading card`}
+          eager
+          sizes="160px"
+          className="h-56 w-40 shrink-0 rounded-xl border border-border/60 object-cover shadow-lg"
+          fallback={
+            manager.photoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={photo ?? undefined} alt={manager.displayName} className="h-24 w-24 shrink-0 rounded-xl border border-border/60 object-cover" />
+            ) : (
+              <TeamAvatar name={manager.displayName} imageUrl={manager.photoUrl ?? manager.avatarUrl} className="h-20 w-20 shrink-0" />
+            )
+          }
+        />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
+            {currentTeam?.teamName ?? "Free Agent"}
+          </p>
+          <h1 className="font-heading text-3xl font-semibold break-words uppercase sm:text-4xl">{manager.displayName}</h1>
+          {manager.nickname ? <p className="mt-1 text-sm text-primary">&ldquo;{manager.nickname}&rdquo;</p> : null}
+          <DataFreshness className="mt-2" />
+          <div className="mt-3 flex flex-wrap gap-2">
+            {stats.championships > 0 ? (
+              <Badge className="bg-primary text-primary-foreground">{stats.championships}&times; Champion</Badge>
+            ) : null}
+            {stats.finalsAppearances > 0 ? (
+              <Badge variant="secondary">{stats.finalsAppearances} Finals</Badge>
+            ) : null}
+            {lastPlaceYears.length > 0 ? (
+              <Badge
+                variant="outline"
+                className="text-destructive"
+                title={`Finished bottom of the regular-season standings in ${lastPlaceYears.join(", ")}. ${LAST_PLACE_METHODOLOGY}`}
+              >
+                {lastPlaceYears.length}&times; Last Place
+              </Badge>
+            ) : null}
+            {!manager.isActive ? <Badge variant="outline">Retired</Badge> : null}
+            {manager.noRoast ? <Badge variant="outline">No-Roast</Badge> : null}
+          </div>
+        </div>
+
+        {/* The Luck Score sits beside the name, as a number and its label, so a
+            reader meets it before the tables rather than three sections down. */}
+        {careerLuck || seasonLuck ? (
+          <div className="w-full sm:ml-auto sm:w-auto sm:min-w-72">
+            <LuckHeadline career={careerLuck} season={seasonLuck} seasonYear={currentSeason?.year ?? null} />
+          </div>
+        ) : null}
+      </div>
+
+      <Separator className="my-8" />
+
+      {/* Below the header the profile is split into tabs, so a phone does not
+          scroll seven thousand pixels to reach the biography. Every panel is
+          server-rendered into the HTML; the inactive ones are only hidden. */}
+      <Tabs
+        label={`${manager.displayName} profile sections`}
+        tabs={[
+          { id: "overview", label: "Overview", content: overviewPanel },
+          { id: "seasons", label: "Seasons", content: seasonsPanel },
+          { id: "head-to-head", label: "Head-to-head", content: headToHeadPanel },
+          { id: "story", label: "Story", content: storyPanel },
+        ]}
+      />
     </div>
   );
 }

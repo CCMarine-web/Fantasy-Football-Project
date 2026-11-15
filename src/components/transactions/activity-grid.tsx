@@ -28,7 +28,7 @@ export function ActivityGrid({ activity, seasonYear }: { activity: ActivityGridV
         </span>
         <span className="block text-xs text-muted-foreground">
           Completed moves per manager per week (adds, drops, claims and trades; a trade counts for both sides). Darker
-          blue is a manager refreshing the app at 3 a.m. Hover a cell for the breakdown.
+          blue is a manager refreshing the app at 3 a.m. Each cell is the week’s total; hover for the split by type, or see every move in the archive below.
         </span>
       </figcaption>
       <div className="relative overflow-x-auto" role="region" aria-label="Wire activity grid, scrolls sideways" tabIndex={0}>

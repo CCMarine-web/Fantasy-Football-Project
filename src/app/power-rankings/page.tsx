@@ -5,12 +5,13 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { ChartFrame } from "@/components/charts/chart-frame";
-import { LabeledScatter, MultiLineChart } from "@/components/charts/charts";
+import { DivergingBars, HighlightLines, RangeDots } from "@/components/charts/team-charts";
+import { loadVerifiedGames } from "@/server/repositories/verified-games";
+import { lastName } from "@/lib/chart-ticks";
 import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
 import { getRankingHistory } from "@/server/pipeline/snapshots";
 import { getSeasonLuckWins } from "@/server/repositories/luck-repository";
 import { distributePercentages } from "@/lib/format";
-import { teamColorMap } from "@/lib/chart-theme";
 import { Info, TrendingUp } from "lucide-react";
 
 export const metadata = { title: "Power Rankings" };
@@ -28,7 +29,7 @@ export default async function PowerRankingsPage() {
 
   if (!data || data.rows.length === 0) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
         <PageHeader art="header-power-rankings" freshness eyebrow="The Rat Trap" title="Power Rankings" />
         <div className="mt-8">
           <EmptyState
@@ -43,14 +44,15 @@ export default async function PowerRankingsPage() {
 
   const isInSeason = data.mode === "IN_SEASON";
   const isBaseline = data.mode === "MANAGER_BASELINE";
-  const [blurbs, history, seasonLuck] = await Promise.all([
+  const [blurbs, history, seasonLuck, seasonGames] = await Promise.all([
     powerBlurbTexts(data),
     isInSeason ? getRankingHistory(data.seasonYear) : Promise.resolve([]),
     getSeasonLuckWins(data.seasonYear),
+    isInSeason ? loadVerifiedGames({ year: data.seasonYear }) : Promise.resolve([]),
   ]);
   const methodologyPercents = distributePercentages(data.weights.map((w) => w.weight));
-  const colors = teamColorMap(data.rows.map((r) => r.managerId ?? r.fantasyTeamId));
-  const colorOf = (r: (typeof data.rows)[number]) => colors.get(r.managerId ?? r.fantasyTeamId) ?? "var(--primary)";
+  // Charts label teams by manager surname: short and never cut mid-word.
+  const nameOf = (r: (typeof data.rows)[number]) => lastName(r.managerName);
   const title = isInSeason ? "Power Rankings" : isBaseline ? "Manager Baseline Rankings" : "Preseason Power Rankings";
   const updatedLabel = isInSeason
     ? `Updated through Week ${data.throughWeek}`
@@ -72,21 +74,28 @@ export default async function PowerRankingsPage() {
   });
   const n = data.rows.length;
 
-  // Scatter: power score vs actual win %.
-  const scatter = data.rows.map((r) => {
-    const [w, l, t] = r.record.split("-").map(Number);
-    const games = w + l + (t || 0);
-    return {
-      x: r.score,
-      y: games ? ((w + 0.5 * (t || 0)) / games) * 100 : 0,
-      label: r.teamName.length > 16 ? `${r.teamName.slice(0, 15)}…` : r.teamName,
-      color: colorOf(r),
-      detail: `${r.managerName} · ${r.record}`,
-    };
+  // Scoring range: every regular-season score, one row per team.
+  const median = (xs: number[]) => {
+    const s = [...xs].sort((a, b) => a - b);
+    return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 0;
+  };
+  const regular = seasonGames.filter((g) => !g.isPlayoff);
+  const rangeRows = data.rows.map((r) => {
+    const scores = regular.filter((g) => g.fantasyTeamId === r.fantasyTeamId).map((g) => ({ week: g.week, score: g.score }));
+    return { label: nameOf(r), team: r.teamName, scores, median: median(scores.map((s) => s.score)) };
   });
+  const leagueMedian = median(regular.map((g) => g.score));
+  // Points left on the bench: best legal lineup minus the one started.
+  const benchRows = data.rows
+    .filter((r) => r.pointsLeftOnBench && r.pointsLeftOnBench.games > 0)
+    .map((r) => ({
+      label: nameOf(r),
+      value: r.pointsLeftOnBench!.total,
+      detail: `${(r.pointsLeftOnBench!.total / r.pointsLeftOnBench!.games).toFixed(1)} per game over ${r.pointsLeftOnBench!.games} · lineup efficiency ${r.lineupEfficiency ?? "—"}%`,
+    }));
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader art="header-power-rankings" freshness eyebrow={`${data.seasonYear} Season`} title={title} description={description} />
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Badge className="bg-primary text-primary-foreground">{updatedLabel}</Badge>
@@ -97,22 +106,24 @@ export default async function PowerRankingsPage() {
         <ChartFrame
           className="mt-6"
           title="Rank by week"
-          caption="Where each team stood after every week. 1 is the top. Hover for the week's order."
+          caption="Where each team stood after every week. 1 is the top. Tap a team (or its name) to follow it."
           summary={`Power ranking of all ${n} teams after each of weeks ${weeks[0]} to ${weeks.at(-1)}.`}
           table={{ headers: ["Team", ...weeks.map((w) => `Week ${w}`)], rows: data.rows.map((r) => [r.teamName, ...weeks.map((w) => history.find((h) => h.week === w && h.fantasyTeamId === r.fantasyTeamId)?.rank ?? "—")]) }}
-          height="h-80"
+          height="h-auto"
         >
-          <MultiLineChart
-            data={lineData}
-            xKey="week"
-            xLabel="Week"
-            yLabel="Rank"
-            reversedY
-            yDomain={[1, n]}
-            yTicks={Array.from({ length: n }, (_, i) => i + 1)}
-            series={data.rows.map((r) => ({ key: r.fantasyTeamId, label: r.teamName, color: colorOf(r) }))}
-            tooltipFormat="ordinal"
-          />
+          <div>
+            <HighlightLines
+              data={lineData}
+              xKey="week"
+              xLabel="Week"
+              yLabel="Rank"
+              reversedY
+              yDomain={[1, n]}
+              yTicks={Array.from({ length: n }, (_, i) => i + 1)}
+              yFormat="ordinal"
+              series={data.rows.map((r) => ({ key: r.fantasyTeamId, label: nameOf(r) }))}
+            />
+          </div>
         </ChartFrame>
       ) : null}
 
@@ -122,7 +133,7 @@ export default async function PowerRankingsPage() {
           The rankings
         </h2>
         <p className="mb-3 text-xs text-muted-foreground">
-          Cells are each factor&rsquo;s 0-100 score against the rest of the league (blue = strong, orange = weak); hover a cell for the raw stat. Tap a team for its write-up.
+          Cells are each factor&rsquo;s 0-100 score against the rest of the league (blue = strong, orange = weak); tap a team to open its write-up and every raw stat (or hover a cell for one).
         </p>
         <PowerGrid
           rows={data.rows}
@@ -133,17 +144,32 @@ export default async function PowerRankingsPage() {
         />
       </section>
 
-      {isInSeason ? (
-        <ChartFrame
-          className="mt-8"
-          title="Power score vs. win %"
-          caption="Above the dashed line: winning more than the team's quality predicts (lucky or clutch). Below: better than the record says."
-          summary="Scatter of each team's power score against its actual win percentage, with a least-squares trend line."
-          table={{ headers: ["Team", "Power score", "Win %"], rows: scatter.map((s) => [s.label, s.x.toFixed(1), `${s.y.toFixed(0)}%`]) }}
-          height="h-80"
-        >
-          <LabeledScatter points={scatter} xLabel="Power score" yLabel="Win %" yFormat="pct0" xFormat="fixed0" trend />
-        </ChartFrame>
+      {isInSeason && regular.length > 0 ? (
+        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2 [&>*]:min-w-0">
+          <ChartFrame
+            title="Scoring range"
+            caption="Every weekly score this season (dots) and each team's median (bar), sorted by median. A wide row is boom-or-bust; a tight one is steady."
+            summary={`Weekly scores for ${rangeRows.length} teams; highest median ${[...rangeRows].sort((a, b) => b.median - a.median)[0]?.label}.`}
+            table={{
+              headers: ["Team", "Median", "Low", "High", "Games"],
+              rows: rangeRows.map((r) => [r.team, r.median.toFixed(1), Math.min(...r.scores.map((s) => s.score)).toFixed(1), Math.max(...r.scores.map((s) => s.score)).toFixed(1), r.scores.length]),
+            }}
+            height="h-auto"
+          >
+            <RangeDots rows={rangeRows} leagueMedian={leagueMedian} />
+          </ChartFrame>
+          {benchRows.length > 0 ? (
+            <ChartFrame
+              title="Points left on the bench"
+              caption="Season total of the best legal lineup minus the lineup actually started — the points lineup choices cost. The same measure as lineup efficiency."
+              summary={`Points left on the bench this season; most: ${[...benchRows].sort((a, b) => b.value - a.value)[0].label}.`}
+              table={{ headers: ["Team", "Points left", "Detail"], rows: benchRows.map((b) => [b.label, b.value.toFixed(1), b.detail]) }}
+              height="h-auto"
+            >
+              <DivergingBars data={benchRows} valueLabel="Points left on the bench" unit=" pts" oneSided />
+            </ChartFrame>
+          ) : null}
+        </div>
       ) : null}
 
       {/* Methodology, collapsed at the bottom. */}

@@ -10,6 +10,7 @@ import { summarizeVerification, verifySeasonData } from "@/server/verify/data-ve
 import { verifyHeadToHeadConsistency } from "@/server/verify/head-to-head-consistency";
 import { snapshotPowerRankings } from "./snapshots";
 import { storeFeaturedSelection } from "@/server/repositories/featured-matchup-repository";
+import { storeOddsHistory } from "@/server/repositories/odds-history-repository";
 import { runTextGeneration } from "./generate";
 import { acquireLock, releaseLock, renewLock } from "./lock";
 import { revalidateAndCheck } from "./revalidate";
@@ -235,6 +236,8 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
           const upTo = clock?.currentWeek ?? clock?.lastStoredWeek ?? 0;
           for (let w = 1; w <= upTo; w += 1) if (await storeFeaturedSelection(season.id, season.year, w)) selections += 1;
           counts.featuredSelectionsStored = selections;
+          // Playoff odds by week: backfill missing weeks, refresh the latest.
+          counts.oddsWeeksStored = await storeOddsHistory();
           counts.awardRows = awards;
           counts.rivalryPairs = pairs;
           counts.h2hInconsistencies = h2h.problems.length;

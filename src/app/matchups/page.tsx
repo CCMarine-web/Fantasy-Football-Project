@@ -2,8 +2,7 @@ import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { StripPlot } from "@/components/charts/charts";
-import { AiText } from "@/components/shared/ai-text";
-import { awardsText } from "@/server/text/page-texts";
+import { lastName } from "@/lib/chart-ticks";
 import { RESULT_COLORS } from "@/lib/chart-theme";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -114,7 +113,7 @@ export default async function MatchupsPage({
 
   if (!hub) {
     return (
-      <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
         <PageHeader art="header-matchups" freshness eyebrow="The League" title="Matchups" />
         <div className="mt-8">
           <EmptyState
@@ -144,13 +143,15 @@ export default async function MatchupsPage({
     .map((t) => ({
       value: t.score as number,
       label: `${t.teamName} (${t.managerName})`,
+      tag: lastName(t.managerName),
       color: t.isWinner ? RESULT_COLORS.win : RESULT_COLORS.loss,
+      hollow: !t.isWinner,
       marker: t.managerName === luckyWin && t.isWinner ? "Luckiest win" : t.managerName === unluckyLoss && !t.isWinner ? "Unluckiest loss" : undefined,
     }));
-  const awardsCopy = hub.week != null && scorePoints.length > 0 ? await awardsText(hub.seasonId, hub.seasonYear, hub.week) : null;
+  const weekAverage = scorePoints.length ? scorePoints.reduce((s, p) => s + p.value, 0) / scorePoints.length : undefined;
 
   return (
-    <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader art="header-matchups" freshness
         eyebrow={`${hub.seasonYear} Season`}
         title="Matchups"
@@ -207,8 +208,8 @@ export default async function MatchupsPage({
               aria-current={hub.week === w ? "page" : undefined}
               className={
                 hub.week === w
-                  ? "rounded-md bg-primary px-2.5 py-1 text-sm font-medium tabular-nums text-primary-foreground"
-                  : "rounded-md px-2.5 py-1 text-sm tabular-nums text-muted-foreground hover:text-foreground"
+                  ? "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md bg-primary px-2.5 text-sm font-medium tabular-nums text-primary-foreground"
+                  : "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-2.5 text-sm tabular-nums text-muted-foreground hover:text-foreground"
               }
             >
               {w}
@@ -393,14 +394,13 @@ export default async function MatchupsPage({
         <section className="mt-10" id="scores">
           <ChartFrame
             title={`Week ${hub.week}: every score`}
-            caption="Green won, red lost. The luckiest win and the unluckiest loss are marked."
+            caption="Filled green dots won, hollow red dots lost; the dashed line is the week's average. The luckiest win and the unluckiest loss are marked."
             summary={`All ${scorePoints.length} scores from Week ${hub.week} on one axis, coloured by result.`}
             table={{ headers: ["Team", "Points", "Result"], rows: scorePoints.map((p) => [p.label, p.value.toFixed(1), p.color === RESULT_COLORS.win ? "Won" : "Lost"]) }}
-            height="h-48"
+            height="h-56"
           >
-            <StripPlot points={scorePoints} xLabel="Points" />
+            <StripPlot points={scorePoints} xLabel="Points" average={weekAverage} />
           </ChartFrame>
-          {awardsCopy ? <AiText text={awardsCopy} className="mt-3" /> : null}
         </section>
       ) : null}
 

@@ -5,7 +5,8 @@ import { tradeVerdictTexts } from "@/server/text/page-texts";
 import type { RenderedText } from "@/server/text/read";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { Card, CardContent } from "@/components/ui/card";
+import { DISCLOSURE_SUMMARY_CLASS, DisclosureChevron } from "@/components/shared/disclosure";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
   getTradeTribunal,
@@ -25,7 +26,8 @@ import { TradePartnerGrid } from "@/components/trades/trade-partner-grid";
 export const metadata = { title: "Trade Tribunal" };
 
 const VERDICT_STYLE: Record<Lopsidedness, string> = {
-  HIGHWAY_ROBBERY: "bg-destructive text-destructive-foreground",
+  // Dark text on the loss red: light text was 2.7:1.
+  HIGHWAY_ROBBERY: "bg-destructive text-background",
   FLEECED: "bg-primary text-primary-foreground",
   CLEAR_WINNER: "border border-primary/50 bg-primary/15 text-primary",
   SLIGHT_EDGE: "border border-border/60 bg-muted text-muted-foreground",
@@ -69,79 +71,12 @@ export default async function TradeTribunalPage({
     .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader art="header-trade-tribunal" freshness
         eyebrow="The Court"
         title="Trade Tribunal"
         description="Every trade in league history, judged on what each player was actually worth at his own position — not on who scored more points. The most one-sided deals are on top."
       />
-
-      {/* Methodology, up front, because the verdicts are accusations. */}
-      <Card className="mt-6 border-border/60 bg-card/40">
-        <CardContent>
-          <h2 className="font-heading text-base font-semibold">How a trade is judged</h2>
-          <p className="mt-1 max-w-prose text-sm leading-relaxed text-muted-foreground">
-            Raw points cannot settle a trade. A mid-range quarterback outscores an elite tight end
-            and is worth far less, because the next quarterback off the waiver wire also outscores
-            that tight end. So every acquired player is converted into one number that means the
-            same thing at every position: how much better than freely available he was, for as long
-            as he was available.
-          </p>
-          <dl className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
-            <div>
-              <dt className="inline font-medium text-foreground">Replacement level — </dt>
-              <dd className="inline">
-                the points per game of the last player at that position who would still be starting
-                somewhere in a ten-team league. Only production above that line counts.
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-foreground">Availability — </dt>
-              <dd className="inline">
-                value is banked per game actually played after the trade, so an injury reduces it by
-                counting rather than by an estimated discount.
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-foreground">Positional scarcity — </dt>
-              <dd className="inline">
-                how steep the drop-off is at that position. A point above replacement is worth more
-                where the good players are further clear of the replaceable ones.
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-foreground">Playoff weeks — </dt>
-              <dd className="inline">
-                postseason production is counted a second time at half weight. Winning the title is
-                the point.
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-foreground">Consolidation — </dt>
-              <dd className="inline">
-                turning two roster spots into one better player frees a spot; a small capped credit
-                reflects that.
-              </dd>
-            </div>
-            <div>
-              <dt className="inline font-medium text-foreground">Draft picks and FAAB — </dt>
-              <dd className="inline">
-                have no market price on record, so they are named but never given an invented value,
-                and the trade&rsquo;s confidence is lowered.
-              </dd>
-            </div>
-          </dl>
-          <p className="mt-3 text-sm text-muted-foreground">
-            The margin is then graded on both an absolute and a relative test:{" "}
-            <strong className="text-foreground">Highway Robbery</strong>,{" "}
-            <strong className="text-foreground">Fleeced</strong>,{" "}
-            <strong className="text-foreground">Clear Winner</strong>,{" "}
-            <strong className="text-foreground">Slight Edge</strong>, or an{" "}
-            <strong className="text-foreground">Even Deal</strong>. Both tests must pass, so two
-            quiet hauls where one doubled the other are not called a robbery.
-          </p>
-        </CardContent>
-      </Card>
 
       {/* League-wide: who profits from trading, and who keeps dialing whom. */}
       {ledger.length > 0 ? (
@@ -173,7 +108,7 @@ export default async function TradeTribunalPage({
         </div>
       ) : null}
 
-      <div className="mt-6 space-y-4">
+      <section className="mt-6" aria-label="Verdicts">
         {trades.length === 0 ? (
           <EmptyState
             icon={Gavel}
@@ -185,16 +120,95 @@ export default async function TradeTribunalPage({
             }
           />
         ) : (
-          trades.map((t) => (
-            <TradeCard key={t.transactionId} t={t} verdict={verdicts.get(t.transactionId)} colors={colors} />
-          ))
+          /* One line per trade, most one-sided first; tap a line for the full ruling. */
+          <ul className="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60 bg-card/40">
+            {trades.map((t) => (
+              <li key={t.transactionId}>
+                <TradeItem t={t} verdict={verdicts.get(t.transactionId)} colors={colors} />
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
+
+        {/*
+          Methodology. It used to sit up front, ahead of every verdict, and
+          pushed the list a full screen down on a phone; it is the same text,
+          one tap away at the foot of the verdicts.
+        */}
+        <details className="group mt-6 rounded-lg border border-border/60 bg-card/40">
+          <summary className={DISCLOSURE_SUMMARY_CLASS}>
+            <span className="min-w-0 flex-1 font-heading text-base font-semibold">How it&rsquo;s calculated</span>
+            <DisclosureChevron />
+          </summary>
+          <div className="px-3 pb-4 sm:px-4">
+            <p className="mt-1 max-w-prose text-sm leading-relaxed text-muted-foreground">
+              Raw points cannot settle a trade. A mid-range quarterback outscores an elite tight end
+              and is worth far less, because the next quarterback off the waiver wire also outscores
+              that tight end. So every acquired player is converted into one number that means the
+              same thing at every position: how much better than freely available he was, for as long
+              as he was available.
+            </p>
+            <dl className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+              <div>
+                <dt className="inline font-medium text-foreground">Replacement level — </dt>
+                <dd className="inline">
+                  the points per game of the last player at that position who would still be starting
+                  somewhere in a ten-team league. Only production above that line counts.
+                </dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-foreground">Availability — </dt>
+                <dd className="inline">
+                  value is banked per game actually played after the trade, so an injury reduces it by
+                  counting rather than by an estimated discount.
+                </dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-foreground">Positional scarcity — </dt>
+                <dd className="inline">
+                  how steep the drop-off is at that position. A point above replacement is worth more
+                  where the good players are further clear of the replaceable ones.
+                </dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-foreground">Playoff weeks — </dt>
+                <dd className="inline">
+                  postseason production is counted a second time at half weight. Winning the title is
+                  the point.
+                </dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-foreground">Consolidation — </dt>
+                <dd className="inline">
+                  turning two roster spots into one better player frees a spot; a small capped credit
+                  reflects that.
+                </dd>
+              </div>
+              <div>
+                <dt className="inline font-medium text-foreground">Draft picks and FAAB — </dt>
+                <dd className="inline">
+                  have no market price on record, so they are named but never given an invented value,
+                  and the trade&rsquo;s confidence is lowered.
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-3 text-sm text-muted-foreground">
+              The margin is then graded on both an absolute and a relative test:{" "}
+              <strong className="text-foreground">Highway Robbery</strong>,{" "}
+              <strong className="text-foreground">Fleeced</strong>,{" "}
+              <strong className="text-foreground">Clear Winner</strong>,{" "}
+              <strong className="text-foreground">Slight Edge</strong>, or an{" "}
+              <strong className="text-foreground">Even Deal</strong>. Both tests must pass, so two
+              quiet hauls where one doubled the other are not called a robbery.
+            </p>
+          </div>
+        </details>
+      </section>
     </div>
   );
 }
 
-function TradeCard({
+function TradeItem({
   t,
   verdict,
   colors,
@@ -224,20 +238,34 @@ function TradeCard({
       ? Math.min(winnerValue === total ? 100 : 99, Math.round((winnerValue / total) * 100))
       : null;
 
+  const verdictBadge = t.lopsidedness ? (
+    <Badge className={VERDICT_STYLE[t.lopsidedness]}>{LOPSIDEDNESS_LABEL[t.lopsidedness]}</Badge>
+  ) : (
+    <Badge variant="outline" className="border-dashed">
+      Not graded
+    </Badge>
+  );
+
   return (
-    <Card className={decisive ? "border-primary/40" : undefined}>
-      <CardContent className="space-y-4">
+    <details className={`group ${decisive ? "border-l-2 border-l-primary/60" : ""}`}>
+      {/* The compact line: when, who, and the ruling. */}
+      <summary className={cn(DISCLOSURE_SUMMARY_CLASS, "rounded-none focus-visible:ring-inset")}>
+        <span className="grid min-w-0 flex-1 grid-cols-[auto_1fr] items-center gap-x-3 gap-y-1 sm:grid-cols-[6.5rem_1fr_auto]">
+          <span className="font-mono text-xs text-muted-foreground tabular-nums">
+            {t.seasonYear}
+            {t.week != null ? ` · Wk ${t.week}` : ""}
+          </span>
+          <span className="justify-self-end sm:order-last">{verdictBadge}</span>
+          <span className="col-span-2 min-w-0 truncate font-medium sm:col-span-1">
+            {t.sides.map((s) => s.managerName).join(" ↔ ")}
+          </span>
+        </span>
+        <DisclosureChevron />
+      </summary>
+      <div className="space-y-4 border-t border-border/60 bg-background/40 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            {t.lopsidedness ? (
-              <Badge className={VERDICT_STYLE[t.lopsidedness]}>
-                {LOPSIDEDNESS_LABEL[t.lopsidedness]}
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="border-dashed">
-                Not graded
-              </Badge>
-            )}
+            {verdictBadge}
             {t.notable ? <Badge variant="secondary">Notable</Badge> : null}
             {t.provisional ? (
               <Badge variant="outline" className="border-primary/50 text-primary">
@@ -434,7 +462,7 @@ function TradeCard({
         ) : null}
 
         {t.notes ? <p className="text-xs text-muted-foreground">{t.notes}</p> : null}
-      </CardContent>
-    </Card>
+      </div>
+    </details>
   );
 }

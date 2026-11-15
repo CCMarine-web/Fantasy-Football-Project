@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { RivalryGrid } from "@/components/rivalries/rivalry-grid";
+import { rivalryPath } from "@/lib/rivalry-slug";
+import { Disclosure } from "@/components/shared/disclosure";
 import { AiText } from "@/components/shared/ai-text";
 import { rivalryTexts } from "@/server/text/page-texts";
 import type { RenderedText } from "@/server/text/read";
@@ -159,7 +161,7 @@ function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
           />
         </dl>
 
-        <Link href={`/rivalries/${r.id}`} className="inline-block text-sm font-medium text-primary hover:underline">
+        <Link href={rivalryPath(r.managerAName, r.managerBName)} className="inline-block text-sm font-medium text-primary hover:underline">
           Season-by-season history →
         </Link>
       </CardContent>
@@ -173,11 +175,14 @@ export default async function RivalriesPage() {
   const all = await getComputedRivalries();
   const texts = await rivalryTexts(all);
   const official = all.filter((r) => r.isOfficial);
-  const others = all.filter((r) => !r.isOfficial).slice(0, 8);
+  // Every pairing that is not official, strongest first. They sit behind a
+  // disclosure (in the HTML, collapsed) so the page opens on the grid and the
+  // five declared rivalries rather than forty more cards.
+  const others = all.filter((r) => !r.isOfficial);
 
   if (all.length === 0) {
     return (
-      <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
         <PageHeader art="header-rivalries" freshness eyebrow="Bad Blood" title="Rivalries" />
         <div className="mt-8">
           <EmptyState
@@ -191,7 +196,7 @@ export default async function RivalriesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader art="header-rivalries" freshness
         eyebrow="Bad Blood"
         title="Rivalries"
@@ -252,11 +257,15 @@ export default async function RivalriesPage() {
               something on the line, or kept finishing within a handful of points. Ranked by meetings,
               postseason stakes and how close the games have been.
             </p>
-            <div className="mt-5 space-y-4">
+            <Disclosure
+              className="mt-5 bg-background/40"
+              summary={`Show all rivalries (${others.length} more ${others.length === 1 ? "pairing" : "pairings"})`}
+              contentClassName="space-y-4 px-2 pt-1 pb-2 sm:px-3"
+            >
               {others.map((r) => (
                 <RivalryCard key={r.id} r={r} text={texts.get(r.id)} />
               ))}
-            </div>
+            </Disclosure>
           </section>
         </>
       ) : null}

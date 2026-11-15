@@ -22,7 +22,7 @@ export default async function PredictionsPage() {
 
   if (!info) {
     return (
-      <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
         <PageHeader art="header-predictions" freshness eyebrow="Preseason" title="Predictions" />
         <div className="mt-8">
           <EmptyState
@@ -48,7 +48,7 @@ export default async function PredictionsPage() {
   const user = session?.user;
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader art="header-predictions" freshness
         eyebrow={`${season.year} Season`}
         title="Preseason Predictions"

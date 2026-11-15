@@ -11,7 +11,7 @@ function Unit({ value, label }: { value: number; label: string }) {
       <span className="font-heading text-3xl font-semibold tabular-nums text-primary-foreground">
         {String(value).padStart(2, "0")}
       </span>
-      <span className="text-[12px] tracking-[0.15em] text-primary-foreground/70 uppercase">{label}</span>
+      <span className="text-[12px] tracking-[0.15em] text-primary-foreground/90 uppercase">{label}</span>
     </div>
   );
 }
@@ -61,7 +61,7 @@ export function SeasonCountdown({
         <p className="text-xs font-semibold tracking-[0.2em] uppercase">{title}</p>
       </div>
       {body}
-      {footer ? <p className="mt-3 text-xs text-primary-foreground/70">{footer}</p> : null}
+      {footer ? <p className="mt-3 text-xs text-primary-foreground/90">{footer}</p> : null}
     </div>
   );
 

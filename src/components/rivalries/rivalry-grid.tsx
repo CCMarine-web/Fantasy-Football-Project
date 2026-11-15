@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { heatColor } from "@/lib/chart-theme";
 import { managerPath } from "@/lib/slug";
+import { rivalryPath } from "@/lib/rivalry-slug";
 import type { RivalryView } from "@/server/repositories/computed-rivalries-repository";
 
 /**
@@ -56,7 +57,7 @@ export function RivalryGrid({ rivalries }: { rivalries: RivalryView[] }) {
                   return (
                     <td key={col} className="h-9 w-14 rounded p-0 text-center" style={{ background: heatColor(pct) }}>
                       <Link
-                        href={`/rivalries/${r.id}`}
+                        href={rivalryPath(r.managerAName, r.managerBName)}
                         className="flex h-full w-full items-center justify-center font-mono tabular-nums hover:outline hover:outline-2 hover:outline-primary"
                         title={`${people.get(row)} vs ${people.get(col)}: ${w}-${l}${r.ties ? `-${r.ties}` : ""} over ${r.gamesPlayed} meetings`}
                       >

@@ -115,7 +115,7 @@ export default async function SeasonHistoryPage({
   );
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <p className="text-xs font-semibold tracking-[0.2em] text-primary uppercase">
         {SEASON_STATUS_LABEL[season.status] ?? season.status}
       </p>

@@ -20,6 +20,7 @@ import {
   ComposedChart,
 } from "recharts";
 import { AXIS_PROPS, TOOLTIP_STYLE } from "@/lib/chart-theme";
+import { niceTicks } from "@/lib/chart-ticks";
 
 /**
  * Named number formats. Server pages pass these strings (functions can't
@@ -76,6 +77,7 @@ export function MultiLineChart({
   tooltipFormat,
   legend = true,
   linear = true,
+  xTickLabels,
 }: {
   data: Record<string, number | string | boolean | null>[];
   xKey: string;
@@ -89,12 +91,19 @@ export function MultiLineChart({
   tooltipFormat?: NumberFormat;
   legend?: boolean;
   linear?: boolean;
+  /** Only these x values get a tick, shown as the mapped text (e.g. one per season). */
+  xTickLabels?: Record<string, string>;
 }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <LineChart data={data} margin={{ top: 8, right: 12, left: 4, bottom: 18 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis dataKey={xKey} {...AXIS_PROPS} label={{ value: xLabel, position: "insideBottom", offset: -10, fill: "var(--muted-foreground)", fontSize: 11 }} />
+        <XAxis
+          dataKey={xKey}
+          {...AXIS_PROPS}
+          {...(xTickLabels ? { ticks: Object.keys(xTickLabels), interval: 0, tickFormatter: (v: string) => xTickLabels[v] ?? "" } : {})}
+          label={{ value: xLabel, position: "insideBottom", offset: -10, fill: "var(--muted-foreground)", fontSize: 11 }}
+        />
         <YAxis
           {...AXIS_PROPS}
           reversed={reversedY}
@@ -191,18 +200,33 @@ export function LabeledScatter({
       { x: maxX, y: my + slope * (maxX - mx) },
     ];
   }
+  // Round ticks, and extra room at the corners when quadrant labels sit there,
+  // so no point label lands on them.
+  const padFrac = quadrantLabels ? 0.18 : 0.06;
   const pad = (lo: number, hi: number) => {
-    const d = (hi - lo) * 0.08 || 1;
-    return [lo - d, hi + d] as [number, number];
+    const d = (hi - lo) * padFrac || 1;
+    return niceTicks(lo - d, hi + d, 5);
   };
-  const [x0, x1] = pad(minX, maxX);
-  const [y0, y1] = pad(Math.min(...ys), Math.max(...ys));
+  const xTicks = pad(minX, maxX);
+  const yTicks = pad(Math.min(...ys), Math.max(...ys));
+  const [x0, x1] = [xTicks[0], xTicks.at(-1) as number];
+  const [y0, y1] = [yTicks[0], yTicks.at(-1) as number];
+  // Label collisions: a label whose neighbour sits just above-left/right goes
+  // below its dot instead.
+  const below = new Set<string>();
+  const nearX = (x1 - x0) * 0.12;
+  const nearY = (y1 - y0) * 0.07;
+  for (const p of points) {
+    const clash = points.some((q) => q !== p && !below.has(q.label) && Math.abs(q.x - p.x) < nearX && q.y > p.y && q.y - p.y < nearY);
+    if (clash) below.add(p.label);
+  }
+  const labelled = points.map((p) => ({ ...p, labelPos: below.has(p.label) ? "bottom" : "top" }));
   return (
     <ResponsiveContainer width="100%" height="100%">
       <ComposedChart margin={{ top: 12, right: 16, left: 4, bottom: 18 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-        <XAxis type="number" dataKey="x" domain={[x0, x1]} {...AXIS_PROPS} tickFormatter={xFormatter} label={{ value: xLabel, position: "insideBottom", offset: -10, fill: "var(--muted-foreground)", fontSize: 11 }} />
-        <YAxis type="number" dataKey="y" domain={[y0, y1]} {...AXIS_PROPS} width={44} tickFormatter={yFormatter} label={{ value: yLabel, angle: -90, position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 11, dx: 6 }} />
+        <XAxis type="number" dataKey="x" domain={[x0, x1]} ticks={xTicks} interval={0} {...AXIS_PROPS} tickFormatter={xFormatter} label={{ value: xLabel, position: "insideBottom", offset: -10, fill: "var(--muted-foreground)", fontSize: 11 }} />
+        <YAxis type="number" dataKey="y" domain={[y0, y1]} ticks={yTicks} interval={0} {...AXIS_PROPS} width={44} tickFormatter={yFormatter} label={{ value: yLabel, angle: -90, position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 11, dx: 6 }} />
         <ZAxis range={[90, 90]} />
         <Tooltip
           contentStyle={TOOLTIP_STYLE}
@@ -237,11 +261,26 @@ export function LabeledScatter({
         {trendSegment.length ? (
           <Line data={trendSegment} dataKey="y" type="linear" stroke="var(--muted-foreground)" strokeDasharray="6 4" dot={false} isAnimationActive={false} legendType="none" name="Expected" />
         ) : null}
-        <Scatter data={points} isAnimationActive={false}>
-          {points.map((p) => (
+        <Scatter data={labelled} isAnimationActive={false}>
+          {labelled.map((p) => (
             <Cell key={p.label} fill={p.color} />
           ))}
-          <LabelList dataKey="label" position="top" fontSize={10} fill="var(--foreground)" />
+          <LabelList
+            dataKey="label"
+            content={(props: { x?: number | string; y?: number | string; width?: number | string; value?: unknown; index?: number }) => {
+              const p = props.index != null ? labelled[props.index] : undefined;
+              if (!p || props.x == null || props.y == null) return null;
+              // x/y are the symbol box's corner: centre the label on the dot.
+              const half = Number(props.width ?? 0) / 2;
+              const x = Number(props.x) + half;
+              const y = Number(props.y) + half;
+              return (
+                <text x={x} y={p.labelPos === "top" ? y - half - 4 : y + half + 12} textAnchor="middle" fontSize={10} fill="var(--foreground)">
+                  {String(props.value ?? "")}
+                </text>
+              );
+            }}
+          />
         </Scatter>
       </ComposedChart>
     </ResponsiveContainer>
@@ -257,6 +296,8 @@ export interface BarDatum {
   detail?: string;
   /** Second series (e.g. expected), drawn as a lighter bar. */
   value2?: number;
+  /** Draw an outline (e.g. a championship-bracket game). */
+  outline?: boolean;
 }
 
 export function SimpleBars({
@@ -268,6 +309,7 @@ export function SimpleBars({
   height,
   diverging,
   categoryLabel,
+  categoryTicks,
 }: {
   data: BarDatum[];
   valueLabel: string;
@@ -278,8 +320,11 @@ export function SimpleBars({
   /** Colour positive/negative values differently around zero. */
   diverging?: boolean;
   categoryLabel?: string;
+  /** Only these categories get a tick label, shown as the mapped text. */
+  categoryTicks?: Record<string, string>;
 }) {
   const fmt = fmtWith(valueFormat, (v: number) => v.toFixed(1));
+  const sparse = categoryTicks ? { ticks: Object.keys(categoryTicks), tickFormatter: (v: string) => categoryTicks[v] ?? "" } : {};
   const hasSecond = data.some((d) => d.value2 != null);
   return (
     <ResponsiveContainer width="100%" height={height ?? "100%"}>
@@ -296,7 +341,7 @@ export function SimpleBars({
           </>
         ) : (
           <>
-            <XAxis dataKey="label" {...AXIS_PROPS} interval={0} label={categoryLabel ? { value: categoryLabel, position: "insideBottom", offset: -10, fill: "var(--muted-foreground)", fontSize: 11 } : undefined} />
+            <XAxis dataKey="label" {...AXIS_PROPS} interval={0} {...sparse} label={categoryLabel ? { value: categoryLabel, position: "insideBottom", offset: -10, fill: "var(--muted-foreground)", fontSize: 11 } : undefined} />
             <YAxis {...AXIS_PROPS} width={44} tickFormatter={fmt} label={{ value: valueLabel, angle: -90, position: "insideLeft", fill: "var(--muted-foreground)", fontSize: 11, dx: 6 }} />
           </>
         )}
@@ -310,7 +355,12 @@ export function SimpleBars({
         {hasSecond ? <Bar dataKey="value2" name={value2Label ?? "Expected"} fill="var(--muted-foreground)" opacity={0.45} isAnimationActive={false} /> : null}
         <Bar dataKey="value" name={valueLabel} isAnimationActive={false} radius={2}>
           {data.map((d) => (
-            <Cell key={d.label} fill={d.color ?? (diverging ? (d.value >= 0 ? "#3DD68C" : "#FF6369") : "var(--primary)")} />
+            <Cell
+              key={d.label}
+              fill={d.color ?? (diverging ? (d.value >= 0 ? "#34C77B" : "#F0605D") : "var(--primary)")}
+              stroke={d.outline ? "var(--foreground)" : undefined}
+              strokeWidth={d.outline ? 2 : 0}
+            />
           ))}
         </Bar>
       </BarChart>
@@ -322,20 +372,36 @@ export function SimpleBars({
 
 export interface StripPoint {
   value: number;
+  /** Full name, for the tooltip and table. */
   label: string;
+  /** Short on-chart label (a surname). */
+  tag?: string;
   color: string;
+  /** Hollow marker (e.g. a loss): result never rests on colour alone. */
+  hollow?: boolean;
   marker?: string;
 }
 
-export function StripPlot({ points, xLabel }: { points: StripPoint[]; xLabel: string }) {
-  const data = points.map((p, i) => ({ ...p, x: p.value, y: (i % 3) - 1 }));
+/**
+ * All of a week's scores on one axis. No jitter (the vertical position meant
+ * nothing); each dot is labelled, alternating above and below in score order
+ * so neighbours don't collide, with the week's average marked.
+ */
+export function StripPlot({ points, xLabel, average }: { points: StripPoint[]; xLabel: string; average?: number }) {
+  const data = [...points]
+    .sort((a, b) => a.value - b.value)
+    .map((p, i) => ({ ...p, x: p.value, y: 0, above: i % 2 === 0 }));
   const xs = points.map((p) => p.value);
+  const ticks = niceTicks(Math.min(...xs) - 3, Math.max(...xs) + 3, 6);
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <ScatterChart margin={{ top: 22, right: 16, left: 4, bottom: 18 }}>
+      <ScatterChart margin={{ top: 30, right: 24, left: 24, bottom: 18 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical horizontal={false} />
-        <XAxis type="number" dataKey="x" domain={[Math.floor(Math.min(...xs) / 10) * 10 - 5, Math.ceil(Math.max(...xs) / 10) * 10 + 5]} {...AXIS_PROPS} label={{ value: xLabel, position: "insideBottom", offset: -10, fill: "var(--muted-foreground)", fontSize: 11 }} />
-        <YAxis type="number" dataKey="y" domain={[-2, 2]} hide />
+        <XAxis type="number" dataKey="x" domain={[ticks[0], ticks.at(-1) as number]} ticks={ticks} interval={0} {...AXIS_PROPS} label={{ value: xLabel, position: "insideBottom", offset: -10, fill: "var(--muted-foreground)", fontSize: 11 }} />
+        <YAxis type="number" dataKey="y" domain={[-1, 1]} hide />
+        {average != null ? (
+          <ReferenceLine x={average} stroke="var(--muted-foreground)" strokeDasharray="4 4" label={{ value: `Avg ${average.toFixed(1)}`, position: "insideTopRight", fill: "var(--muted-foreground)", fontSize: 10 }} />
+        ) : null}
         <ZAxis range={[110, 110]} />
         <Tooltip
           contentStyle={TOOLTIP_STYLE}
@@ -353,9 +419,28 @@ export function StripPlot({ points, xLabel }: { points: StripPoint[]; xLabel: st
         />
         <Scatter data={data} isAnimationActive={false}>
           {data.map((p) => (
-            <Cell key={p.label} fill={p.color} stroke={p.marker ? "var(--foreground)" : "none"} strokeWidth={p.marker ? 2 : 0} />
+            <Cell
+              key={p.label}
+              fill={p.hollow ? "var(--card)" : p.color}
+              stroke={p.marker ? "var(--foreground)" : p.color}
+              strokeWidth={p.marker || p.hollow ? 2 : 0}
+            />
           ))}
-          <LabelList dataKey="marker" position="top" fontSize={10} fill="var(--foreground)" />
+          <LabelList
+            dataKey="tag"
+            content={(props: { x?: number | string; y?: number | string; width?: number | string; index?: number }) => {
+              const p = props.index != null ? data[props.index] : undefined;
+              if (!p || props.x == null || props.y == null) return null;
+              const cx = Number(props.x) + Number(props.width ?? 0) / 2;
+              const cy = Number(props.y);
+              const text = `${p.tag ?? ""}${p.marker ? ` · ${p.marker}` : ""}`;
+              return (
+                <text x={cx} y={p.above ? cy - 8 : cy + Number(props.width ?? 10) + 12} textAnchor="middle" fontSize={10} fill="var(--foreground)">
+                  {text}
+                </text>
+              );
+            }}
+          />
         </Scatter>
       </ScatterChart>
     </ResponsiveContainer>

@@ -7,6 +7,7 @@ import { ordinal } from "@/lib/format";
 import type { FeaturedMatchupView, FeaturedTeam } from "@/server/repositories/featured-matchup-repository";
 import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
 import { AiText } from "@/components/shared/ai-text";
+import { rivalryPath } from "@/lib/rivalry-slug";
 import { Flame, Star, Swords } from "lucide-react";
 
 /**
@@ -133,14 +134,14 @@ export function MatchupOfTheWeek({ featured }: { featured: FeaturedMatchupView }
             {featured.roundName ? ` · ${featured.roundName}` : ""}
           </span>
           {featured.rivalry?.isOfficial ? (
-            <Link href={`/rivalries/${featured.rivalry.id}`}>
+            <Link href={rivalryPath(a.managerName, b.managerName)}>
               <Badge variant="outline" className="gap-1 border-gold/50 text-gold">
                 <Flame className="h-3 w-3" aria-hidden />
                 {featured.rivalry.label}
               </Badge>
             </Link>
           ) : featured.rivalry ? (
-            <Link href={`/rivalries/${featured.rivalry.id}`}>
+            <Link href={rivalryPath(a.managerName, b.managerName)}>
               <Badge variant="outline">{featured.rivalry.label}</Badge>
             </Link>
           ) : null}

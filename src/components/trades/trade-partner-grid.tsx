@@ -25,8 +25,8 @@ export function TradePartnerGrid({
       <figcaption className="mb-2">
         <span className="block font-heading text-sm font-semibold tracking-wide uppercase">Trade partners</span>
         <span className="block text-xs text-muted-foreground">
-          Trades between each pair; darker blue means they do business more often. Hover a cell for the row
-          manager&rsquo;s net value against that partner. A dot is a pair that has never picked up the phone.
+          Trades between each pair; darker blue means they do business more often. Each cell counts the trades; hover for the row
+          manager&rsquo;s net value against that partner (every verdict is in the list below). A dot is a pair that has never picked up the phone.
         </span>
       </figcaption>
       <div className="relative overflow-x-auto" role="region" aria-label="Trade partner grid, scrolls sideways" tabIndex={0}>

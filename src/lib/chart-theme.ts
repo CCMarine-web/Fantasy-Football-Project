@@ -47,7 +47,7 @@ export function positionColor(position: string | null | undefined): string {
 }
 
 /** Win/loss colours that pass contrast on the dark theme. */
-export const RESULT_COLORS = { win: "#3DD68C", loss: "#FF6369", neutral: "#8B8D98", accent: "var(--primary)" } as const;
+export const RESULT_COLORS = { win: "#34C77B", loss: "#F0605D", neutral: "#93A1B2", accent: "var(--primary)" } as const;
 
 /** A sequential scale 0-100 -> colour (low = red, mid = grey, high = green), colour-blind safe via lightness. */
 export function heatColor(value0to100: number | null | undefined): string {
@@ -56,7 +56,10 @@ export function heatColor(value0to100: number | null | undefined): string {
   // Diverging blue (good) / orange (bad) — distinguishable for red-green CVD.
   const hue = v >= 0.5 ? 220 : 30;
   const strength = Math.abs(v - 0.5) * 2; // 0 at the middle, 1 at the ends
-  return `hsl(${hue} ${Math.round(25 + strength * 55)}% ${Math.round(24 + strength * 18)}%)`;
+  // Orange stays darker than blue at the same strength so light text keeps
+  // at least 4.5:1 on every cell.
+  const light = hue === 30 ? 24 + strength * 9 : 24 + strength * 18;
+  return `hsl(${hue} ${Math.round(25 + strength * 55)}% ${Math.round(light)}%)`;
 }
 
 export const TOOLTIP_STYLE = {

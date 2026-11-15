@@ -28,8 +28,12 @@ import { usePathname } from "next/navigation";
  * competing with the content, and hides compression artefacts at low opacity.
  */
 
-// Toned down (Nov 2026): the photos sat behind tables and charts and cost contrast.
-const IMAGE_OPACITY = 0.16;
+/*
+ * Header band only (Nov 2026 redesign): the photo sits behind the page header
+ * and fades to the page colour before any table or chart begins. It used to be
+ * a fixed full-page wallpaper behind everything, which cost contrast.
+ */
+const IMAGE_OPACITY = 0.3;
 
 interface BackgroundChoice {
   src: string;
@@ -93,7 +97,7 @@ export function SiteBackground() {
   const isHome = pathname === "/";
 
   return (
-    <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+    <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-72 overflow-hidden sm:h-80">
       <Image
         key={choice.src}
         src={choice.src}
@@ -108,7 +112,7 @@ export function SiteBackground() {
         priority={isHome}
         loading={isHome ? undefined : "lazy"}
         quality={60}
-        className="scale-105 object-cover blur-[3px]"
+        className="scale-105 object-cover blur-[2px]"
         style={{ objectPosition: choice.position ?? "center", opacity: IMAGE_OPACITY }}
       />
       {/*
@@ -116,9 +120,9 @@ export function SiteBackground() {
         with a gentle extra wash top and bottom so the sticky header and the
         footer still sit on near-solid colour without dimming the whole page.
       */}
-      <div className="bg-background/70 absolute inset-0" />
-      <div className="from-background absolute inset-x-0 top-0 h-32 bg-gradient-to-b to-transparent" />
-      <div className="from-background absolute inset-x-0 bottom-0 h-32 bg-gradient-to-t to-transparent" />
+      <div className="bg-background/50 absolute inset-0" />
+      <div className="from-background absolute inset-x-0 top-0 h-16 bg-gradient-to-b to-transparent" />
+      <div className="from-background via-background/80 absolute inset-x-0 bottom-0 h-40 bg-gradient-to-t to-transparent" />
     </div>
   );
 }

@@ -25,7 +25,7 @@ export interface GridWeight {
 }
 
 export function gridTemplate(factorCount: number): string {
-  return `2rem 2.25rem minmax(10rem, 1.6fr) 4rem repeat(${factorCount}, minmax(4.25rem, 1fr))`;
+  return `2rem 2.25rem minmax(15rem, 2.6fr) 4rem repeat(${factorCount}, minmax(4.25rem, 1fr))`;
 }
 
 function Movement({ rank, previous }: { rank: number; previous: number | null }) {
@@ -66,7 +66,7 @@ export function PowerGrid({
   const template = gridTemplate(weights.length);
   return (
     <div className="relative overflow-x-auto rounded-lg border border-border/60 bg-card" role="region" aria-label="Power rankings by factor, scrolls sideways" tabIndex={0}>
-      <div className="min-w-[860px]">
+      <div className="min-w-[1000px]">
         <div
           data-testid="power-grid-header"
           className="grid items-center gap-px border-b border-border/60 px-2 py-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
@@ -74,7 +74,9 @@ export function PowerGrid({
         >
           <span>#</span>
           {/* A real grid cell (not sr-only), so the columns stay aligned. */}
-          <span aria-label="Movement since last week" />
+          <span>
+            <span className="sr-only">Movement since last week</span>
+          </span>
           <span>Team</span>
           <span className="text-right">Score</span>
           {weights.map((w, i) => (

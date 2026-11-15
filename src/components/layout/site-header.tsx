@@ -16,8 +16,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import {
-  INLINE_NAV_LG,
-  INLINE_NAV_XL,
   isNavGroup,
   mobileNavGroups,
   primaryNav,
@@ -124,27 +122,9 @@ export function SiteHeader() {
   const directLinks = primaryNav.filter((i): i is NavLinkType => !isNavGroup(i));
   const groups = primaryNav.filter(isNavGroup) as NavGroup[];
 
-  /*
-   * Three measured tiers (see INLINE_NAV_LG / INLINE_NAV_XL for the numbers).
-   *
-   * The full row needs a 1298px container. `max-w-7xl` is 1280px, so no
-   * viewport can show everything inline while that cap holds — an earlier
-   * attempt to reveal it all at `xl` pushed the page 14-18px wide. The header
-   * container therefore widens at `2xl` (and only there), which buys the last
-   * 18px and lets the final tier sit inline.
-   *
-   * Links that are not inline at a given tier appear in "More" as separate,
-   * individually-labelled items. Two "More" triggers exist because a dropdown's
-   * CONTENTS cannot vary by breakpoint in CSS — only its visibility can.
-   */
-  const alwaysInline = directLinks.slice(0, INLINE_NAV_LG);
-  const xlInline = directLinks.slice(INLINE_NAV_LG, INLINE_NAV_XL);
-  const wideInline = directLinks.slice(INLINE_NAV_XL);
-  const overflowBelowXl = directLinks.slice(INLINE_NAV_LG);
-
   return (
     <header className="border-border/60 bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-40 border-b backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8 2xl:max-w-[84rem]">
+      <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Link href="/" className="flex shrink-0 items-center gap-2.5">
           <span className="bg-primary text-primary-foreground flex h-9 w-9 items-center justify-center rounded-md">
             <RatTrapMark className="h-6 w-6" />
@@ -160,25 +140,9 @@ export function SiteHeader() {
         </Link>
 
         <nav className="hidden items-center gap-4 lg:flex">
-          {alwaysInline.map((item) => (
+          {directLinks.map((item) => (
             <NavItem key={item.href} {...item} />
           ))}
-          {xlInline.map((item) => (
-            <NavItem key={item.href} {...item} className="hidden xl:inline" />
-          ))}
-          {wideInline.map((item) => (
-            <NavItem key={item.href} {...item} className="hidden 2xl:inline" />
-          ))}
-
-          {/* Below xl: everything past the first five. */}
-          {overflowBelowXl.length > 0 ? (
-            <NavDropdown label="More" links={overflowBelowXl} className="xl:hidden" />
-          ) : null}
-          {/* xl to 2xl: only the last tier is still folded away. */}
-          {wideInline.length > 0 ? (
-            <NavDropdown label="More" links={wideInline} className="hidden xl:flex 2xl:hidden" />
-          ) : null}
-
           {groups.map((group) => (
             <NavDropdown key={group.label} label={group.label} links={group.links} />
           ))}
@@ -239,7 +203,7 @@ export function SiteHeader() {
                       key={link.href}
                       href={link.href}
                       onClick={() => setOpen(false)}
-                      className="text-foreground/90 hover:text-primary text-base font-medium"
+                      className="text-foreground/90 hover:text-primary flex min-h-11 items-center text-base font-medium"
                     >
                       {link.label}
                     </Link>

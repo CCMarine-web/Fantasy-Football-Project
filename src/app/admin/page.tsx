@@ -87,7 +87,7 @@ export default async function AdminPage() {
   const aiConfigured = isAIConfigured();
 
   return (
-    <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-10 sm:px-6 lg:px-8">
       <PageHeader
         eyebrow="Commissioner Tools"
         title="Admin Dashboard"

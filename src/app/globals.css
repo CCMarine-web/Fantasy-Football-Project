@@ -46,42 +46,41 @@
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
+  /* Cards: radius 12 (design tokens, Nov 2026). */
+  --radius-xl: 0.75rem;
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
 }
 
 /*
- * Type scale: Tailwind's stock scale multiplied by 1.2 (+20% site-wide).
- * Overriding the --text-* tokens rather than bumping the root font-size keeps
- * spacing, radii and max-widths (all rem-based) at their designed values, so
- * layouts don't inflate along with the text. Line heights are scaled by the
- * same factor to preserve each step's original ratio.
+ * Type scale (design tokens, Nov 2026): 12 / 14 / 16 / 20 / 28 / 40 px.
+ * Tailwind steps map onto it: xs 12, sm 14, base 16, lg/xl 20, 2xl/3xl 28,
+ * 4xl and up 40. (Replaces the earlier +20% scale.)
  */
 @theme {
-  --text-xs: 0.9rem;
-  --text-xs--line-height: 1.2rem;
-  --text-sm: 1.05rem;
-  --text-sm--line-height: 1.5rem;
-  --text-base: 1.2rem;
-  --text-base--line-height: 1.8rem;
-  --text-lg: 1.35rem;
-  --text-lg--line-height: 2.1rem;
-  --text-xl: 1.5rem;
-  --text-xl--line-height: 2.1rem;
-  --text-2xl: 1.8rem;
-  --text-2xl--line-height: 2.4rem;
-  --text-3xl: 2.25rem;
-  --text-3xl--line-height: 2.7rem;
-  --text-4xl: 2.7rem;
-  --text-4xl--line-height: 3rem;
-  --text-5xl: 3.6rem;
-  --text-5xl--line-height: 1;
-  --text-6xl: 4.5rem;
-  --text-6xl--line-height: 1;
-  --text-7xl: 5.4rem;
-  --text-7xl--line-height: 1;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.75rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.25rem;
+  --text-3xl: 1.75rem;
+  --text-3xl--line-height: 2.25rem;
+  --text-4xl: 2.5rem;
+  --text-4xl--line-height: 1.1;
+  --text-5xl: 2.5rem;
+  --text-5xl--line-height: 1.1;
+  --text-6xl: 2.5rem;
+  --text-6xl--line-height: 1.1;
+  --text-7xl: 2.5rem;
+  --text-7xl--line-height: 1.1;
 }
 
 :root {
@@ -123,43 +122,50 @@
   --gold-foreground: oklch(0.985 0 0);
 }
 
+/*
+ * Design tokens (Nov 2026, "broadcast scorebug meets league almanac"):
+ * page #0B0F14, surface #121821, raised #18202B, border #243040,
+ * text #E8EDF2, muted #93A1B2, accent the existing sky blue,
+ * win #34C77B, loss #F0605D.
+ */
 .dark {
-  --background: oklch(0.16 0.012 250);
-  --foreground: oklch(0.96 0.005 250);
-  --card: oklch(0.2 0.014 250);
-  --card-foreground: oklch(0.96 0.005 250);
-  --popover: oklch(0.19 0.014 250);
-  --popover-foreground: oklch(0.96 0.005 250);
+  color-scheme: dark;
+  --background: #0b0f14;
+  --foreground: #e8edf2;
+  --card: #121821;
+  --card-foreground: #e8edf2;
+  --popover: #18202b;
+  --popover-foreground: #e8edf2;
   /* Primary accent: light blue (#41b0eb) — 7.99:1 on the dark background. */
   --primary: oklch(0.72 0.13 236);
   --primary-foreground: oklch(0.18 0.03 236);
-  --secondary: oklch(0.27 0.016 250);
-  --secondary-foreground: oklch(0.96 0.005 250);
-  --muted: oklch(0.25 0.014 250);
-  --muted-foreground: oklch(0.66 0.02 250);
+  --secondary: #18202b;
+  --secondary-foreground: #e8edf2;
+  --muted: #18202b;
+  --muted-foreground: #93a1b2;
   --accent: oklch(0.3 0.03 236);
   --accent-foreground: oklch(0.96 0.02 236);
-  --destructive: oklch(0.65 0.22 25);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
+  --destructive: #f0605d;
+  --border: #243040;
+  --input: #243040;
   --ring: oklch(0.72 0.13 236 / 60%);
   --chart-1: oklch(0.72 0.13 236);
   --chart-2: oklch(0.62 0.14 196);
   --chart-3: oklch(0.64 0.2 25);
   --chart-4: oklch(0.68 0.15 300);
   --chart-5: oklch(0.75 0.04 250);
-  --sidebar: oklch(0.18 0.014 250);
+  --sidebar: #121821;
   --sidebar-foreground: oklch(0.96 0.005 250);
   --sidebar-primary: oklch(0.72 0.13 236);
   --sidebar-primary-foreground: oklch(0.18 0.03 236);
   --sidebar-accent: oklch(0.27 0.016 250);
   --sidebar-accent-foreground: oklch(0.96 0.005 250);
-  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-border: #243040;
   --sidebar-ring: oklch(0.72 0.13 236 / 60%);
   /* Win/positive stays green (semantic), separate from the blue accent.
      Light enough to pass WCAG AA as small text on the background and on
      cards; solid green fills (form pips) carry dark text. */
-  --field: oklch(0.74 0.15 152);
+  --field: #34c77b;
   --field-foreground: oklch(0.17 0.03 152);
   /* `--gold` kept as a token name for compatibility, now the light-blue
      accent so championship/trophy elements match the rest of the UI. */
@@ -176,5 +182,18 @@
   }
   html {
     @apply font-sans;
+    /* Native scrollbars and form controls render dark (they were white on tables). */
+    color-scheme: dark;
+  }
+  /* Every statistic in monospaced tabular numerals. */
+  .font-mono,
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+  /* One visible focus ring everywhere. */
+  :where(a, button, summary, [role="tab"], [tabindex]):focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+    border-radius: 4px;
   }
 }
