@@ -93,7 +93,7 @@ export async function produceText(
     providerName = result.providerName;
     if (result.providerName === "mock") break;
     const draft = cleanDraft(result.text);
-    const check = validateTemplate(draft, spec.facts, spec.tokens);
+    const check = validateTemplate(draft, spec.facts, spec.tokens, spec.scopes);
     const breaches = findHardRuleBreaches(draft, JSON.stringify(spec.facts));
     const problems = [...check.problems, ...breaches.map((b) => `breaks a hard rule: "${b}"`)];
     if (draft && problems.length === 0) {

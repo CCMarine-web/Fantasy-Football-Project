@@ -3,7 +3,8 @@ import { ordinal } from "@/lib/format";
 import type { PowerRankingsView } from "@/server/repositories/power-rankings-repository";
 import type { RivalryView } from "@/server/repositories/computed-rivalries-repository";
 import type { ManagerRow, HeadToHeadLine } from "@/server/repositories/manager-repository";
-import type { LuckScore } from "@/server/stats/luck";
+import type { RankedLuck } from "@/server/repositories/luck-repository";
+import { formatLuckWins } from "@/server/stats/luck-wins";
 import type { TradeTribunalView } from "@/server/repositories/trade-tribunal-repository";
 import type { WeeklyAwardView } from "@/server/repositories/weekly-awards-repository";
 import type { TeamDraftReturn } from "@/server/stats/draft-returns";
@@ -110,7 +111,8 @@ export function rivalrySpec(r: RivalryView, asOf: { season: number; week: number
 
 export function managerBioSpec(
   row: ManagerRow,
-  luck: LuckScore | null,
+  seasonLuck: RankedLuck | null,
+  careerLuck: RankedLuck | null,
   h2h: HeadToHeadLine[],
   asOf: { season: number; week: number | null },
 ): TextSpec {
@@ -132,8 +134,15 @@ export function managerBioSpec(
     lastPlaceFinishes: row.lastPlaceFinishes,
     lastPlaceYears: row.lastPlaceYears,
     currentSeasonRecord: rec(row.currentWins, row.currentLosses, row.currentTies),
-    luckScore: luck?.score ?? null,
-    luckLabel: luck?.label ?? null,
+    // Two separately named luck facts — a bio once quoted the career figure
+    // as this season's. The validator rejects a "this season" sentence that
+    // uses a career-only figure (see scopes below).
+    thisSeasonLuck: seasonLuck && seasonLuck.tone !== "insufficient"
+      ? { luckWins: formatLuckWins(seasonLuck.luckWins), label: seasonLuck.label, games: seasonLuck.games }
+      : null,
+    careerLuck: careerLuck && careerLuck.tone !== "insufficient"
+      ? { luckWins: formatLuckWins(careerLuck.luckWins), label: careerLuck.label, games: careerLuck.games }
+      : null,
     bestHeadToHead: best ? { opponent: best.opponentName, record: rec(best.wins, best.losses, best.ties) } : null,
     worstHeadToHead: worst ? { opponent: worst.opponentName, record: rec(worst.wins, worst.losses, worst.ties) } : null,
   };
@@ -147,12 +156,17 @@ export function managerBioSpec(
       record: careerRecord,
       titles: String(row.championships),
       finals: String(row.finalsAppearances),
-      luck: luck?.score != null ? String(luck.score) : "not measured",
+      seasonLuck: seasonLuck && seasonLuck.tone !== "insufficient" ? `${formatLuckWins(seasonLuck.luckWins)} (${seasonLuck.label})` : "not measured yet",
+      careerLuck: careerLuck && careerLuck.tone !== "insufficient" ? `${formatLuckWins(careerLuck.luckWins)} (${careerLuck.label})` : "not measured",
       current: facts.currentSeasonRecord,
     },
     contentType: "manager-profile",
-    task: `Write ${row.displayName}'s league bio: who they are as a manager, their career arc, titles and finals, how this season is going, and one rivalry worth mentioning. "Finals appearances" already includes title wins — never add them together or describe them as two different things. Three to five sentences; it must stand on its own as a card summary.`,
-    fallback: `${row.displayName} has a {{record}} regular-season record over ${row.seasonsPlayed} seasons, with {{titles}} title${row.championships === 1 ? "" : "s"} in {{finals}} finals. This season: {{current}}. Luck Score: {{luck}}${luck?.label ? ` (${luck.label})` : ""}.`,
+    task: `Write ${row.displayName}'s league bio: who they are as a manager, their career arc, titles and finals, how this season is going, and one rivalry worth mentioning. "Finals appearances" already includes title wins — never add them together or describe them as two different things. Luck is in wins (actual minus expected from scoring): use {{seasonLuck}} only when talking about this season and {{careerLuck}} only for the career — never mix them. Three to five sentences; it must stand on its own as a card summary.`,
+    scopes: {
+      season: [facts.currentSeasonRecord, ...(seasonLuck ? [formatLuckWins(seasonLuck.luckWins)] : [])],
+      career: [careerRecord, ...(careerLuck ? [formatLuckWins(careerLuck.luckWins)] : [])],
+    },
+    fallback: `${row.displayName} has a {{record}} regular-season record over ${row.seasonsPlayed} seasons, with {{titles}} title${row.championships === 1 ? "" : "s"} in {{finals}} finals. This season: {{current}}, luck {{seasonLuck}}. Career luck: {{careerLuck}}.`,
     maxWords: 150,
   };
 }
@@ -162,7 +176,8 @@ export function managerBioSpec(
 export interface ScoutingFacts {
   managerId: string;
   managerName: string;
-  completedSeasonsRecord: string;
+  /** The same career regular-season record the profile table shows. */
+  careerRecord: string;
   titles: number;
   bestFinish: number | null;
   worstFinish: number | null;
@@ -172,7 +187,13 @@ export interface ScoutingFacts {
   firstRoundPicks: Record<string, number>;
 }
 
-export async function loadScoutingFacts(managerId: string, managerName: string, throughSeason: number, throughWeek: number | null): Promise<ScoutingFacts | null> {
+export async function loadScoutingFacts(
+  managerId: string,
+  managerName: string,
+  careerRecord: string,
+  throughSeason: number,
+  throughWeek: number | null,
+): Promise<ScoutingFacts | null> {
   const [assets, r1picks, teams] = await Promise.all([
     prisma.transactionAsset.findMany({
       where: {
@@ -203,11 +224,7 @@ export async function loadScoutingFacts(managerId: string, managerName: string, 
   return {
     managerId,
     managerName,
-    completedSeasonsRecord: rec(
-      teams.reduce((s, t) => s + t.wins, 0),
-      teams.reduce((s, t) => s + t.losses, 0),
-      teams.reduce((s, t) => s + t.ties, 0),
-    ),
+    careerRecord,
     titles: teams.filter((t) => t.isChampion).length,
     bestFinish: finishes.length ? Math.min(...finishes) : null,
     worstFinish: finishes.length ? Math.max(...finishes) : null,
@@ -225,10 +242,10 @@ export function scoutingSpec(f: ScoutingFacts, asOf: { season: number; week: num
     asOfSeason: asOf.season,
     asOfWeek: asOf.week,
     facts: { ...f, managerId: undefined },
-    tokens: { record: f.completedSeasonsRecord },
+    tokens: { record: f.careerRecord },
     contentType: "scouting-report",
     task: `A scouting report on ${f.managerName} for an opponent: how they build rosters (draft habits from firstRoundPicks, trades vs waiver claims vs free-agent pickups) and what to expect. Three sentences.`,
-    fallback: `${f.managerName}: ${f.trades} trade${f.trades === 1 ? "" : "s"}, ${f.waiverClaims} waiver claims and ${f.freeAgentPickups} free-agent pickups on record; {{record}} in completed seasons.`,
+    fallback: `${f.managerName}: ${f.trades} trade${f.trades === 1 ? "" : "s"}, ${f.waiverClaims} waiver claims and ${f.freeAgentPickups} free-agent pickups on record; career record {{record}}.`,
     maxWords: 80,
   };
 }

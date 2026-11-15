@@ -14,7 +14,8 @@ import { notFound } from "next/navigation";
 import { BRAND } from "@/lib/branding";
 import { BrandArt } from "@/components/shared/brand-art";
 import { managerSlotKey } from "@/lib/brand-assets";
-import { LuckScoreHeadline, LuckScorePanel } from "@/components/managers/luck-score";
+import { LuckContextPanel, LuckHeadline } from "@/components/managers/luck-score";
+import { getCareerLuckWins, getSeasonLuckWins } from "@/server/repositories/luck-repository";
 import { LAST_PLACE_METHODOLOGY } from "@/server/stats/last-place";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -107,6 +108,14 @@ export default async function ManagerProfilePage({
   ]);
   if (!profile) notFound();
   const bio = bios.get(managerId) ?? null;
+  // Luck in wins (stats/luck-wins.ts): this season and career, one definition.
+  const currentSeason = await prisma.season.findFirst({ where: { isCurrent: true }, select: { year: true } });
+  const [careerLuckMap, seasonLuckMap] = await Promise.all([
+    getCareerLuckWins(),
+    currentSeason ? getSeasonLuckWins(currentSeason.year) : Promise.resolve(new Map()),
+  ]);
+  const careerLuck = careerLuckMap.get(managerId) ?? null;
+  const seasonLuck = seasonLuckMap.get(managerId) ?? null;
   const leagueTeams = await prisma.fantasyTeam.findMany({
     where: { season: { status: { not: "UPCOMING" } } },
     select: { pointsFor: true, wins: true, losses: true, ties: true, season: { select: { year: true } } },
@@ -125,7 +134,6 @@ export default async function ManagerProfilePage({
     stats,
     seasonLines,
     eraStats,
-    luck,
     lastPlaceYears,
     teamNameRuns,
     bestSeason,
@@ -200,13 +208,9 @@ export default async function ManagerProfilePage({
 
         {/* The Luck Score sits beside the name, as a number and its label, so a
             reader meets it before the tables rather than three sections down. */}
-        {luck.career ? (
-          <div className="w-full sm:ml-auto sm:w-auto sm:min-w-56">
-            <LuckScoreHeadline
-              luck={luck.career}
-              seasonLuck={luck.season}
-              seasonYear={luck.seasonYear}
-            />
+        {careerLuck || seasonLuck ? (
+          <div className="w-full sm:ml-auto sm:w-auto sm:min-w-72">
+            <LuckHeadline career={careerLuck} season={seasonLuck} seasonYear={currentSeason?.year ?? null} />
           </div>
         ) : null}
       </div>
@@ -307,10 +311,10 @@ export default async function ManagerProfilePage({
         </div>
       </section>
 
-      {/* Luck Score — deterministic, computed from recorded scores. */}
-      {luck.career ? (
+      {/* Luck in wins, with its context rows (sample sizes shown, never blended). */}
+      {careerLuck || seasonLuck ? (
         <section className="mt-8">
-          <LuckScorePanel career={luck.career} season={luck.season} seasonYear={luck.seasonYear} />
+          <LuckContextPanel career={careerLuck} season={seasonLuck} seasonYear={currentSeason?.year ?? null} />
         </section>
       ) : null}
 

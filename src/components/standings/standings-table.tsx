@@ -66,7 +66,7 @@ export function StandingsTable({
               <th scope="col" className={cn(th, "text-right")} title="Points against">PA</th>
               <th scope="col" className={cn(th, "text-center")} title="Record if you played every team every week">All-Play</th>
               <th scope="col" className={cn(th, "text-right")} title="Wins expected from all-play rate">Exp. W</th>
-              <th scope="col" className={cn(th, "text-right")} title="Actual wins minus expected wins">Sched. Luck</th>
+              <th scope="col" className={cn(th, "text-right")} title="Luck in wins: actual wins minus wins expected from scoring">Luck</th>
               <th scope="col" className={cn(th, "text-right")}>{formLabel ?? "Form"}</th>
             </tr>
           </thead>

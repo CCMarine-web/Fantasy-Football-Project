@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { getSeasonLuckWins } from "./luck-repository";
 import { expectedWins, scheduleLuck, seasonAllPlayTotals, weeklyAllPlay } from "@/server/stats";
 import type { WeeklyScore } from "@/server/stats/types";
 import type { StandingsRow } from "@/types/view-models";
@@ -129,6 +130,7 @@ export async function getStandingsView(seasonId: string): Promise<StandingsView>
     }
   }
 
+  const luckBy = season ? await getSeasonLuckWins(season.year) : new Map();
   const rows: StandingsRow[] = teams.map((team) => {
     const records = allPlayByTeam.get(team.id) ?? [];
     const totals = seasonAllPlayTotals(records);
@@ -153,8 +155,10 @@ export async function getStandingsView(seasonId: string): Promise<StandingsView>
       allPlayRecord: allPlayTotal
         ? `${allPlayTotal.wins}-${allPlayTotal.losses}${allPlayTotal.ties ? `-${allPlayTotal.ties}` : ""}`
         : undefined,
-      expectedWins: records.length > 0 ? Number(expected.toFixed(1)) : undefined,
-      scheduleLuck: records.length > 0 ? Number(luck.toFixed(1)) : undefined,
+      // Luck in wins: the site's one definition (stats/luck-wins.ts).
+      expectedWins: luckBy.get(team.managerId) ? Number(luckBy.get(team.managerId)!.expected.toFixed(1)) : records.length > 0 ? Number(expected.toFixed(1)) : undefined,
+      scheduleLuck: luckBy.get(team.managerId) ? Number(luckBy.get(team.managerId)!.luckWins.toFixed(1)) : records.length > 0 ? Number(luck.toFixed(1)) : undefined,
+      luckLabel: luckBy.get(team.managerId)?.label ?? null,
       playoffProbability: null,
       recentForm: recentFormByTeam.get(team.id) ?? [],
     };

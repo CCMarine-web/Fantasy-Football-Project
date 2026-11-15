@@ -52,6 +52,12 @@ export interface TextSpec {
   fallback: string;
   /** Soft length cap for the prompt. */
   maxWords: number;
+  /**
+   * Figures that belong to one time frame only. A sentence about "this
+   * season" that quotes a career-only figure is rejected (a bio once called
+   * the career Luck Score this season's).
+   */
+  scopes?: { season: string[]; career: string[] };
 }
 
 /** Stable JSON: keys sorted, so the hash doesn't depend on insertion order. */
@@ -160,8 +166,29 @@ export interface ValidationResult {
  * facts, W-L records not in the facts, counted number-words not in the facts.
  * Tokens are trusted (they are filled from facts) and stripped first.
  */
-export function validateTemplate(template: string, facts: Facts, tokens: Record<string, string>): ValidationResult {
+const THIS_SEASON = /\b(this season|this year|so far this|this fall|currently|right now|this campaign)\b/i;
+
+/** Sentences about the current season that quote a career-only figure. */
+export function scopeProblems(rendered: string, scopes: NonNullable<TextSpec["scopes"]>): string[] {
+  const careerOnly = scopes.career.filter((c) => c && !scopes.season.includes(c));
   const problems: string[] = [];
+  for (const sentence of rendered.split(/(?<=[.!?])\s+/)) {
+    if (!THIS_SEASON.test(sentence)) continue;
+    for (const c of careerOnly) {
+      if (sentence.includes(c)) problems.push(`a "this season" sentence quotes the career figure "${c}"`);
+    }
+  }
+  return problems;
+}
+
+export function validateTemplate(
+  template: string,
+  facts: Facts,
+  tokens: Record<string, string>,
+  scopes?: TextSpec["scopes"],
+): ValidationResult {
+  const problems: string[] = [];
+  if (scopes) problems.push(...scopeProblems(renderTemplate(template, tokens).text, scopes));
   for (const name of tokensIn(template)) if (!(name in tokens)) problems.push(`unknown token {{${name}}}`);
   const allowed = collectAllowed(facts, tokens);
 

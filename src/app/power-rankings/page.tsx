@@ -9,6 +9,8 @@ import { ChartFrame } from "@/components/charts/chart-frame";
 import { LabeledScatter, MultiLineChart } from "@/components/charts/charts";
 import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
 import { getRankingHistory } from "@/server/pipeline/snapshots";
+import { getSeasonLuckWins } from "@/server/repositories/luck-repository";
+import { formatLuckWins } from "@/server/stats/luck-wins";
 import { distributePercentages, ordinal } from "@/lib/format";
 import { heatColor, teamColorMap } from "@/lib/chart-theme";
 import { ArrowDown, ArrowUp, Info, Minus, TrendingUp } from "lucide-react";
@@ -66,7 +68,11 @@ export default async function PowerRankingsPage() {
 
   const isInSeason = data.mode === "IN_SEASON";
   const isBaseline = data.mode === "MANAGER_BASELINE";
-  const [blurbs, history] = await Promise.all([powerBlurbTexts(data), isInSeason ? getRankingHistory(data.seasonYear) : Promise.resolve([])]);
+  const [blurbs, history, seasonLuck] = await Promise.all([
+    powerBlurbTexts(data),
+    isInSeason ? getRankingHistory(data.seasonYear) : Promise.resolve([]),
+    getSeasonLuckWins(data.seasonYear),
+  ]);
   const methodologyPercents = distributePercentages(data.weights.map((w) => w.weight));
   const colors = teamColorMap(data.rows.map((r) => r.managerId ?? r.fantasyTeamId));
   const colorOf = (r: (typeof data.rows)[number]) => colors.get(r.managerId ?? r.fantasyTeamId) ?? "var(--primary)";
@@ -174,6 +180,12 @@ export default async function PowerRankingsPage() {
                       <span className="block truncate text-sm font-semibold">{row.teamName}</span>
                       <span className="block truncate text-xs text-muted-foreground">
                         {row.managerName} · {row.record}
+                        {(() => {
+                          const l = row.managerId ? seasonLuck.get(row.managerId) : undefined;
+                          return l && l.tone !== "insufficient" ? (
+                            <span title={`Luck: ${l.label} — ${l.wins} wins vs ${l.expected.toFixed(1)} expected`}> · luck {formatLuckWins(l.luckWins).replace(" wins", "")}</span>
+                          ) : null;
+                        })()}
                       </span>
                     </span>
                   </span>

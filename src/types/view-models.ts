@@ -40,6 +40,8 @@ export interface StandingsRow {
   allPlayRecord?: string;
   expectedWins?: number;
   scheduleLuck?: number;
+  /** Luck label from the sample-aware z-score (stats/luck-wins.ts). */
+  luckLabel?: string | null;
   playoffProbability?: number | null;
   /** Last five regular-season results, oldest first, with week and opponent. */
   recentForm?: { result: "W" | "L" | "T"; week: number; opponentName: string; score: number; opponentScore: number }[];

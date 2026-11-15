@@ -2,6 +2,7 @@ import "./lib/load-env";
 import { prisma } from "@/lib/db";
 import { verifyAllData } from "@/server/verify/data-verification";
 import { verifyHeadToHeadConsistency } from "@/server/verify/head-to-head-consistency";
+import { getCareerLuckWins, getSeasonLuckWins } from "@/server/repositories/luck-repository";
 
 /**
  * Reconciles stored league data against its sources. Read-only.
@@ -49,7 +50,23 @@ async function main() {
 Head-to-head consistency: ${h2h.pairsChecked} pairs, ${h2h.problems.length === 0 ? "rivalry, profile and matchup paths agree" : `${h2h.problems.length} DISAGREE`}`);
     for (const p of h2h.problems) console.log(`    ${p.pair}: rivalry ${p.rivalry}, profile ${p.profile}, matchup ${p.matchup}`);
   }
-  if (report.totalMismatches > 0 || h2h.problems.length > 0) process.exitCode = 1;
+  // Luck in wins: Σ luck = 0 and Σ expected = games, every season and career.
+  const luckProblems: string[] = [];
+  const seasons = await prisma.season.findMany({ select: { year: true }, orderBy: { year: "asc" } });
+  const check = (label: string, m: Map<string, { luckWins: number; expected: number; games: number }>) => {
+    const v = [...m.values()];
+    if (v.length === 0) return;
+    const sum = v.reduce((s, x) => s + x.luckWins, 0);
+    const exp = v.reduce((s, x) => s + x.expected, 0);
+    const games = v.reduce((s, x) => s + x.games, 0) / 2;
+    if (Math.abs(sum) > 0.05 || Math.abs(exp - games) > 0.05) luckProblems.push(`${label}: Σluck ${sum.toFixed(3)}, Σexpected ${exp.toFixed(2)} vs ${games} games`);
+  };
+  for (const s of seasons) check(String(s.year), await getSeasonLuckWins(s.year));
+  check("career", await getCareerLuckWins());
+  if (!process.argv.includes("--json")) {
+    console.log(`Luck in wins: ${luckProblems.length === 0 ? "sums to zero and expected wins equal games played, every season and career" : luckProblems.join("; ")}`);
+  }
+  if (report.totalMismatches > 0 || h2h.problems.length > 0 || luckProblems.length > 0) process.exitCode = 1;
 }
 
 main()

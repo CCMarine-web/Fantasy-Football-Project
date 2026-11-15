@@ -4,10 +4,10 @@ import type { PowerRankingsView } from "@/server/repositories/power-rankings-rep
 import type { RivalryView } from "@/server/repositories/computed-rivalries-repository";
 import type { TradeTribunalView } from "@/server/repositories/trade-tribunal-repository";
 import { headToHeadLines, listManagerRows } from "@/server/repositories/manager-repository";
-import { getCareerLuck } from "@/server/repositories/luck-repository";
+import { getCareerLuckWins, getSeasonLuckWins } from "@/server/repositories/luck-repository";
 import { getVerifiedRowsCached } from "@/server/repositories/head-to-head-repository";
 import { getWeeklyAwards } from "@/server/repositories/weekly-awards-repository";
-import { buildCatalog, newsIssueFacts } from "./catalog";
+import { buildCatalog, careerRecordOf, newsIssueFacts } from "./catalog";
 import { readTexts, textKey, type RenderedText } from "./read";
 import { loadMatchupInfo, previewSpec, recapSpec } from "./specs/matchup";
 import {
@@ -47,15 +47,25 @@ export async function rivalryTexts(views: RivalryView[]): Promise<Map<string, Re
 }
 
 export async function managerBioTexts(): Promise<Map<string, RenderedText>> {
-  const [when, rows, luck, verified] = await Promise.all([asOf(), listManagerRows(), getCareerLuck(), getVerifiedRowsCached()]);
-  const specs = rows.map((row) => managerBioSpec(row, luck.get(row.managerId) ?? null, headToHeadLines(verified, row.managerId), when));
+  const when = await asOf();
+  const [rows, careerLuck, seasonLuck, verified] = await Promise.all([
+    listManagerRows(),
+    getCareerLuckWins(),
+    getSeasonLuckWins(when.season),
+    getVerifiedRowsCached(),
+  ]);
+  const specs = rows.map((row) =>
+    managerBioSpec(row, seasonLuck.get(row.managerId) ?? null, careerLuck.get(row.managerId) ?? null, headToHeadLines(verified, row.managerId), when),
+  );
   const texts = await readTexts(specs);
   return new Map(specs.map((s) => [s.subjectKey, texts.get(textKey(s.kind, s.subjectKey))!]));
 }
 
 export async function scoutingText(managerId: string, managerName: string): Promise<RenderedText | null> {
   const when = await asOf();
-  const f = await loadScoutingFacts(managerId, managerName, when.season, when.week);
+  const row = (await listManagerRows()).find((r) => r.managerId === managerId);
+  if (!row) return null;
+  const f = await loadScoutingFacts(managerId, managerName, careerRecordOf(row), when.season, when.week);
   if (!f) return null;
   const spec = scoutingSpec(f, when);
   return (await readTexts([spec])).get(textKey(spec.kind, spec.subjectKey)) ?? null;

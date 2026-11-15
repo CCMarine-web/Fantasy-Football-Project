@@ -61,3 +61,14 @@ describe("specHash", () => {
     expect(stableStringify({ b: 1, a: [2, { d: 1, c: 0 }] })).toBe('{"a":[2,{"c":0,"d":1}],"b":1}');
   });
 });
+
+describe("season vs career scope", () => {
+  it("rejects a 'this season' sentence that uses a career figure", async () => {
+    const { scopeProblems } = await import("./core");
+    const scopes = { season: ["7-2", "+2.1 wins"], career: ["63-56", "+10.2 wins"] };
+    expect(scopeProblems("This season has been a different story: 7-2 and riding +10.2 wins of luck.", scopes)).toEqual([
+      'a "this season" sentence quotes the career figure "+10.2 wins"',
+    ]);
+    expect(scopeProblems("This season he is 7-2 with +2.1 wins of luck. Over his career, +10.2 wins.", scopes)).toEqual([]);
+  });
+});

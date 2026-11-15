@@ -13,9 +13,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { TeamAvatar } from "@/components/shared/team-avatar";
 import { Badge } from "@/components/ui/badge";
 import { getStatsCoverage, listManagerRows } from "@/server/repositories/manager-repository";
-import { getCareerLuck } from "@/server/repositories/luck-repository";
-import { LuckScoreBadge } from "@/components/managers/luck-score";
-import { LUCK_BANDS, LUCK_CLOSE_GAME_MARGIN, LUCK_WEIGHTS } from "@/server/stats/luck";
+import { getCareerLuckWins } from "@/server/repositories/luck-repository";
+import { LuckBadge } from "@/components/managers/luck-score";
 import { LAST_PLACE_METHODOLOGY } from "@/server/stats/last-place";
 import { Trophy, Users, ChevronRight, Info } from "lucide-react";
 import { BRAND } from "@/lib/branding";
@@ -42,7 +41,7 @@ export default async function ManagersPage({
   const [all, coverage, luckByManager, bios] = await Promise.all([
     listManagerRows(),
     getStatsCoverage(),
-    getCareerLuck(),
+    getCareerLuckWins(),
     managerBioTexts(),
   ]);
   const comparison = await getManagerComparison();
@@ -110,16 +109,9 @@ export default async function ManagersPage({
           <div>
             <dt className="inline font-medium text-foreground">Luck Score — </dt>
             <dd className="inline">
-              0 to 100 with 50 neutral, measuring how much the schedule helped rather than how good
-              a manager is. Wins against all-play expectation{" "}
-              {(LUCK_WEIGHTS.winsVsExpected * 100).toFixed(0)}%, opponent scoring{" "}
-              {(LUCK_WEIGHTS.opponentScoring * 100).toFixed(0)}%, record in games under{" "}
-              {LUCK_CLOSE_GAME_MARGIN} points {(LUCK_WEIGHTS.closeGames * 100).toFixed(0)}%, schedule
-              strength {(LUCK_WEIGHTS.scheduleStrength * 100).toFixed(0)}%, championship-bracket draw{" "}
-              {(LUCK_WEIGHTS.postseasonDraw * 100).toFixed(0)}%. Consolation games are never an
-              input. Computed from recorded scores; a manager with too few games shows &ldquo;not
-              enough games&rdquo; rather than &ldquo;neutral&rdquo;. Labels:{" "}
-              {LUCK_BANDS.map((b) => `${b.min}–${b.max} ${b.label}`).join(", ")}.
+              luck in wins: actual wins minus the wins a manager&rsquo;s scores would have earned against
+              the whole league each week (completed regular-season weeks only). The label weighs that
+              against the number of games played, so a season and a career read on the same scale.
               Full breakdown is on each manager&rsquo;s page.
             </dd>
           </div>
@@ -250,7 +242,7 @@ export default async function ManagersPage({
                         </Badge>
                       ) : null}
                       {luckByManager.get(m.managerId) ? (
-                        <LuckScoreBadge luck={luckByManager.get(m.managerId)!} />
+                        <LuckBadge luck={luckByManager.get(m.managerId)!} />
                       ) : null}
                     </div>
 

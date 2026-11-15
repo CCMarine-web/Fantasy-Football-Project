@@ -3,7 +3,7 @@ import { getLeagueClock, type LeagueClock } from "@/server/league-clock";
 import { getPowerRankings } from "@/server/repositories/power-rankings-repository";
 import { getComputedRivalries } from "@/server/repositories/computed-rivalries-repository";
 import { headToHeadLines, listManagerRows } from "@/server/repositories/manager-repository";
-import { getCareerLuck } from "@/server/repositories/luck-repository";
+import { getCareerLuckWins, getSeasonLuckWins } from "@/server/repositories/luck-repository";
 import { getVerifiedRowsCached } from "@/server/repositories/head-to-head-repository";
 import { getProvisionalRevisit, loadDraftReturns, gradeLetterToDisplay } from "@/server/repositories/draft-grade-repository";
 import { getTradeTribunal } from "@/server/repositories/trade-tribunal-repository";
@@ -42,6 +42,11 @@ import {
  *   trade verdicts                          while the valuation can still move
  *   season retrospective                    once, when the season completes
  */
+
+/** The career regular-season record exactly as the profile table prints it. */
+export function careerRecordOf(row: { careerWins: number; careerLosses: number; careerTies: number }): string {
+  return `${row.careerWins}-${row.careerLosses}${row.careerTies ? `-${row.careerTies}` : ""}`;
+}
 
 /** Generation order: what readers see first goes first. */
 export const KIND_PRIORITY: TextKind[] = [
@@ -204,11 +209,17 @@ export async function buildCatalog(options: { clock?: LeagueClock | null; kinds?
   }
 
   if (want("MANAGER_BIO") || want("SCOUTING")) {
-    const [rows, luck, verified] = await Promise.all([listManagerRows(), getCareerLuck(), getVerifiedRowsCached()]);
+    const [rows, careerLuck, seasonLuck, verified] = await Promise.all([
+      listManagerRows(),
+      getCareerLuckWins(),
+      getSeasonLuckWins(season.year),
+      getVerifiedRowsCached(),
+    ]);
     for (const row of rows) {
-      if (want("MANAGER_BIO")) specs.push(managerBioSpec(row, luck.get(row.managerId) ?? null, headToHeadLines(verified, row.managerId), asOf));
+      if (want("MANAGER_BIO"))
+        specs.push(managerBioSpec(row, seasonLuck.get(row.managerId) ?? null, careerLuck.get(row.managerId) ?? null, headToHeadLines(verified, row.managerId), asOf));
       if (want("SCOUTING")) {
-        const f = await loadScoutingFacts(row.managerId, row.displayName, season.year, clock.lastStoredWeek);
+        const f = await loadScoutingFacts(row.managerId, row.displayName, careerRecordOf(row), season.year, clock.lastStoredWeek);
         if (f) specs.push(scoutingSpec(f, asOf));
       }
     }

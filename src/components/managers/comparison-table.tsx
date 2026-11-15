@@ -17,7 +17,7 @@ const COLUMNS: { key: Key; label: string; title: string; value: (r: ComparisonRo
   { key: "playoff", label: "Playoffs", title: "Championship-bracket record", value: (r) => r.playoffWins - r.playoffLosses / 100 },
   { key: "ppg", label: "PPG", title: "Regular-season points per game", value: (r) => r.ppg ?? -1 },
   { key: "allPlayPct", label: "All-play", title: "How often a weekly score would beat a random opponent", value: (r) => r.allPlayPct ?? -1 },
-  { key: "luck", label: "Luck", title: "Career Luck Score (50 = neutral)", value: (r) => r.luck ?? -1 },
+  { key: "luck", label: "Luck", title: "Career luck in wins: actual wins minus wins expected from scoring", value: (r) => r.luck ?? -99 },
   { key: "lastPlaces", label: "Last", title: "Regular-season last-place finishes", value: (r) => r.lastPlaces },
 ];
 
@@ -80,7 +80,7 @@ export function ManagerComparisonTable({ rows }: { rows: ComparisonRow[] }) {
               <td className="border-t border-border/40 px-2 text-right font-mono tabular-nums">{r.ppg?.toFixed(1) ?? "—"}</td>
               <td className="border-t border-border/40 px-2 text-right font-mono tabular-nums">{r.allPlayPct != null ? `${r.allPlayPct.toFixed(1)}%` : "—"}</td>
               <td className="border-t border-border/40 px-2 text-right font-mono tabular-nums" title={r.luckLabel ?? undefined}>
-                {r.luck ?? "—"}
+                {r.luck == null ? "—" : `${r.luck > 0 ? "+" : r.luck < 0 ? "−" : ""}${Math.abs(r.luck).toFixed(1)}`}
               </td>
               <td className="border-t border-border/40 px-2 text-right font-mono tabular-nums">{r.lastPlaces}</td>
             </tr>

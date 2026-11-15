@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/db";
 import { cached, CACHE_TAGS } from "@/server/cache";
 import { listManagerRows } from "./manager-repository";
-import { getCareerLuck } from "./luck-repository";
+import { getCareerLuckWins } from "./luck-repository";
 import { loadVerifiedGames, loadVerifiedTeamWeeks } from "./verified-games";
 import { getLastPlaceBySeason } from "./hall-of-shame-repository";
 
@@ -45,7 +45,7 @@ export interface FinishCell {
 async function build(): Promise<{ rows: ComparisonRow[]; seasons: number[]; grid: Record<string, FinishCell[]> }> {
   const [rows, luck, games, weeks, lastPlace, teams] = await Promise.all([
     listManagerRows(),
-    getCareerLuck(),
+    getCareerLuckWins(),
     loadVerifiedGames(),
     loadVerifiedTeamWeeks(),
     getLastPlaceBySeason(),
@@ -121,7 +121,7 @@ async function build(): Promise<{ rows: ComparisonRow[]; seasons: number[]; grid
         playoffLosses: r.playoffLosses,
         ppg: ppg.has(r.managerId) ? Math.round((ppg.get(r.managerId) as number) * 10) / 10 : null,
         allPlayPct: a && a.n ? Math.round((a.w / a.n) * 1000) / 10 : null,
-        luck: l?.score ?? null,
+        luck: l && l.tone !== "insufficient" ? Math.round(l.luckWins * 10) / 10 : null,
         luckLabel: l?.label ?? null,
         lastPlaces: r.lastPlaceFinishes,
       };
