@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { AiText } from "@/components/shared/ai-text";
 import { tradeVerdictTexts } from "@/server/text/page-texts";
@@ -37,6 +38,7 @@ export default async function TradeTribunalPage({
 }: {
   searchParams: Promise<{ show?: string }>;
 }) {
+  await renderAtRequestIfNoDatabase();
   const { show } = await searchParams;
   const showAll = show === "all";
 

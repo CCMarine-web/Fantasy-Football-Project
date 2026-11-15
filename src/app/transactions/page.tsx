@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -79,6 +80,7 @@ export default async function TransactionsPage({
 }: {
   searchParams: Promise<Partial<Record<keyof Filters, string>>>;
 }) {
+  await renderAtRequestIfNoDatabase();
   const params = await searchParams;
   const requestedType = TYPES.find((t) => t.value === params.type)?.value;
   const requestedShown = params.shown ? Number(params.shown) : TRANSACTIONS_PAGE_SIZE;

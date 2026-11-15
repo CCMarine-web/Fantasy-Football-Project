@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +27,7 @@ export default async function DraftsPage({
 }: {
   searchParams: Promise<{ season?: string }>;
 }) {
+  await renderAtRequestIfNoDatabase();
   const { season: seasonParam } = await searchParams;
   const seasons = await listDraftSeasons();
   const currentSeason = await getCurrentSeason();

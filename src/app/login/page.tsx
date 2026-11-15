@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { LoginForm } from "@/app/login/login-form";
 import { BRAND } from "@/lib/branding";
@@ -7,6 +8,7 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ callbackUrl?: string }>;
 }) {
+  await renderAtRequestIfNoDatabase();
   const { callbackUrl } = await searchParams;
 
   return (

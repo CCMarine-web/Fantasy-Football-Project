@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { AiText } from "@/components/shared/ai-text";
 import { draftRevisitTexts } from "@/server/text/page-texts";
@@ -88,6 +89,7 @@ export default async function DraftReportCardsPage({
 }: {
   searchParams: Promise<{ season?: string }>;
 }) {
+  await renderAtRequestIfNoDatabase();
   const { season: seasonParam } = await searchParams;
   const seasons = await listGradedSeasons();
   const requestedYear = seasonParam ? Number(seasonParam) : undefined;

@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { ChartFrame } from "@/components/charts/chart-frame";
 import { StripPlot } from "@/components/charts/charts";
@@ -103,6 +104,7 @@ export default async function MatchupsPage({
 }: {
   searchParams: Promise<{ week?: string }>;
 }) {
+  await renderAtRequestIfNoDatabase();
   const { week: weekParam } = await searchParams;
   const requested = weekParam ? Number(weekParam) : undefined;
   const hub = await getWeeklyHub(Number.isFinite(requested) ? requested : undefined);

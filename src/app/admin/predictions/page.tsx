@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { PageHeader } from "@/components/shared/page-header";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
@@ -6,6 +7,7 @@ import { AdminPredictionForm } from "./admin-prediction-form";
 export const metadata = { title: "Backfill Predictions" };
 
 export default async function AdminPredictionsPage() {
+  await renderAtRequestIfNoDatabase();
   const session = await auth();
   if (session?.user?.role !== "ADMIN") {
     throw new Error("Admins only");

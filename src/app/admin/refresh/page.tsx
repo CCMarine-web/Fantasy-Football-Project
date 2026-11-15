@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
@@ -38,6 +39,7 @@ const ENV_VARS = [
 ] as const;
 
 export default async function AdminRefreshPage() {
+  await renderAtRequestIfNoDatabase();
   const session = await auth();
   if (session?.user?.role !== "ADMIN") throw new Error("Admins only");
 

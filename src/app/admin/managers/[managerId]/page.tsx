@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { auth } from "@/auth";
 import { notFound } from "next/navigation";
 import Link from "next/link";
@@ -13,6 +14,7 @@ export default async function AdminManagerEditPage({
 }: {
   params: Promise<{ managerId: string }>;
 }) {
+  await renderAtRequestIfNoDatabase();
   const session = await auth();
   if (session?.user?.role !== "ADMIN") throw new Error("Admins only");
   const { managerId } = await params;

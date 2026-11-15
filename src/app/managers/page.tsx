@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { ManagerComparisonTable } from "@/components/managers/comparison-table";
 import { FinishGrid } from "@/components/managers/finish-grid";
@@ -34,6 +35,7 @@ export default async function ManagersPage({
 }: {
   searchParams: Promise<{ status?: string }>;
 }) {
+  await renderAtRequestIfNoDatabase();
   const { status } = await searchParams;
   const tab: "active" | "retired" = status === "retired" ? "retired" : "active";
 

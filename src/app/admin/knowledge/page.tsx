@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,7 @@ const PRIVACY_VARIANT = {
 } as const;
 
 export default async function AdminKnowledgePage() {
+  await renderAtRequestIfNoDatabase();
   const session = await auth();
   if (session?.user?.role !== "ADMIN") {
     throw new Error("Admins only");

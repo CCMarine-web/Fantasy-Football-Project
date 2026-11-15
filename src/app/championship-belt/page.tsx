@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Image from "next/image";
 import Link from "next/link";
 import { Crown, Trophy, Quote, Flame, Pencil } from "lucide-react";
@@ -25,6 +26,7 @@ function recordLine(w: number, l: number, t: number): string {
 }
 
 export default async function ChampionshipBeltPage() {
+  await renderAtRequestIfNoDatabase();
   const [champion, lineage, session, narrative, nowMs] = await Promise.all([
     getCurrentChampion(),
     getChampionLineage(),

@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { auth } from "@/auth";
 import Link from "next/link";
 import { PageHeader } from "@/components/shared/page-header";
@@ -78,6 +79,7 @@ function StatusBadge({ ok, onLabel, offLabel }: { ok: boolean; onLabel: string; 
 }
 
 export default async function AdminPage() {
+  await renderAtRequestIfNoDatabase();
   const session = await auth();
   if (session?.user?.role !== "ADMIN") throw new Error("Admins only");
   const overview = await getAdminOverview();

@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { Trophy } from "lucide-react";
 import { auth } from "@/auth";
@@ -10,6 +11,7 @@ import { VictorySpeechForm } from "./victory-speech-form";
 export const metadata = { title: "Edit Championship Belt" };
 
 export default async function EditChampionshipBeltPage() {
+  await renderAtRequestIfNoDatabase();
   const session = await auth();
   if (session?.user?.role !== "ADMIN") throw new Error("Admins only");
 

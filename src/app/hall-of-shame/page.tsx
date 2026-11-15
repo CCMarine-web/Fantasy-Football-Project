@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
@@ -27,6 +28,7 @@ export const metadata = { title: "Hall of Shame" };
  */
 
 export default async function HallOfShamePage() {
+  await renderAtRequestIfNoDatabase();
   const [shame, session, pendingPunishmentPhotos] = await Promise.all([
     getHallOfShame(),
     auth(),

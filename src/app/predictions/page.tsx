@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { Sparkles, Trophy } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -16,6 +17,7 @@ import {
 export const metadata = { title: "Predictions" };
 
 export default async function PredictionsPage() {
+  await renderAtRequestIfNoDatabase();
   const info = await getPredictionSeason();
 
   if (!info) {

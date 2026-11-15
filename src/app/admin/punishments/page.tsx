@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import { auth } from "@/auth";
 import Link from "next/link";
 import { PageHeader } from "@/components/shared/page-header";
@@ -12,6 +13,7 @@ import { deletePunishmentAction } from "./actions";
 export const metadata = { title: "Edit Punishments" };
 
 export default async function AdminPunishmentsPage() {
+  await renderAtRequestIfNoDatabase();
   const session = await auth();
   if (session?.user?.role !== "ADMIN") throw new Error("Admins only");
   const [managers, punishments, photoAssets, lastPlace] = await Promise.all([

@@ -1,3 +1,4 @@
+import { renderAtRequestIfNoDatabase } from "@/server/build-guard";
 import Link from "next/link";
 import { Lock } from "lucide-react";
 import { PageHeader } from "@/components/shared/page-header";
@@ -34,6 +35,7 @@ function Shell({ year, children }: { year?: number; children: React.ReactNode })
 }
 
 export default async function SubmitPredictionPage() {
+  await renderAtRequestIfNoDatabase();
   const info = await getPredictionSeason();
 
   if (!info) {
