@@ -1,4 +1,6 @@
 import { DataFreshness } from "@/components/shared/data-freshness";
+import { AiText } from "@/components/shared/ai-text";
+import { managerBioTexts, scoutingText } from "@/server/text/page-texts";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -15,8 +17,6 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { ManagerTrajectoryChart } from "@/components/charts/manager-trajectory-chart";
 import {
   getManagerProfileDetailed,
-  getManagerScoutingReport,
-  getSavedManagerPerformanceSummary,
 } from "@/server/repositories/manager-repository";
 import { getManagerAwardTally } from "@/server/repositories/weekly-awards-repository";
 import { Sparkles, TrendingUp } from "lucide-react";
@@ -86,13 +86,14 @@ export default async function ManagerProfilePage({
   params: Promise<{ managerId: string }>;
 }) {
   const { managerId } = await params;
-  const [profile, scouting, awardTally, performance] = await Promise.all([
+  const [profile, awardTally, bios] = await Promise.all([
     getManagerProfileDetailed(managerId),
-    getManagerScoutingReport(managerId),
     getManagerAwardTally(managerId),
-    getSavedManagerPerformanceSummary(managerId),
+    managerBioTexts(),
   ]);
   if (!profile) notFound();
+  const bio = bios.get(managerId) ?? null;
+  const scouting = await scoutingText(managerId, profile.manager.displayName);
 
   const {
     manager,
@@ -115,14 +116,7 @@ export default async function ManagerProfilePage({
     .map((l) => ({ year: l.year, finalRank: l.finalRank, teamCount }));
   const maxFinishCount = Math.max(1, ...finishDistribution.map((f) => f.count));
   const hasBiography = !!(manager.bio || manager.nicknameOrigin || manager.signatureMove);
-  // Placeholder text is never shown as if it were a real profile.
-  const profileParagraphs =
-    performance && !performance.isMock
-      ? performance.text
-          .split(/\n\s*\n/)
-          .map((paragraph) => paragraph.trim())
-          .filter(Boolean)
-      : [];
+  const profileParagraphs = bio ? [bio.text] : [];
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6 lg:px-8">
@@ -534,15 +528,7 @@ export default async function ManagerProfilePage({
         {/* The written career profile, generated once from the verified record
             and saved. Rendered as real paragraphs — it is several hundred
             words, not the couple of sentences it used to be. */}
-        {profileParagraphs.length > 0 ? (
-          <div className="mb-4 space-y-4">
-            {profileParagraphs.map((paragraph, i) => (
-              <p key={i} className="text-sm leading-relaxed text-foreground/90">
-                {paragraph}
-              </p>
-            ))}
-          </div>
-        ) : null}
+        {bio ? <AiText text={bio} className="mb-4" /> : null}
 
         {/*
          * The commissioner's hand-written notes, if any. The "No biography yet"
@@ -587,8 +573,8 @@ export default async function ManagerProfilePage({
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {scouting && !scouting.isMock ? (
-              <p className="text-sm whitespace-pre-line text-foreground/90">{scouting.text}</p>
+            {scouting ? (
+              <AiText text={scouting} />
             ) : (
               <p className="text-sm text-muted-foreground">
                 A generated scouting report — draft tendencies, trade behavior, and archetype — will

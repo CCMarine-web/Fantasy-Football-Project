@@ -6,6 +6,7 @@ import { FormChips } from "@/components/shared/form-chips";
 import { ordinal } from "@/lib/format";
 import type { FeaturedMatchupView, FeaturedTeam } from "@/server/repositories/featured-matchup-repository";
 import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
+import { AiText } from "@/components/shared/ai-text";
 import { Flame, Star, Swords } from "lucide-react";
 
 /**
@@ -197,9 +198,7 @@ export function MatchupOfTheWeek({ featured }: { featured: FeaturedMatchupView }
             <p className="text-xs tracking-wide text-muted-foreground uppercase">
               {featured.commentary.kind === "RECAP" ? "The recap" : "The preview"}
             </p>
-            <p className="mt-1 text-sm leading-relaxed text-foreground/90">
-              {featured.commentary.text}
-            </p>
+            <AiText text={featured.commentary.text} className="mt-1" />
           </div>
         ) : null}
 

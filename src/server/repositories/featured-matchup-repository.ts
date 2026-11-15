@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { positionLabel } from "@/lib/format";
-import { getBlurbs, hashInputs } from "@/server/ai/blurb-cache";
+import { matchupTexts } from "@/server/text/page-texts";
+import type { RenderedText } from "@/server/text/read";
 import {
   chooseFeaturedMatchup,
   type FeaturedCandidate,
@@ -94,7 +95,7 @@ export interface FeaturedMatchupView {
   /** Set when the commissioner's list names this pair. */
   rivalry: { id: string; isOfficial: boolean; label: string } | null;
   /** Saved commentary, and which kind it is. Null when none has been written. */
-  commentary: { kind: "PREVIEW" | "RECAP"; text: string; stale: boolean } | null;
+  commentary: { kind: "PREVIEW" | "RECAP"; text: RenderedText } | null;
   /** Why this game was chosen, in checkable terms. */
   why: FeaturedFactor[];
   href: string;
@@ -335,24 +336,13 @@ export async function getFeaturedMatchup(
   const teamB = toTeam(b, managerBId);
 
   /*
-   * The commentary key. Preview and recap are stored separately, so a game that
-   * has finished shows the recap while the preview written before kickoff stays
-   * on record rather than being overwritten.
+   * Commentary: the facts-first preview or recap (server/text), shown only
+   * while it was written from these exact facts — otherwise its templated
+   * fallback, so the card can never contradict itself.
    */
   const kind: "PREVIEW" | "RECAP" = isFinal ? "RECAP" : "PREVIEW";
-  const subjectKey = `${seasonYear}:${week}:${chosen.id}`;
-  const inputHash = hashInputs({
-    kind,
-    scores: [teamA.score, teamB.score],
-    projections: [teamA.projectedScore, teamB.projectedScore],
-    records: [teamA.record, teamB.record],
-    ranks: [teamA.powerRank, teamB.powerRank],
-    series: [teamAWins, teamBWins, ties],
-  });
-  const blurbs = await getBlurbs(kind === "RECAP" ? "MATCHUP_RECAP" : "MATCHUP_PREVIEW", [
-    { subjectKey, inputHash },
-  ]);
-  const saved = blurbs.get(subjectKey);
+  const written = await matchupTexts(chosen.id);
+  const commentaryText = kind === "RECAP" ? written.recap : written.preview;
 
   return {
     matchupId: chosen.id,
@@ -389,7 +379,7 @@ export async function getFeaturedMatchup(
           label: rivalryRow.isOfficial ? "Official league rivalry" : "Recurring matchup",
         }
       : null,
-    commentary: saved ? { kind, text: saved.text, stale: saved.stale } : null,
+    commentary: commentaryText ? { kind, text: commentaryText } : null,
     why: choice.factors,
     href: `/matchups/${seasonYear}/${week}/${chosen.id}`,
   };

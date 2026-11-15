@@ -28,7 +28,8 @@
     "assets:ingest": "tsx scripts/assets/ingest.ts",
     "assets:status": "tsx scripts/assets/ingest.ts --status",
     "assets:icons": "tsx scripts/assets/build-icons.ts",
-    "pipeline": "tsx scripts/pipeline.ts"
+    "pipeline": "tsx scripts/pipeline.ts",
+    "verify:texts": "tsx scripts/verify-texts.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

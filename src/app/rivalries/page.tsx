@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { AiText } from "@/components/shared/ai-text";
+import { rivalryTexts } from "@/server/text/page-texts";
+import type { RenderedText } from "@/server/text/read";
 import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -34,7 +37,7 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RivalryCard({ r }: { r: RivalryView }) {
+function RivalryCard({ r, text }: { r: RivalryView; text?: RenderedText }) {
   const aLeads = r.managerAWins > r.managerBWins;
   const bLeads = r.managerBWins > r.managerAWins;
   const nameFor = (id: string | null) =>
@@ -123,7 +126,7 @@ function RivalryCard({ r }: { r: RivalryView }) {
           </Link>
         </div>
 
-        {r.blurb ? <p className="text-sm text-foreground/90">{r.blurb}</p> : null}
+        <AiText text={text} />
 
         <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Total points" value={`${r.managerAPoints.toFixed(1)} – ${r.managerBPoints.toFixed(1)}`} />
@@ -164,6 +167,7 @@ function RivalryCard({ r }: { r: RivalryView }) {
 
 export default async function RivalriesPage() {
   const all = await getComputedRivalries();
+  const texts = await rivalryTexts(all);
   const official = all.filter((r) => r.isOfficial);
   const others = all.filter((r) => !r.isOfficial).slice(0, 8);
 
@@ -203,7 +207,7 @@ export default async function RivalriesPage() {
           </p>
           <div className="mt-4 space-y-4">
             {official.map((r) => (
-              <RivalryCard key={r.id} r={r} />
+              <RivalryCard key={r.id} r={r} text={texts.get(r.id)} />
             ))}
           </div>
         </section>
@@ -242,7 +246,7 @@ export default async function RivalriesPage() {
             </p>
             <div className="mt-5 space-y-4">
               {others.map((r) => (
-                <RivalryCard key={r.id} r={r} />
+                <RivalryCard key={r.id} r={r} text={texts.get(r.id)} />
               ))}
             </div>
           </section>

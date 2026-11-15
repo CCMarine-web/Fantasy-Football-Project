@@ -10,7 +10,8 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { getSeries } from "@/server/repositories/head-to-head-repository";
 import { getMatchupById, getRosterForTeamWeek } from "@/server/repositories/matchup-repository";
 import { positionLabel } from "@/lib/format";
-import { getMatchupAIContent } from "@/server/ai/weekly-pipeline";
+import { matchupTexts } from "@/server/text/page-texts";
+import { AiText } from "@/components/shared/ai-text";
 import {
   closestMeeting,
   describeSeries,
@@ -170,10 +171,11 @@ export default async function MatchupDetailPage({
 
   const isFinal = matchup.status === "FINAL";
   const statusLabel = isFinal ? "Final" : matchup.status === "IN_PROGRESS" ? "Live" : "Upcoming";
-  const aiContent = await getMatchupAIContent(matchup.id);
+  // Facts-first text (server/text): shown only while written from these facts.
+  const texts = await matchupTexts(matchup.id);
   // Placeholder copy is never shown as if it were real writing.
-  const preview = aiContent.isMock ? null : aiContent.preview;
-  const recap = aiContent.isMock ? null : aiContent.recap;
+  const preview = texts.preview;
+  const recap = isFinal ? texts.recap : null;
 
   const nameA = teamA.fantasyTeam.manager.displayName;
   const nameB = teamB.fantasyTeam.manager.displayName;
@@ -299,7 +301,7 @@ export default async function MatchupDetailPage({
             </CardHeader>
             <CardContent>
               {block.text ? (
-                <p className="text-sm whitespace-pre-line text-foreground/90">{block.text}</p>
+                <AiText text={block.text} />
               ) : (
                 <p className="text-sm text-muted-foreground">{block.empty}</p>
               )}

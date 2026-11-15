@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { AiText } from "@/components/shared/ai-text";
+import { tradeVerdictTexts } from "@/server/text/page-texts";
+import type { RenderedText } from "@/server/text/read";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,6 +41,7 @@ export default async function TradeTribunalPage({
   const showAll = show === "all";
 
   const all = await getTradeTribunal();
+  const verdicts = await tradeVerdictTexts(all);
   const headline = all.filter(isHeadlineTrade);
   const quiet = all.filter((t) => !isHeadlineTrade(t));
   const trades = showAll ? all : headline;
@@ -146,14 +150,14 @@ export default async function TradeTribunalPage({
             }
           />
         ) : (
-          trades.map((t) => <TradeCard key={t.transactionId} t={t} />)
+          trades.map((t) => <TradeCard key={t.transactionId} t={t} verdict={verdicts.get(t.transactionId)} />)
         )}
       </div>
     </div>
   );
 }
 
-function TradeCard({ t }: { t: TradeTribunalView }) {
+function TradeCard({ t, verdict }: { t: TradeTribunalView; verdict?: RenderedText }) {
   const decisive =
     t.lopsidedness === "HIGHWAY_ROBBERY" ||
     t.lopsidedness === "FLEECED" ||
@@ -301,12 +305,12 @@ function TradeCard({ t }: { t: TradeTribunalView }) {
           {t.hindsightSummary}.
         </p>
 
-        {t.verdict ? (
+        {verdict ? (
           <div className="border-l-2 border-primary/40 pl-3">
             <p className="text-[11px] tracking-wide text-muted-foreground uppercase">
-              {t.verdictStatus === "PROVISIONAL" || t.verdictStatus === "AWAITING_FINAL" ? "Verdict so far" : "Verdict"}
+              {t.provisional ? "Verdict so far" : "Verdict"}
             </p>
-            <p className="text-sm text-foreground/90 italic">{t.verdict}</p>
+            <AiText text={verdict} paragraphClassName="italic" />
           </div>
         ) : null}
 

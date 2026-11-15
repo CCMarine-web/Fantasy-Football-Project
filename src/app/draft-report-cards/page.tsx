@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AiText } from "@/components/shared/ai-text";
+import { draftRevisitTexts } from "@/server/text/page-texts";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -94,6 +96,7 @@ export default async function DraftReportCardsPage({
   );
 
   const isComplete = view.status === "COMPLETE";
+  const revisitTexts = view.provisionalRevisit ? await draftRevisitTexts() : new Map();
   const isEspnEra = view.seasonYear != null && view.seasonYear <= LAST_ESPN_SEASON;
   const originalPercents = weightPercents(view.weights);
   const revisitPercents = weightPercents(view.revisitWeights);
@@ -331,7 +334,9 @@ export default async function DraftReportCardsPage({
         ) : (
           <div className="space-y-3">
             {view.cards.map((card, index) => {
-              const showRevisited = isComplete && card.revisitedGrade;
+              const provisional = view.provisionalRevisit?.grades[card.managerId];
+              const revisitedGrade = provisional?.grade ?? (isComplete ? card.revisitedGrade : null);
+              const showRevisited = !!revisitedGrade;
               return (
                 <Card key={card.managerId} className="py-0">
                   <CardContent className="p-0">
@@ -436,20 +441,24 @@ export default async function DraftReportCardsPage({
                     {showRevisited ? (
                       <div className="mt-5 rounded-lg border border-dashed border-border/60 bg-muted/20 p-4">
                         <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                          Revisited in hindsight
+                          {provisional ? `Revisited so far · through Week ${view.provisionalRevisit?.throughWeek}` : "Revisited in hindsight"}
                           <span className="ml-1 font-normal normal-case">
                             — what the picks actually produced. Does not replace the grade above.
                           </span>
                         </p>
                         <div className="flex items-start gap-3">
                           <div
-                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg font-heading text-lg font-bold tabular-nums ${gradeColorClasses(card.revisitedGrade)}`}
+                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg font-heading text-lg font-bold tabular-nums ${gradeColorClasses(revisitedGrade)}`}
                           >
-                            {gradeLetterToDisplay(card.revisitedGrade)}
+                            {gradeLetterToDisplay(revisitedGrade)}
                           </div>
-                          <p className="flex-1 text-sm whitespace-pre-line text-muted-foreground">
-                            {card.revisitedRationale ?? "No commentary yet."}
-                          </p>
+                          {provisional ? (
+                            <AiText text={revisitTexts.get(card.managerId)} className="flex-1" />
+                          ) : (
+                            <p className="flex-1 text-sm whitespace-pre-line text-muted-foreground">
+                              {card.revisitedRationale ?? "No commentary yet."}
+                            </p>
+                          )}
                         </div>
                       </div>
                     ) : null}

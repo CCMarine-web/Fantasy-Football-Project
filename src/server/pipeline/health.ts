@@ -22,7 +22,7 @@ export interface HealthReport {
   currentWeekState: string | null;
   syncBehind: boolean;
   dataStale: boolean;
-  texts: { total: number; stale: number; fallback: number; byKind: Record<string, { total: number; stale: number }> } | null;
+  texts: { total: number; stale: number; fallback: number; byKind: Record<string, { total: number; stale: number }>; staleKeys?: string[] } | null;
 }
 
 export async function buildHealthReport(

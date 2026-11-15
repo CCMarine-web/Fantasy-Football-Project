@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/db";
-import { getMatchupAIContent } from "@/server/ai/weekly-pipeline";
+import { matchupTexts, newsIssueText, awardsText } from "@/server/text/page-texts";
+import type { RenderedText } from "@/server/text/read";
 import { getWeeklyAwards, type WeeklyAwardView } from "@/server/repositories/weekly-awards-repository";
 
 export interface WeeklyRecapMatchup {
   matchupId: string;
   teams: { managerId: string; managerName: string; teamName: string; score: number | null; isWinner: boolean | null }[];
-  recap: string | null;
+  recap: RenderedText | null;
 }
 
 export interface WeeklyRecapData {
@@ -14,6 +15,9 @@ export interface WeeklyRecapData {
   awards: WeeklyAwardView[];
   matchups: WeeklyRecapMatchup[];
   articleTitle: string | null;
+  /** The weekly issue (facts-first), and the awards copy. */
+  issue: RenderedText | null;
+  awardsCopy: RenderedText | null;
 }
 
 /**
@@ -46,11 +50,12 @@ export async function getWeeklyRecap(year: number, week: number): Promise<Weekly
         score: t.score,
         isWinner: t.isWinner,
       })),
-      recap: (await getMatchupAIContent(m.id)).recap,
+      recap: (await matchupTexts(m.id)).recap,
     })),
   );
 
-  return { seasonYear: year, week, awards, matchups: recapMatchups, articleTitle: article?.title ?? null };
+  const [issue, awardsCopy] = await Promise.all([newsIssueText(year, week), awardsText(season.id, year, week)]);
+  return { seasonYear: year, week, awards, matchups: recapMatchups, articleTitle: article?.title ?? null, issue, awardsCopy };
 }
 
 /**

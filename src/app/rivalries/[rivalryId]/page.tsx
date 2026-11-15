@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AiText } from "@/components/shared/ai-text";
+import { rivalryTexts } from "@/server/text/page-texts";
 import { SERIES_DEFINITION } from "@/server/stats/head-to-head";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/shared/page-header";
@@ -92,6 +94,7 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
   const { rivalryId } = await params;
   const r = await getRivalryDetail(rivalryId);
   if (!r) notFound();
+  const story = (await rivalryTexts([r])).get(r.id);
 
   const nameFor = (id: string | null) =>
     id === r.managerAId ? r.managerAName : id === r.managerBId ? r.managerBName : null;
@@ -152,7 +155,7 @@ export default async function RivalryDetailPage({ params }: { params: Promise<{ 
             </Link>
           </div>
 
-          {r.blurb ? <p className="mt-4 text-center text-sm text-foreground/90">{r.blurb}</p> : null}
+          <AiText text={story} className="mx-auto mt-4 max-w-2xl text-center" />
         </CardContent>
       </Card>
 

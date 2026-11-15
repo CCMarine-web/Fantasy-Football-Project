@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AiText } from "@/components/shared/ai-text";
+import { powerBlurbTexts } from "@/server/text/page-texts";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent } from "@/components/ui/card";
@@ -81,6 +83,7 @@ function Movement({ rank, previousRank }: { rank: number; previousRank: number |
 
 export default async function PowerRankingsPage() {
   const data = await getPowerRankings();
+  const blurbs = await powerBlurbTexts(data);
 
   if (!data || data.rows.length === 0) {
     return (
@@ -230,7 +233,7 @@ export default async function PowerRankingsPage() {
                     </>
                   ) : null}
                 </div>
-                {row.blurb ? <p className="mt-2 text-sm text-foreground/90">{row.blurb}</p> : null}
+                {data.mode === "IN_SEASON" ? <AiText text={blurbs.get(row.fantasyTeamId)} className="mt-2" /> : null}
               </div>
 
               {/* Score + factor breakdown */}

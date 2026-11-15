@@ -32,6 +32,18 @@ export const CACHE_TAGS = {
   content: "generated-content",
 } as const;
 
+/**
+ * Outside a Next runtime (scripts, the CLI pipeline) there is no data cache, so
+ * a loader called fifty times re-ran fifty times. A short in-process memo
+ * stands in; the pipeline clears it whenever it changes stored data.
+ */
+const processMemo = new Map<string, { at: number; value: Promise<unknown> }>();
+const PROCESS_MEMO_MS = 120_000;
+
+export function clearProcessMemo(): void {
+  processMemo.clear();
+}
+
 /** An hour. Long enough to matter, short enough that a manual sync shows up. */
 const DEFAULT_TTL_SECONDS = 3600;
 
@@ -67,7 +79,13 @@ export function cached<T>(
        * behaviour is simply to run the loader.
        */
       if (err instanceof Error && /incrementalCache missing/i.test(err.message)) {
-        return loader();
+        const key = keyParts.join("|");
+        const hit = processMemo.get(key);
+        if (hit && Date.now() - hit.at < PROCESS_MEMO_MS) return hit.value as Promise<T>;
+        const value = loader();
+        processMemo.set(key, { at: Date.now(), value });
+        value.catch(() => processMemo.delete(key));
+        return value;
       }
       throw err;
     }

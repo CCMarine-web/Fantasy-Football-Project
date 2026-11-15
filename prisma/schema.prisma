@@ -1552,3 +1552,38 @@ model PowerRankingSnapshot {
   @@unique([seasonYear, week, fantasyTeamId])
   @@index([seasonId, week])
 }
+
+/// Every AI-written text on the site, written FROM FACTS (src/server/text).
+///
+/// The model is handed a structured `facts` object built by the same functions
+/// that render the page, writes prose with {{token}} placeholders for the key
+/// numbers (filled from current facts at render time), and is checked: every
+/// literal number and W-L in its output must appear in the facts, or it is
+/// retried and finally replaced by a templated sentence. A page shows the text
+/// only while `inputHash` still matches the hash of the facts it would build
+/// now; otherwise it shows the templated fallback.
+model GeneratedText {
+  id          String   @id @default(cuid())
+  /// MATCHUP_PREVIEW | MATCHUP_RECAP | POWER_BLURB | WEEKLY_AWARDS | RIVALRY |
+  /// MANAGER_BIO | SCOUTING | DRAFT_REVISIT | TRADE_VERDICT | SEASON_RETRO | NEWS_ISSUE
+  kind        String
+  subjectKey  String
+  /// Prose with {{token}} placeholders.
+  template    String
+  /// The facts the text was written from (what the validator checked against).
+  facts       Json
+  inputHash   String
+  /// GENERATED (model prose that passed validation) | FALLBACK (templated).
+  status      String
+  asOfSeason  Int
+  asOfWeek    Int?
+  provider    String
+  model       String
+  attempts    Int      @default(1)
+  /// Why earlier attempts were rejected, if any.
+  validation  Json?
+  generatedAt DateTime @default(now())
+
+  @@unique([kind, subjectKey])
+  @@index([kind])
+}

@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { AiText } from "@/components/shared/ai-text";
+import { managerBioTexts } from "@/server/text/page-texts";
 import { ordinal } from "@/lib/format";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -31,10 +33,11 @@ export default async function ManagersPage({
   const { status } = await searchParams;
   const tab: "active" | "retired" = status === "retired" ? "retired" : "active";
 
-  const [all, coverage, luckByManager] = await Promise.all([
+  const [all, coverage, luckByManager, bios] = await Promise.all([
     listManagerRows(),
     getStatsCoverage(),
     getCareerLuck(),
+    managerBioTexts(),
   ]);
   const active = all.filter((m) => m.isActive);
   const retired = all.filter((m) => !m.isActive);
@@ -239,17 +242,10 @@ export default async function ManagersPage({
                     <ChevronRight className="hidden h-5 w-5 shrink-0 text-muted-foreground sm:block" />
                   </CardContent>
 
-                  {m.summaryCard ? (
+                  {bios.get(m.managerId) ? (
                     <CardContent className="border-t border-border/40 pt-3">
-                      {/* The full profiles run 450-650 words. This card carries
-                          120-180 of them — derived from the same text, never
-                          written separately, so the two can never disagree. See
-                          cardSummary() in the manager repository. */}
-                      {m.summaryCard.split(/\n\s*\n/).map((paragraph, i) => (
-                        <p key={i} className={i === 0 ? "text-sm text-foreground/80" : "mt-2 text-sm text-foreground/80"}>
-                          {paragraph}
-                        </p>
-                      ))}
+                      {/* The same facts-first bio the profile shows (server/text). */}
+                      <AiText text={bios.get(m.managerId)} paragraphClassName="text-foreground/80" />
                       <span className="mt-2 inline-block text-xs font-medium text-primary">
                         View full profile →
                       </span>

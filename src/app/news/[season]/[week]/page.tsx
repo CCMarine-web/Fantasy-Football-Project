@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { AiText } from "@/components/shared/ai-text";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Card, CardContent } from "@/components/ui/card";
@@ -53,9 +54,12 @@ export default async function WeeklyRecapPage({
         {data.seasonYear} · Week {data.week}
       </p>
       <h1 className="mt-2 font-heading text-3xl font-semibold tracking-wide break-words uppercase sm:text-4xl">
-        {data.articleTitle ?? `Week ${data.week} Recap`}
+        {data.articleTitle ?? `The Rat Trap Weekly — Week ${data.week}`}
       </h1>
       <DataFreshness className="mt-2" />
+
+      {/* The weekly issue: results, awards, movers, record watch, best/worst moves. */}
+      {data.issue ? <AiText text={data.issue} className="mt-6" chip="above" /> : null}
 
       {/* Weekly awards */}
       {data.awards.length > 0 ? (
@@ -63,6 +67,7 @@ export default async function WeeklyRecapPage({
           <h2 className="mb-3 font-heading text-lg font-semibold tracking-wide uppercase text-primary">
             Weekly Awards
           </h2>
+          {data.awardsCopy ? <AiText text={data.awardsCopy} className="mb-3" /> : null}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {data.awards.map((a) => {
               const Icon = AWARD_ICONS[a.type] ?? Sparkles;
@@ -114,7 +119,7 @@ export default async function WeeklyRecapPage({
                 {m.recap ? (
                   <>
                     <Separator />
-                    <p className="text-sm whitespace-pre-line text-foreground/90">{m.recap}</p>
+                    <AiText text={m.recap} />
                   </>
                 ) : null}
                 <Link

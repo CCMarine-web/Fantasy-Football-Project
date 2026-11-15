@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildHealthReport } from "@/server/pipeline/health";
+import { textStatus } from "@/server/text/status";
 import { safeError } from "@/server/pipeline/safe-error";
 
 /**
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const report = await buildHealthReport();
+    const report = await buildHealthReport(textStatus);
     return NextResponse.json(report, {
       status: report.ok ? 200 : 503,
       headers: { "cache-control": "no-store" },
